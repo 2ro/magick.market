@@ -280,17 +280,14 @@ export const ndkActions = {
 		}
 
 		const explicitRelays = getRelayUrls(relays)
-		// @ts-ignore - Bun.env is available in Bun runtime
-		const localRelayOnly = typeof Bun !== 'undefined' && Bun.env?.LOCAL_RELAY_ONLY === 'true'
 		const stage = getCurrentStage()
 
-		// Disable outbox model for staging, development, and local-only mode
-		// This prevents NDK from discovering and connecting to additional relays
-		const enableOutbox = stage !== 'staging' && stage !== 'development' && !localRelayOnly
-
+		// The app is deliberately single-relay: it talks only to its own app relay.
+		// Disable the outbox model unconditionally so NDK never discovers or connects
+		// to additional relays from users' NIP-65 relay lists (no federation/discovery).
 		const ndk = new NDK({
 			explicitRelayUrls: explicitRelays,
-			enableOutboxModel: enableOutbox,
+			enableOutboxModel: false,
 			aiGuardrails: {
 				skip: new Set(['ndk-no-cache', 'fetch-events-usage']),
 			},

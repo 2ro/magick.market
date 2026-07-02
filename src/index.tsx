@@ -318,8 +318,17 @@ export const server = serve({
 					}
 
 					if (resignedEvent) {
-						const relay = await Relay.connect(RELAY_URL as string)
-						await relay.publish(resignedEvent as Event)
+						try {
+							const relay = await Promise.race([
+								Relay.connect(RELAY_URL as string),
+								new Promise<never>((_, reject) => setTimeout(() => reject(new Error('relay connect timeout')), 5000)),
+							])
+							await relay.publish(resignedEvent as Event)
+						} catch (publishError) {
+							console.error('Error publishing to relay:', publishError)
+							ws.send(JSON.stringify(['OK', data[1].id, false, `error: relay publish failed: ${publishError}`]))
+							return
+						}
 
 						// Update cached appSettings when a kind 31990 event is published
 						if (resignedEvent.kind === 31990) {
@@ -343,9 +352,10 @@ export const server = serve({
 			} catch (error) {
 				console.error('Error processing WebSocket message:', error)
 				try {
-					const failedData = JSON.parse(String(message)) as Event
-					if (failedData.id) {
-						const errorResponse = ['OK', failedData.id, false, `error: Invalid message format ${error}`]
+					const parsed = JSON.parse(String(message))
+					const failedId = Array.isArray(parsed) && parsed[0] === 'EVENT' ? parsed[1]?.id : parsed?.id
+					if (failedId) {
+						const errorResponse = ['OK', failedId, false, `error: Invalid message format ${error}`]
 						ws.send(JSON.stringify(errorResponse))
 						return
 					}
