@@ -193,7 +193,8 @@ test.describe('Product Page - View Only (Unauthenticated)', () => {
 
 		await expect(headerContent).toBeVisible()
 		await expect(headerContent.getByText('View Test Product')).toBeVisible()
-		await expect(headerContent.getByText(/100(?:\.00)?\s+USD/)).toBeVisible({ timeout: 15000 })
+		// GRIN-only fork renders the amount in GRIN (the product is still "Listed in USD").
+		await expect(headerContent.getByText(/100(?:\.00)?\s+GRIN/)).toBeVisible({ timeout: 15000 })
 		await expect(headerContent.getByText('10 in stock')).toBeVisible()
 		await expect(headerContent.getByText('Test Merchant')).toBeVisible()
 	})
@@ -256,8 +257,7 @@ test.describe('Product Page - View Only (Unauthenticated)', () => {
 		// Verify ReactionButton is visible
 		await expect(productSocialInteractions.getByTestId('reaction-button')).toBeVisible()
 
-		// Verify ZapButton is visible
-		await expect(productSocialInteractions.getByTestId('zap-button')).toBeVisible()
+		// Note: the GRIN-only fork removed the ZapButton (Lightning stripped).
 
 		// Verify CommentButton is visible
 		await expect(productSocialInteractions.getByTestId('comment-button')).toBeVisible()
@@ -329,10 +329,7 @@ test.describe('Product Page - View Only (Unauthenticated)', () => {
 		const commentReactionBtn = commentSocialInteractions.locator('[data-testid="reaction-button"]').first()
 		await expect(commentReactionBtn).toBeVisible()
 
-		// Verify zap button on comment
-		const commentZapBtn = commentSocialInteractions.locator('[data-testid="zap-button"]').first()
-		await expect(commentZapBtn).toBeVisible()
-
+		// Note: the GRIN-only fork removed the ZapButton (Lightning stripped).
 		// No share button for comments, so no check necessary.
 	})
 
