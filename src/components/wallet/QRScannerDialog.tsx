@@ -18,8 +18,9 @@ export function QRScannerDialog({ onScan, open, onOpenChange }: QRScannerDialogP
 		(detectedCodes: any[]) => {
 			if (detectedCodes && detectedCodes.length > 0) {
 				const result = detectedCodes[0].rawValue
-				// Check if it's an NWC URI or bunker URI
-				if (result && (result.startsWith('nostr+walletconnect://') || result.startsWith('bunker://'))) {
+				// Check if it's an NWC URI, bunker URI, or a private key (nsec / 64-char hex)
+				const isKeyLike = result && (result.startsWith('nsec1') || /^[0-9a-fA-F]{64}$/.test(result))
+				if (result && (result.startsWith('nostr+walletconnect://') || result.startsWith('bunker://') || isKeyLike)) {
 					onScan(result)
 					onOpenChange(false) // Close the dialog
 					toast.success('QR code scanned successfully')
