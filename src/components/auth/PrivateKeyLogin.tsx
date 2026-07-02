@@ -4,9 +4,8 @@ import { Label } from '@/components/ui/label'
 import { authActions, NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY } from '@/lib/stores/auth'
 import { generateSecretKey, getPublicKey, nip19 } from 'nostr-tools'
 import { useEffect, useRef, useState } from 'react'
-import { Copy, Eye, EyeOff, Loader2, QrCode } from 'lucide-react'
+import { Copy, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { decrypt, encrypt } from 'nostr-tools/nip49'
-import { QRScannerDialog } from '@/components/wallet/QRScannerDialog'
 
 interface PrivateKeyLoginProps {
 	onError?: (error: string) => void
@@ -27,7 +26,6 @@ export function PrivateKeyLogin({ onError, onSuccess }: PrivateKeyLoginProps) {
 	const [showGeneratedKeyWarning, setShowGeneratedKeyWarning] = useState(false)
 	const [acknowledgedWarning, setAcknowledgedWarning] = useState(false)
 	const [copied, setCopied] = useState(false)
-	const [showScanner, setShowScanner] = useState(false)
 	const privateKeyInputRef = useRef<HTMLDivElement>(null)
 
 	useEffect(() => {
@@ -328,10 +326,6 @@ export function PrivateKeyLogin({ onError, onSuccess }: PrivateKeyLoginProps) {
 				<div className="flex justify-between items-center gap-2 flex-wrap">
 					<Label htmlFor="private-key">Private Key (nsec or hex)</Label>
 					<div className="flex gap-2">
-						<Button variant="outline" size="sm" onClick={() => setShowScanner(true)} data-testid="scan-qr-button">
-							<QrCode className="h-4 w-4 mr-1" />
-							Scan QR
-						</Button>
 						<Button
 							variant="outline"
 							size="sm"
@@ -348,6 +342,11 @@ export function PrivateKeyLogin({ onError, onSuccess }: PrivateKeyLoginProps) {
 						</Button>
 					</div>
 				</div>
+				<p className="text-sm text-muted-foreground">
+					Using Goblin? Open the <span className="font-medium">Me</span> tab → <span className="font-medium">Advanced</span> →{' '}
+					<span className="font-medium">Nostr key</span>, enter your wallet password, tap <span className="font-medium">Copy nsec</span>,
+					then paste it here.
+				</p>
 				<div className="relative max-w-full" ref={privateKeyInputRef}>
 					<Input
 						id="private-key"
@@ -423,15 +422,6 @@ export function PrivateKeyLogin({ onError, onSuccess }: PrivateKeyLoginProps) {
 			>
 				{isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Continue'}
 			</Button>
-			<QRScannerDialog
-				open={showScanner}
-				onOpenChange={setShowScanner}
-				onScan={(data) => {
-					setPrivateKey(data)
-					setKeyError(null)
-					setShowScanner(false)
-				}}
-			/>
 		</div>
 	)
 }
