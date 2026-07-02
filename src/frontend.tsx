@@ -9,7 +9,6 @@ import type { AppRouterContext } from './lib/router-utils'
 import { configActions, configStore } from './lib/stores/config'
 import { ndkActions, ndkStore } from './lib/stores/ndk'
 import { authActions } from './lib/stores/auth'
-import { walletActions } from './lib/stores/wallet'
 import { UpdateAvailableDialog } from './components/UpdateAvailableDialog'
 import { configKeys } from './queries/queryKeyFactory'
 
@@ -137,9 +136,8 @@ function App() {
 					console.warn('Background NDK connection issue:', err)
 				})
 
-				// Auth and wallet init depend on NDK being ready
+				// Auth init depends on NDK being ready
 				void authActions.getAuthFromLocalStorageAndLogin()
-				void walletActions.initialize()
 
 				setConfigLoaded(true)
 			} catch (err) {

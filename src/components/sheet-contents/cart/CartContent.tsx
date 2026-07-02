@@ -1,3 +1,4 @@
+import { formatGrinAmount } from '@/lib/grin'
 import CartItem from '@/components/CartItem'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -11,7 +12,8 @@ import { EmptyCartScreen } from './EmptyCartScreen'
 import { UserCard } from '@/components/UserCard'
 
 export function CartContent({ className = '' }: { className?: string }) {
-	const { cart, sellerData, productsBySeller, totalInSats, totalShippingInSats, totalByCurrency, shippingByCurrency } = useStore(cartStore)
+	const { cart, sellerData, productsBySeller, totalInNanogrin, totalShippingInNanogrin, totalByCurrency, shippingByCurrency } =
+		useStore(cartStore)
 
 	const [parent, enableAnimations] = useAutoAnimate()
 	const navigate = useNavigate()
@@ -27,10 +29,6 @@ export function CartContent({ className = '' }: { className?: string }) {
 	const isCartEmpty = useMemo(() => {
 		return Object.keys(cart.products).length === 0
 	}, [cart.products])
-
-	const formatSats = (sats: number): string => {
-		return Math.round(sats).toLocaleString()
-	}
 
 	useEffect(() => {
 		enableAnimations(true)
@@ -77,10 +75,10 @@ export function CartContent({ className = '' }: { className?: string }) {
 						.filter(([sellerPubkey]) => sellerPubkey && sellerPubkey.length > 0 && sellerPubkey !== 'unknown')
 						.map(([sellerPubkey, products]) => {
 							const data = sellerData[sellerPubkey] || {
-								satsTotal: 0,
+								nanogrinTotal: 0,
 								currencyTotals: {},
 								shares: { sellerAmount: 0, communityAmount: 0, sellerPercentage: 90 },
-								shippingSats: 0,
+								shippingNanogrin: 0,
 							}
 
 							return (
@@ -127,12 +125,12 @@ export function CartContent({ className = '' }: { className?: string }) {
 
 									<div className="flex justify-between mt-1">
 										<p className="text-sm">Shipping:</p>
-										<p className="text-sm font-semibold">{formatSats(data.shippingSats)} sat</p>
+										<p className="text-sm font-semibold">{formatGrinAmount(data.shippingNanogrin)}</p>
 									</div>
 
 									<div className="flex justify-between mt-1 font-semibold">
 										<p className="text-sm">Total:</p>
-										<p className="text-sm">{formatSats(data.satsTotal)} sat</p>
+										<p className="text-sm">{formatGrinAmount(data.nanogrinTotal)}</p>
 									</div>
 
 									<div className="mt-3">
@@ -145,7 +143,7 @@ export function CartContent({ className = '' }: { className?: string }) {
 										<div className="flex justify-between mt-1">
 											<p className="text-sm">Merchant: </p>
 											<p className="text-sm">
-												{formatSats(data.shares.sellerAmount)} sat ({data.shares.sellerPercentage.toFixed(2)}%)
+												{formatGrinAmount(data.shares.sellerAmount)} ({data.shares.sellerPercentage.toFixed(2)}%)
 											</p>
 										</div>
 
@@ -153,7 +151,7 @@ export function CartContent({ className = '' }: { className?: string }) {
 											<div className="flex justify-between">
 												<p className="text-sm">Community Share: </p>
 												<p className="text-sm">
-													{formatSats(data.shares.communityAmount)} sat ({(100 - data.shares.sellerPercentage).toFixed(2)}%)
+													{formatGrinAmount(data.shares.communityAmount)} ({(100 - data.shares.sellerPercentage).toFixed(2)}%)
 												</p>
 											</div>
 										)}
@@ -169,15 +167,15 @@ export function CartContent({ className = '' }: { className?: string }) {
 					<div className="space-y-1 mb-2">
 						<div className="flex justify-between">
 							<p className="text-sm">Subtotal:</p>
-							<p className="text-sm">{formatSats(totalInSats - totalShippingInSats)} sat</p>
+							<p className="text-sm">{formatGrinAmount(totalInNanogrin - totalShippingInNanogrin)}</p>
 						</div>
 						<div className="flex justify-between">
 							<p className="text-sm">Shipping:</p>
-							<p className="text-sm">{formatSats(totalShippingInSats)} sat</p>
+							<p className="text-sm">{formatGrinAmount(totalShippingInNanogrin)}</p>
 						</div>
 						<div className="flex justify-between text-lg font-bold">
 							<p>Total:</p>
-							<p>{formatSats(totalInSats)} sat</p>
+							<p>{formatGrinAmount(totalInNanogrin)}</p>
 						</div>
 					</div>
 

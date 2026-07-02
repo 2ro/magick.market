@@ -218,13 +218,15 @@ function resetTestState() {
 function paramsFor(overrides: {
 	shippingData?: Partial<CheckoutFormData>
 	productsBySeller: Record<string, Array<{ id: string; amount: number; shippingMethodId?: string | null }>>
-	sellerData?: Record<string, { satsTotal: number; shippingSats: number; shares: { sellerAmount: number } }>
+	sellerData?: Record<string, { nanogrinTotal: number; shippingNanogrin: number; shares: { sellerAmount: number } }>
 	sellers?: string[]
 }) {
 	const sellers = overrides.sellers || Object.keys(overrides.productsBySeller)
 	const sellerData =
 		overrides.sellerData ||
-		Object.fromEntries(sellers.map((sellerPubkey) => [sellerPubkey, { satsTotal: 1000, shippingSats: 0, shares: { sellerAmount: 1000 } }]))
+		Object.fromEntries(
+			sellers.map((sellerPubkey) => [sellerPubkey, { nanogrinTotal: 1000, shippingNanogrin: 0, shares: { sellerAmount: 1000 } }]),
+		)
 
 	return {
 		shippingData: {
@@ -328,7 +330,7 @@ describe('public order privacy guard', () => {
 			merchantPubkey: seller.pubkey,
 			buyerPubkey: currentBuyer.pubkey,
 			orderItems: [{ productRef: publicProductRef(seller.pubkey, 'product'), quantity: 1 }],
-			totalAmountSats: 1000,
+			totalAmountNanogrin: 1000,
 			shippingRef,
 			shippingAddress: baseShippingData,
 			email: baseShippingData.email,
@@ -478,7 +480,7 @@ describe('public order privacy guard', () => {
 					[seller.pubkey]: [{ id: 'physical-product', amount: 2, shippingMethodId: shippingRef }],
 				},
 				sellerData: {
-					[seller.pubkey]: { satsTotal: 5000, shippingSats: 1000, shares: { sellerAmount: 5000 } },
+					[seller.pubkey]: { nanogrinTotal: 5000, shippingNanogrin: 1000, shares: { sellerAmount: 5000 } },
 				},
 			}),
 		)

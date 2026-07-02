@@ -24,12 +24,12 @@ export const DEFAULT_STAGE_TARGETS: Record<Stage, StageTargets> = {
 		relayUrl: 'ws://127.0.0.1:10547',
 	},
 	staging: {
-		apiUrl: 'https://staging.plebeian.market/api/config',
-		relayUrl: 'wss://relay.staging.plebeian.market',
+		apiUrl: 'https://staging.magick.market/api/config',
+		relayUrl: 'wss://relay.staging.magick.market',
 	},
 	production: {
-		apiUrl: 'https://plebeian.market/api/config',
-		relayUrl: 'wss://relay.plebeian.market',
+		apiUrl: 'https://magick.market/api/config',
+		relayUrl: 'wss://relay.magick.market',
 	},
 }
 

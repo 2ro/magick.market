@@ -45,7 +45,7 @@ const [handlerEvents, adminEvents, editorEvents] = await Promise.all([
 	queryRelay(relayUrl, {
 		kinds: [31990],
 		authors: [appPubkey],
-		'#d': ['plebeian-market-handler'],
+		'#d': ['magick-market-handler'],
 	}),
 	queryRelay(relayUrl, {
 		kinds: [30000],

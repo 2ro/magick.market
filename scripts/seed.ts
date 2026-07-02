@@ -103,20 +103,20 @@ async function seedData() {
 	await appSigner.blockUntilReady()
 
 	const appProfile = {
-		name: 'plebeianmarket',
-		displayName: 'Plebeian Market',
-		image: 'https://plebeian.market/images/logo.svg',
-		banner: 'https://plebeian.market/banner.png',
-		about: 'The Plebeian Market - A decentralized marketplace built on Nostr. Trade freely with Bitcoin.',
-		nip05: 'plebeian@plebeian.market',
-		website: 'https://plebeian.market',
-		lud16: 'plebeianuser@coinos.io',
+		name: 'magickmarket',
+		displayName: 'Magick Market',
+		image: 'https://magick.market/images/logo.svg',
+		banner: 'https://magick.market/banner.png',
+		about: 'The Magick Market - A decentralized marketplace built on Nostr. Trade freely with Bitcoin.',
+		nip05: 'magick@magick.market',
+		website: 'https://magick.market',
+		lud16: 'magickuser@coinos.io',
 	}
 	await createUserProfileEvent(appSigner, ndk, appProfile)
 
 	// Use a fixed handler ID for client tags
 	// The actual handler information event is published during setup with app settings
-	const handlerId = 'plebeian-market-handler'
+	const handlerId = 'magick-market-handler'
 	console.log(`Using handler ID for client tags: ${handlerId}`)
 
 	// Create user profiles, products and shipping options for each user

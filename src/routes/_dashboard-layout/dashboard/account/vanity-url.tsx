@@ -13,9 +13,7 @@ import { VANITY_PRICING } from '@/server/VanityManager'
 import { AlertCircle, CheckCircle2, Clock, ExternalLink, Copy, Zap, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LightningPaymentProcessor } from '@/components/lightning/LightningPaymentProcessor'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { purchaseVanityForPubkey } from '@/lib/zapPurchase'
 
 export const Route = createFileRoute('/_dashboard-layout/dashboard/account/vanity-url')({
 	component: VanityUrlComponent,
@@ -179,22 +177,10 @@ function VanityUrlComponent() {
 			return
 		}
 
-		try {
-			const { pr, invoiceId } = await purchaseVanityForPubkey(
-				{ ndk, appPubkey: config.appPublicKey, appRelay: config.appRelay },
-				{ name: vanityName, amountSats: tier.sats },
-			)
-
-			setPaymentState({
-				isOpen: true,
-				invoice: pr,
-				amount: tier.sats,
-				invoiceId: invoiceId,
-			})
-		} catch (error) {
-			console.error('Payment error:', error)
-			toast.error(error instanceof Error ? error.message : 'Failed to create payment')
-		}
+		// Lightning purchases were removed with the GRIN-only migration.
+		// Grin-paid name registration is a follow-up; purchases are paused until then.
+		void tier
+		toast.info('Vanity URL purchases are paused while magick.market moves to Grin payments.')
 	}
 
 	if (!pubkey) {
@@ -372,29 +358,6 @@ function VanityUrlComponent() {
 								</div>
 							</CardContent>
 						</Card>
-						<Dialog open={paymentState.isOpen} onOpenChange={(open) => setPaymentState((prev) => ({ ...prev, isOpen: open }))}>
-							<DialogContent className="sm:max-w-md">
-								<DialogHeader>
-									<DialogTitle>Complete Payment</DialogTitle>
-								</DialogHeader>
-								<LightningPaymentProcessor
-									data={{
-										amount: paymentState.amount,
-										invoiceId: paymentState.invoiceId || 'vanity-reg',
-										description: `Vanity URL Registration: ${vanityName}`,
-										bolt11: paymentState.invoice,
-										isZap: true,
-										monitorZapReceipt: true,
-										requireZapReceipt: true,
-									}}
-									onPaymentComplete={() => {
-										setPaymentState((prev) => ({ ...prev, isOpen: false }))
-										toast.success('Zap confirmed! Your vanity URL is being registered.')
-									}}
-									onCancel={() => setPaymentState((prev) => ({ ...prev, isOpen: false }))}
-								/>
-							</DialogContent>
-						</Dialog>
 					</>
 				)}
 			</div>

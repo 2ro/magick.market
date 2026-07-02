@@ -47,18 +47,18 @@ The installer converges the host to this layout:
 After deploy, verify:
 
 ```bash
-curl -s -H 'Accept: application/nostr+json' https://relay.staging.plebeian.market/ | jq .
-ssh deployer@staging.plebeian.market 'sudo systemctl status market-relay --no-pager'
-ssh deployer@staging.plebeian.market 'sudo journalctl -u market-relay -n 50 --no-pager'
+curl -s -H 'Accept: application/nostr+json' https://relay.staging.magick.market/ | jq .
+ssh deployer@staging.magick.market 'sudo systemctl status market-relay --no-pager'
+ssh deployer@staging.magick.market 'sudo journalctl -u market-relay -n 50 --no-pager'
 ```
 
-For production, replace the hostname with `relay.plebeian.market`.
+For production, replace the hostname with `relay.magick.market`.
 
 ## Inspect App Setup Events
 
 The app setup flow writes these relay events:
 
-- app settings: `kind=31990`, `d=plebeian-market-handler`
+- app settings: `kind=31990`, `d=magick-market-handler`
 - admin list: `kind=30000`, `d=admins`
 - editor list: `kind=30000`, `d=editors`
 
@@ -92,21 +92,21 @@ bun run deploy:app-settings:publish -- \
 ### Staging
 
 ```bash
-nak req -k 31990 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=plebeian-market-handler wss://relay.staging.plebeian.market | jq '.content |= (fromjson? // .)'
+nak req -k 31990 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=magick-market-handler wss://relay.staging.magick.market | jq '.content |= (fromjson? // .)'
 
-nak req -k 30000 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=admins wss://relay.staging.plebeian.market | jq '{id, created_at, pubkey, admins: [.tags[] | select(.[0] == "p") | .[1]]}'
+nak req -k 30000 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=admins wss://relay.staging.magick.market | jq '{id, created_at, pubkey, admins: [.tags[] | select(.[0] == "p") | .[1]]}'
 
-nak req -k 30000 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=editors wss://relay.staging.plebeian.market | jq '{id, created_at, pubkey, editors: [.tags[] | select(.[0] == "p") | .[1]]}'
+nak req -k 30000 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=editors wss://relay.staging.magick.market | jq '{id, created_at, pubkey, editors: [.tags[] | select(.[0] == "p") | .[1]]}'
 ```
 
 ### Production
 
 ```bash
-nak req -k 31990 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=plebeian-market-handler wss://relay.plebeian.market | jq '.content |= (fromjson? // .)'
+nak req -k 31990 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=magick-market-handler wss://relay.magick.market | jq '.content |= (fromjson? // .)'
 
-nak req -k 30000 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=admins wss://relay.plebeian.market | jq '{id, created_at, pubkey, admins: [.tags[] | select(.[0] == "p") | .[1]]}'
+nak req -k 30000 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=admins wss://relay.magick.market | jq '{id, created_at, pubkey, admins: [.tags[] | select(.[0] == "p") | .[1]]}'
 
-nak req -k 30000 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=editors wss://relay.plebeian.market | jq '{id, created_at, pubkey, editors: [.tags[] | select(.[0] == "p") | .[1]]}'
+nak req -k 30000 -a 7b3979f5936f590541eb4f51c2ce3094194d1c57386e706dd05aca98766a7ceb --tag d=editors wss://relay.magick.market | jq '{id, created_at, pubkey, editors: [.tags[] | select(.[0] == "p") | .[1]]}'
 ```
 
 If a command prints nothing beyond the relay connection line, that event is not
@@ -139,13 +139,13 @@ Examples:
 
 ```bash
 # Migrate bug reports into the main app relay
-SOURCE_RELAYS=wss://bugs.plebeian.market \
-TARGET_RELAYS=wss://relay.plebeian.market \
+SOURCE_RELAYS=wss://bugs.magick.market \
+TARGET_RELAYS=wss://relay.magick.market \
 TAG_T=plebian2beta \
 bun run scripts/migrate-relay.ts
 
 # Full relay copy
-SOURCE_RELAYS=wss://relay.plebeian.market \
+SOURCE_RELAYS=wss://relay.magick.market \
 TARGET_RELAYS=wss://relay-new.internal.example \
 bun run scripts/migrate-relay.ts
 ```

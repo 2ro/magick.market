@@ -1,3 +1,4 @@
+import { formatGrinAmount } from '@/lib/grin'
 import type { NDKEvent } from '@nostr-dev-kit/ndk'
 import { format } from 'date-fns' // For formatting timestamp
 import {
@@ -329,7 +330,7 @@ const OrderCreationMessage = ({ event }: { event: NDKEvent }) => {
 			)}
 			{amount && (
 				<p>
-					<strong>Amount:</strong> {amount} sats
+					<strong>Amount:</strong> {formatGrinAmount(parseInt(amount))}
 				</p>
 			)}
 			{items.length > 0 && (
@@ -385,7 +386,7 @@ const PaymentRequestMessage = ({ event }: { event: NDKEvent }) => {
 			)}
 			{amount && (
 				<p>
-					<strong>Amount:</strong> {amount} sats
+					<strong>Amount:</strong> {formatGrinAmount(parseInt(amount))}
 				</p>
 			)}
 			{paymentOptions.length > 0 && (
@@ -491,7 +492,7 @@ const PaymentReceiptMessage = ({ event }: { event: NDKEvent }) => {
 			)}
 			{amount && (
 				<p>
-					<strong>Amount:</strong> {amount} sats
+					<strong>Amount:</strong> {formatGrinAmount(parseInt(amount))}
 				</p>
 			)}
 			{payments.length > 0 && (

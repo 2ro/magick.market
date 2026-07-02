@@ -14,8 +14,8 @@ export type Stage = 'production' | 'staging' | 'development'
  * Main relay URL per stage - this is the primary relay for each environment
  */
 export const MAIN_RELAY_BY_STAGE: Record<Stage, string> = {
-	production: 'wss://relay.plebeian.market',
-	staging: 'wss://relay.staging.plebeian.market',
+	production: 'wss://relay.magick.market',
+	staging: 'wss://relay.staging.magick.market',
 	development: 'ws://localhost:10547',
 }
 
@@ -24,7 +24,7 @@ export const MAIN_RELAY_BY_STAGE: Record<Stage, string> = {
  * These are used for reading events from the broader Nostr network
  */
 export const DEFAULT_NIP46_RELAYS = [
-	{ value: 'wss://relay.plebeian.market', label: 'relay.plebeian.market' },
+	{ value: 'wss://relay.magick.market', label: 'relay.magick.market' },
 	{ value: 'wss://relay.nsec.app', label: 'relay.nsec.app' },
 	{ value: 'wss://relay.damus.io', label: 'relay.damus.io' },
 	{ value: 'wss://nos.lol', label: 'nos.lol' },
@@ -48,7 +48,7 @@ export const DEFAULT_PUBLIC_RELAYS: string[] = [
 export const defaultRelaysUrls: string[] = DEFAULT_PUBLIC_RELAYS
 
 // Bug reports relay - always writable even in staging
-export const BUG_RELAY = 'wss://bugs.plebeian.market/'
+export const BUG_RELAY = 'wss://bugs.magick.market/'
 
 // Dedicated zap detection relays
 export const ZAP_RELAYS = [
@@ -61,36 +61,9 @@ export const ZAP_RELAYS = [
 	'wss://relay.primal.net',
 ]
 
+// GRIN is the only currency on magick.market. 1 GRIN = 10^9 nanogrin (see src/lib/grin.ts).
 export const CURRENCIES = [
-	'SATS', // Satoshis
-	'BTC', // Bitcoin
-	'USD', // United States Dollar
-	'EUR', // Euro
-	'JPY', // Japanese Yen
-	'GBP', // Pound Sterling
-	'CHF', // Swiss Franc
-	'CNY', // Chinese Renminbi (RMB)
-	'AUD', // Australian Dollar
-	'CAD', // Canadian Dollar
-	'HKD', // Hong Kong Dollar
-	'SGD', // Singapore Dollar
-	'INR', // Indian Rupee
-	'MXN', // Mexican Peso
-	'RUB', // Russian Ruble
-	'BRL', // Brazilian Real
-	'TRY', // Turkish Lira
-	'KRW', // South Korean Won
-	'ZAR', // South African Rand
-	'ARS', // Argentine Peso
-	'CLP', // Chilean Peso
-	'COP', // Colombian Peso
-	'PEN', // Peruvian Sol
-	'UYU', // Uruguayan Peso
-	'PHP', // Philippine Peso
-	'THB', // Thai Baht
-	'IDR', // Indonesian Rupiah
-	'MYR', // Malaysian Ringgit
-	'NGN', // Nigerian Naira
+	'GRIN', // Grin
 ] as const
 
 const CURRENCY_CVM_RELAYS = ['wss://relay.contextvm.org']
@@ -109,20 +82,15 @@ export function getCurrencyServerRelays(): string[] {
 
 export { resolveCvmServerPubkey as CVM_SERVER_PUBKEY_RESOLVER } from './cvm-identity'
 
-export const DEFAULT_ZAP_AMOUNTS = [
-	{ displayText: '😊 21 sats', amount: 21 },
-	{ displayText: '🚀 210 sats', amount: 210 },
-	{ displayText: '🔥 2100 sats', amount: 2100 },
-]
-
 export const HEX_KEYS_REGEX = /^(?:[0-9a-fA-F]{64})$/
 export const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
+/**
+ * GRIN is the sole payment method. A seller's payment detail is their Goblin
+ * payment address: an nprofile (Grin-over-Nostr, preferred) or a slatepack address.
+ */
 export const PAYMENT_DETAILS_METHOD = {
-	LIGHTNING_NETWORK: 'ln',
-	// ON_CHAIN: 'on-chain',
-	// CASHU: 'cashu',
-	// OTHER: 'other',
+	GRIN: 'grin',
 } as const
 
 export type PaymentDetailsMethod = ObjectValues<typeof PAYMENT_DETAILS_METHOD>

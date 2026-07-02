@@ -33,16 +33,16 @@ export function ShareDialog({ open, onOpenChange, event, title, description }: S
 	useEffect(() => {
 		if (open) {
 			const defaultText = title
-				? `Check out "${title}" on Plebeian!
+				? `Check out "${title}" on Magick!
 
 ${eventUrl}
 
-#plebeian`
+#magick`
 				: `Check out this Nostr event!
 
 ${eventUrl}
 
-#plebeian`
+#magick`
 			setShareText(defaultText)
 			setIsCopied(false)
 		}
@@ -87,7 +87,7 @@ ${eventUrl}
 			eventToPost.tags = [
 				['e', event.id], // Reference to the original event
 				['p', event.pubkey], // Original author
-				['t', 'plebeian'], // Hashtag for discoverability
+				['t', 'magick'], // Hashtag for discoverability
 			]
 
 			// Sign the event with timeout

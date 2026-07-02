@@ -1,10 +1,8 @@
-import { CurrencyDropdown } from '@/components/CurrencyDropdown'
 import { MobileMenu } from '@/components/layout/MobileMenu'
 import { ProductSearch } from '@/components/ProductSearch'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Nip60Wallet } from '@/feature/wallet/components/Nip60Wallet'
 import { useBreakpoint } from '@/hooks/useBreakpoint'
 import { authActions, authStore } from '@/lib/stores/auth'
 import { notificationStore } from '@/lib/stores/notifications'
@@ -12,7 +10,7 @@ import { uiActions, uiStore } from '@/lib/stores/ui'
 import { useConfigQuery } from '@/queries/config'
 import { Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useStore } from '@tanstack/react-store'
-import { Loader2, LogOut, Menu, Wallet, X } from 'lucide-react'
+import { Loader2, LogOut, Menu, X } from 'lucide-react'
 import { forwardRef, useEffect, useState } from 'react'
 import { cartStore } from '@/lib/stores/cart'
 import { AvatarUser } from '@/components/AvatarUser'
@@ -144,26 +142,6 @@ const DashboardButton = forwardRef<HTMLButtonElement, DashboardButtonProps>((pro
 		</Link>
 	)
 })
-
-function WalletButton() {
-	return (
-		<Popover>
-			<PopoverTrigger asChild>
-				<TooltipButton
-					tooltip="Wallet"
-					className="relative p-2 btn-border-highlight w-11 h-10 hover:[&>svg]:text-secondary"
-					data-testid="wallet-button"
-				>
-					<Wallet className="size-4" />
-				</TooltipButton>
-			</PopoverTrigger>
-
-			<PopoverContent className="bg-primary rounded-lg w-[calc(100vw-2rem)] md:w-96" align="end">
-				<Nip60Wallet />
-			</PopoverContent>
-		</Popover>
-	)
-}
 
 interface BugReportButtonProps {
 	className?: string
@@ -336,7 +314,6 @@ export function Header() {
 						)}
 
 						{/* Currency Selector - Desktop Only */}
-						{!isMobile && <CurrencyDropdown />}
 
 						{/* Cart Button */}
 						<CartButton />
@@ -345,7 +322,6 @@ export function Header() {
 						{isAuthenticated && !isMobile && <DashboardButton totalNotifications={totalNotifications} />}
 
 						{/* Wallet Button - Desktop & authenticated only */}
-						{isAuthenticated && !isMobile && <WalletButton />}
 
 						{/* Profile Button/Avatar, or Log-In Button if not authenticated */}
 						{isAuthenticating ? (

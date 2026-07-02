@@ -20,7 +20,7 @@ export function Footer() {
 						<img src="/images/ostrich.svg" alt="Ostrich" className="h-6 w-6" />
 					</a>
 					<a
-						href="https://twitter.com/PlebeianMarket"
+						href="https://twitter.com/MagickMarket"
 						className="border-none hover:bg-secondary p-1 inline-flex justify-center items-center"
 						target="_blank"
 						rel="noopener noreferrer"
@@ -29,7 +29,7 @@ export function Footer() {
 					</a>
 					<a
 						className="border-none hover:bg-secondary p-1 inline-flex justify-center items-center"
-						href="https://plebeianmarket.substack.com/"
+						href="https://magickmarket.substack.com/"
 						target="_blank"
 						rel="noopener noreferrer"
 					>
@@ -37,7 +37,7 @@ export function Footer() {
 					</a>
 					<a
 						className="border-none hover:bg-secondary p-1 inline-flex justify-center items-center"
-						href="https://t.me/PlebeianMarket"
+						href="https://t.me/MagickMarket"
 						target="_blank"
 						rel="noopener noreferrer"
 					>
@@ -45,7 +45,7 @@ export function Footer() {
 					</a>
 					<a
 						className="border-none hover:bg-secondary p-1 inline-flex justify-center items-center"
-						href="https://github.com/PlebeianApp/market"
+						href="https://github.com/MagickApp/market"
 						target="_blank"
 						rel="noopener noreferrer"
 					>

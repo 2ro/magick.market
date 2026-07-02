@@ -14,13 +14,13 @@ Copies events from one relay to another at the Nostr protocol layer.
 
 ```bash
 # Migrate bug reports onto the standard app relay
-SOURCE_RELAYS=wss://bugs.plebeian.market \
-TARGET_RELAYS=wss://relay.plebeian.market \
+SOURCE_RELAYS=wss://bugs.magick.market \
+TARGET_RELAYS=wss://relay.magick.market \
 TAG_T=plebian2beta \
 bun run scripts/migrate-relay.ts
 
 # Full relay migration
-SOURCE_RELAYS=wss://relay.plebeian.market \
+SOURCE_RELAYS=wss://relay.magick.market \
 TARGET_RELAYS=wss://relay-new.internal.example \
 bun run scripts/migrate-relay.ts
 ```

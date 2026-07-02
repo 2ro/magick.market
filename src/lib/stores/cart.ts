@@ -1,8 +1,7 @@
-import { CURRENCIES, HEX_KEYS_REGEX } from '@/lib/constants'
+import { HEX_KEYS_REGEX } from '@/lib/constants'
 import { normalizePersistedCart, rehydrateCartFromLiveData, serializeCartIntent } from '@/lib/cart-persistence'
+import { GRIN_CURRENCY, grinToNanogrin } from '@/lib/grin'
 import { fetchLatestCartSnapshot } from '@/queries/cart'
-import type { SupportedCurrency } from '@/queries/external'
-import { btcExchangeRatesQueryOptions, currencyConversionQueryOptions } from '@/queries/external'
 import { getProductId, getProductPrice, getProductSellerPubkey, productQueryOptions, productByATagQueryOptions } from '@/queries/products'
 import {
 	getShippingInfo,
@@ -100,9 +99,9 @@ export interface NormalizedCart {
 }
 
 export interface CartTotals {
-	subtotalInSats: number
-	shippingInSats: number
-	totalInSats: number
+	subtotalInNanogrin: number
+	shippingInNanogrin: number
+	totalInNanogrin: number
 	currencyTotals: Record<string, { subtotal: number; shipping: number; total: number }>
 }
 
@@ -112,15 +111,15 @@ interface CartState {
 	sellerData: Record<
 		string,
 		{
-			satsTotal: number
+			nanogrinTotal: number
 			currencyTotals: Record<string, number>
 			shares: { sellerAmount: number; communityAmount: number; sellerPercentage: number }
-			shippingSats: number
+			shippingNanogrin: number
 		}
 	>
 	productsBySeller: Record<string, CartProduct[]>
-	totalInSats: number
-	totalShippingInSats: number
+	totalInNanogrin: number
+	totalShippingInNanogrin: number
 	subtotalByCurrency: Record<string, number>
 	shippingByCurrency: Record<string, number>
 	totalByCurrency: Record<string, number>
@@ -168,8 +167,8 @@ const initialState: CartState = {
 	v4vShares: {},
 	sellerData: {},
 	productsBySeller: {},
-	totalInSats: 0,
-	totalShippingInSats: 0,
+	totalInNanogrin: 0,
+	totalShippingInNanogrin: 0,
 	subtotalByCurrency: {},
 	shippingByCurrency: {},
 	totalByCurrency: {},
@@ -265,7 +264,6 @@ const initialCartState: CartState = {
 	lastCartIntentUpdatedAt: loadInitialCartIntentUpdatedAt(),
 }
 
-const numSatsInBtc = 100000000 // 100 million sats in 1 BTC
 let cartRemotePublishDebounceMs = 500
 let remotePublishTimeout: ReturnType<typeof setTimeout> | null = null
 
@@ -993,39 +991,27 @@ export const cartActions = {
 		cartActions.scheduleRemotePublish()
 	},
 
-	convertToSats: async (currency: string, amount: number): Promise<number> => {
-		if (!currency || !amount || amount <= 0.0001) return 0
+	/**
+	 * Convert a decimal GRIN amount to integer nanogrin (the app's base unit).
+	 * GRIN is the only currency on magick.market; anything else is rejected.
+	 */
+	convertToNanogrin: async (currency: string, amount: number): Promise<number> => {
+		if (!currency || !amount || amount <= 0) return 0
 
-		if (['sats', 'sat'].includes(currency.toLowerCase())) {
-			return Math.round(amount)
+		if (currency.toUpperCase() === GRIN_CURRENCY) {
+			return grinToNanogrin(amount)
 		}
 
-		if (currency.toUpperCase() === 'BTC') {
-			return Math.round(amount * numSatsInBtc)
-		}
-
-		try {
-			if (CURRENCIES.includes(currency as any)) {
-				const queryOptions = currencyConversionQueryOptions(currency, amount)
-				const result = await cartQueryClient.fetchQuery(queryOptions)
-
-				return Math.round(result || 0)
-			} else {
-				console.warn(`Unsupported currency: ${currency}`)
-				return 0
-			}
-		} catch (error) {
-			console.error(`Currency conversion failed for ${currency}:`, error)
-			return 0
-		}
+		console.warn(`Unsupported currency: ${currency} (magick.market is GRIN-only)`)
+		return 0
 	},
 
 	calculateProductTotal: async (
 		productId: string,
 	): Promise<{
-		subtotalInSats: number
-		shippingInSats: number
-		totalInSats: number
+		subtotalInNanogrin: number
+		shippingInNanogrin: number
+		totalInNanogrin: number
 		subtotalInCurrency: number
 		shippingInCurrency: number
 		totalInCurrency: number
@@ -1036,9 +1022,9 @@ export const cartActions = {
 
 		if (!product) {
 			return {
-				subtotalInSats: 0,
-				shippingInSats: 0,
-				totalInSats: 0,
+				subtotalInNanogrin: 0,
+				shippingInNanogrin: 0,
+				totalInNanogrin: 0,
 				subtotalInCurrency: 0,
 				shippingInCurrency: 0,
 				totalInCurrency: 0,
@@ -1054,7 +1040,7 @@ export const cartActions = {
 
 			const priceTag = getProductPrice(event)
 			const price = priceTag ? parseFloat(priceTag[1]) : 0
-			const productCurrency = priceTag ? priceTag[2] : 'USD'
+			const productCurrency = priceTag ? priceTag[2] : GRIN_CURRENCY
 
 			const productTotalInCurrency = price * product.amount
 
@@ -1081,13 +1067,13 @@ export const cartActions = {
 				}
 			}
 
-			const subtotalInSats = await cartActions.convertToSats(productCurrency, productTotalInCurrency)
-			const shippingInSats = await cartActions.convertToSats(actualShippingCostCurrency, shippingCostInFiat)
+			const subtotalInNanogrin = await cartActions.convertToNanogrin(productCurrency, productTotalInCurrency)
+			const shippingInNanogrin = await cartActions.convertToNanogrin(actualShippingCostCurrency, shippingCostInFiat)
 
 			return {
-				subtotalInSats: Math.round(subtotalInSats),
-				shippingInSats: Math.round(shippingInSats),
-				totalInSats: Math.round(subtotalInSats + shippingInSats),
+				subtotalInNanogrin: Math.round(subtotalInNanogrin),
+				shippingInNanogrin: Math.round(shippingInNanogrin),
+				totalInNanogrin: Math.round(subtotalInNanogrin + shippingInNanogrin),
 				subtotalInCurrency: productTotalInCurrency,
 				shippingInCurrency: shippingCostInFiat,
 				totalInCurrency: productTotalInCurrency + shippingCostInFiat,
@@ -1096,13 +1082,13 @@ export const cartActions = {
 		} catch (error) {
 			console.error(`Error calculating product total for ${productId}:`, error)
 			return {
-				subtotalInSats: 0,
-				shippingInSats: 0,
-				totalInSats: 0,
+				subtotalInNanogrin: 0,
+				shippingInNanogrin: 0,
+				totalInNanogrin: 0,
 				subtotalInCurrency: 0,
 				shippingInCurrency: 0,
 				totalInCurrency: 0,
-				currency: 'USD',
+				currency: GRIN_CURRENCY,
 			}
 		}
 	},
@@ -1112,17 +1098,17 @@ export const cartActions = {
 		const products = Object.values(state.cart.products)
 		if (products.length === 0) return null
 
-		let subtotalInSats = 0
-		let shippingInSats = 0
-		let totalInSats = 0
+		let subtotalInNanogrin = 0
+		let shippingInNanogrin = 0
+		let totalInNanogrin = 0
 		const currencyTotals: Record<string, { subtotal: number; shipping: number; total: number }> = {}
 
 		const productTotals = await Promise.all(products.map((product) => cartActions.calculateProductTotal(product.id)))
 
 		for (const productTotal of productTotals) {
-			subtotalInSats += productTotal.subtotalInSats
-			shippingInSats += productTotal.shippingInSats
-			totalInSats += productTotal.totalInSats
+			subtotalInNanogrin += productTotal.subtotalInNanogrin
+			shippingInNanogrin += productTotal.shippingInNanogrin
+			totalInNanogrin += productTotal.totalInNanogrin
 
 			if (!currencyTotals[productTotal.currency]) {
 				currencyTotals[productTotal.currency] = { subtotal: 0, shipping: 0, total: 0 }
@@ -1132,16 +1118,16 @@ export const cartActions = {
 			currencyTotals[productTotal.currency].total += productTotal.totalInCurrency
 		}
 
-		return { subtotalInSats, shippingInSats, totalInSats, currencyTotals }
+		return { subtotalInNanogrin, shippingInNanogrin, totalInNanogrin, currencyTotals }
 	},
 
 	calculateGrandTotal: async () => {
 		const state = cartStore.state
 		if (Object.keys(state.cart.products).length === 0) {
 			return {
-				grandSubtotalInSats: 0,
-				grandShippingInSats: 0,
-				grandTotalInSats: 0,
+				grandSubtotalInNanogrin: 0,
+				grandShippingInNanogrin: 0,
+				grandTotalInNanogrin: 0,
 				currencyTotals: {},
 			}
 		}
@@ -1151,17 +1137,17 @@ export const cartActions = {
 
 		if (!buyerTotal) {
 			return {
-				grandSubtotalInSats: 0,
-				grandShippingInSats: 0,
-				grandTotalInSats: 0,
+				grandSubtotalInNanogrin: 0,
+				grandShippingInNanogrin: 0,
+				grandTotalInNanogrin: 0,
 				currencyTotals: {},
 			}
 		}
 
 		return {
-			grandSubtotalInSats: buyerTotal.subtotalInSats,
-			grandShippingInSats: buyerTotal.shippingInSats,
-			grandTotalInSats: buyerTotal.totalInSats,
+			grandSubtotalInNanogrin: buyerTotal.subtotalInNanogrin,
+			grandShippingInNanogrin: buyerTotal.shippingInNanogrin,
+			grandTotalInNanogrin: buyerTotal.totalInNanogrin,
 			currencyTotals: buyerTotal.currencyTotals,
 		}
 	},
@@ -1292,16 +1278,16 @@ export const cartActions = {
 		const state = cartStore.state
 		const sellerData = state.sellerData
 
-		let subtotalInSats = 0
-		let totalShippingInSats = 0
+		let subtotalInNanogrin = 0
+		let totalShippingInNanogrin = 0
 		const subtotalByCurrency: Record<string, number> = {}
 		const shippingByCurrency: Record<string, number> = {}
 		const totalByCurrency: Record<string, number> = {}
 
 		try {
 			for (const [sellerPubkey, data] of Object.entries(sellerData)) {
-				if (data.shippingSats > 0) {
-					totalShippingInSats += Math.round(data.shippingSats)
+				if (data.shippingNanogrin > 0) {
+					totalShippingInNanogrin += Math.round(data.shippingNanogrin)
 				}
 			}
 
@@ -1309,7 +1295,7 @@ export const cartActions = {
 				try {
 					const productTotal = await cartActions.calculateProductTotal(productId)
 
-					subtotalInSats += productTotal.subtotalInSats
+					subtotalInNanogrin += productTotal.subtotalInNanogrin
 
 					const currency = productTotal.currency
 					if (currency) {
@@ -1323,7 +1309,7 @@ export const cartActions = {
 				}
 			}
 
-			const totalInSats = subtotalInSats + totalShippingInSats
+			const totalInNanogrin = subtotalInNanogrin + totalShippingInNanogrin
 
 			for (const currency of Object.keys(subtotalByCurrency)) {
 				const subtotal = subtotalByCurrency[currency] || 0
@@ -1333,8 +1319,8 @@ export const cartActions = {
 
 			cartStore.setState((state) => ({
 				...state,
-				totalInSats,
-				totalShippingInSats,
+				totalInNanogrin,
+				totalShippingInNanogrin,
 				subtotalByCurrency,
 				shippingByCurrency,
 				totalByCurrency,
@@ -1390,18 +1376,18 @@ export const cartActions = {
 		const state = cartStore.state
 		const product = state.cart.products[productId]
 		if (!product) {
-			return { value: 0, currency: 'USD' }
+			return { value: 0, currency: GRIN_CURRENCY }
 		}
 
 		try {
 			const event = await getProductEvent(productId, product.sellerPubkey)
 			if (!event) {
-				return { value: 0, currency: 'USD' }
+				return { value: 0, currency: GRIN_CURRENCY }
 			}
 
 			const priceTag = getProductPrice(event)
 			const price = priceTag ? parseFloat(priceTag[1]) : 0
-			const currency = priceTag ? priceTag[2] : 'USD'
+			const currency = priceTag ? priceTag[2] : GRIN_CURRENCY
 
 			return {
 				value: price * product.amount,
@@ -1409,7 +1395,7 @@ export const cartActions = {
 			}
 		} catch (error) {
 			console.error(`Error calculating product subtotal for ${productId}:`, error)
-			return { value: 0, currency: 'USD' }
+			return { value: 0, currency: GRIN_CURRENCY }
 		}
 	},
 
@@ -1462,24 +1448,6 @@ export const cartActions = {
 		return { sellerAmount, communityAmount, sellerPercentage }
 	},
 
-	convertWithExchangeRate: (amount: number, currency: string, exchangeRates: any): number => {
-		if (!exchangeRates || !amount) return 0
-
-		const upperCurrency = currency.toUpperCase()
-
-		if (upperCurrency === 'SATS') return Math.round(amount)
-		if (upperCurrency === 'BTC') return Math.round(amount * numSatsInBtc)
-
-		const rate = exchangeRates[upperCurrency]
-		if (!rate) {
-			console.warn(`Exchange rate not found for ${upperCurrency}`)
-			return 0
-		}
-
-		const sats = (amount / rate) * numSatsInBtc
-		return Math.round(sats)
-	},
-
 	updateSellerData: async () => {
 		const state = cartStore.state
 		const { productsBySeller } = state
@@ -1489,23 +1457,16 @@ export const cartActions = {
 			cartActions.groupProductsBySeller()
 		}
 
-		let exchangeRates: Record<SupportedCurrency, number> | undefined
-		try {
-			exchangeRates = await cartQueryClient.fetchQuery(btcExchangeRatesQueryOptions)
-		} catch (error) {
-			console.warn('Failed to get exchange rates for seller data calculations:', error)
-		}
-
 		for (const [sellerPubkey, products] of Object.entries(state.productsBySeller)) {
 			if (products.length > 0) {
 				let sellerTotal = 0
 				const currencyTotals: Record<string, number> = {}
-				let shippingSats = 0
+				let shippingNanogrin = 0
 
 				for (const product of products) {
 					try {
 						const productTotal = await cartActions.calculateProductTotal(product.id)
-						sellerTotal += productTotal.subtotalInSats
+						sellerTotal += productTotal.subtotalInNanogrin
 
 						if (productTotal.currency) {
 							const currency = productTotal.currency
@@ -1535,31 +1496,8 @@ export const cartActions = {
 							// Only proceed if we have a valid shipping cost and currency
 							if (fiatShippingCost > 0 && actualShippingCostCurrency) {
 								try {
-									let convertedShippingSats = 0
-									const upperShippingCurrency = actualShippingCostCurrency.toUpperCase()
-
-									// Handle sats currency directly
-									if (['SATS', 'SAT'].includes(upperShippingCurrency)) {
-										convertedShippingSats = Math.round(fiatShippingCost)
-									} else if (CURRENCIES.includes(upperShippingCurrency as SupportedCurrency)) {
-										if (exchangeRates) {
-											if (exchangeRates[upperShippingCurrency as SupportedCurrency] !== undefined) {
-												convertedShippingSats = cartActions.convertWithExchangeRate(
-													fiatShippingCost,
-													actualShippingCostCurrency,
-													exchangeRates,
-												)
-											} else {
-												convertedShippingSats = await cartActions.convertToSats(actualShippingCostCurrency, fiatShippingCost)
-											}
-										} else {
-											convertedShippingSats = await cartActions.convertToSats(actualShippingCostCurrency, fiatShippingCost)
-										}
-									} else {
-										console.warn(`Unsupported shipping currency: ${actualShippingCostCurrency}`)
-									}
-
-									shippingSats += convertedShippingSats
+									const convertedShippingSats = await cartActions.convertToNanogrin(actualShippingCostCurrency, fiatShippingCost)
+									shippingNanogrin += convertedShippingSats
 								} catch (error) {
 									console.error(`Failed to convert shipping cost in updateSellerData for product ${product.id}: ${error}`)
 								}
@@ -1575,18 +1513,18 @@ export const cartActions = {
 
 				// Add shipping cost entirely to seller's amount (shipping is not shared with V4V)
 				const adjustedShares = {
-					sellerAmount: shares.sellerAmount + shippingSats,
+					sellerAmount: shares.sellerAmount + shippingNanogrin,
 					communityAmount: shares.communityAmount, // V4V shares stay the same
 					sellerPercentage: shares.sellerPercentage, // Keep original percentage for display
 				}
 
-				const totalWithShipping = sellerTotal + shippingSats
+				const totalWithShipping = sellerTotal + shippingNanogrin
 
 				newSellerData[sellerPubkey] = {
-					satsTotal: totalWithShipping,
+					nanogrinTotal: totalWithShipping,
 					currencyTotals,
 					shares: adjustedShares,
-					shippingSats,
+					shippingNanogrin,
 				}
 			}
 		}
@@ -1845,7 +1783,7 @@ export function useCartTotals() {
 	const state = useStore(cartStore)
 
 	useEffect(() => {
-		if (Object.keys(state.cart.products).length > 0 && (state.totalInSats === 0 || Object.keys(state.sellerData).length === 0)) {
+		if (Object.keys(state.cart.products).length > 0 && (state.totalInNanogrin === 0 || Object.keys(state.sellerData).length === 0)) {
 			cartActions.groupProductsBySeller()
 			cartActions.updateSellerData()
 		}
@@ -1856,7 +1794,7 @@ export function useCartTotals() {
 		subtotalByCurrency: state.subtotalByCurrency,
 		shippingByCurrency: state.shippingByCurrency,
 		totalByCurrency: state.totalByCurrency,
-		totalInSats: state.totalInSats,
+		totalInNanogrin: state.totalInNanogrin,
 	}
 }
 

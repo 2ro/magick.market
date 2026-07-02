@@ -38,7 +38,7 @@ async function main() {
 			defaultCurrency: 'USD',
 		}),
 		tags: [
-			['d', 'plebeian-market-handler'],
+			['d', 'magick-market-handler'],
 			['k', '30402'],
 			['k', '30405'],
 			['k', '30406'],

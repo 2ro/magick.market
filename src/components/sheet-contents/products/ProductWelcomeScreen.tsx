@@ -7,7 +7,7 @@ export function ProductWelcomeScreen({ onGetStarted }: { onGetStarted: () => voi
 			<div />
 			<div className="flex flex-col justify-center items-center gap-4">
 				<div className="flex justify-center mt-8">
-					<img src="/images/logo.svg" alt="Plebeian Market Logo" className="w-16 h-16" />
+					<img src="/images/logo.svg" alt="Magick Market Logo" className="w-16 h-16" />
 				</div>
 
 				<h1 className="text-2xl font-heading text-balance text-center">WELCOME TO</h1>

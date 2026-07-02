@@ -83,7 +83,7 @@ function privateOrderDetails(
 		orderId: 'order-123',
 		buyerPubkey,
 		sellerPubkey,
-		totalAmountSats: 2100,
+		totalAmountNanogrin: 2100,
 		shippingRef: `30406:${sellerPubkey}:standard`,
 		items: [{ productRef: `30402:${sellerPubkey}:product-1`, quantity: 2 }],
 		delivery: {
@@ -113,7 +113,7 @@ function publicOrderEvent(
 		['subject', 'order-info'],
 		['type', '1'],
 		['order', details.orderId],
-		['amount', String(details.totalAmountSats)],
+		['amount', String(details.totalAmountNanogrin)],
 		...details.items.map((item) => ['item', item.productRef, String(item.quantity)]),
 	]
 	if (details.shippingRef) tags.push(['shipping', details.shippingRef])
@@ -218,7 +218,7 @@ describe('seller private order details query helpers', () => {
 				['p', seller.pubkey],
 				['subject', 'order-info'],
 				['order', details.orderId],
-				['amount', String(details.totalAmountSats)],
+				['amount', String(details.totalAmountNanogrin)],
 				['item', details.items[0].productRef, String(details.items[0].quantity)],
 				['shipping', details.shippingRef!],
 			],
@@ -229,7 +229,7 @@ describe('seller private order details query helpers', () => {
 				['subject', 'order-info'],
 				['type', '2'],
 				['order', details.orderId],
-				['amount', String(details.totalAmountSats)],
+				['amount', String(details.totalAmountNanogrin)],
 				['item', details.items[0].productRef, String(details.items[0].quantity)],
 				['shipping', details.shippingRef!],
 			],
@@ -250,7 +250,7 @@ describe('seller private order details query helpers', () => {
 			['subject', 'order-info'],
 			['type', '1'],
 			['order', details.orderId],
-			['amount', String(details.totalAmountSats)],
+			['amount', String(details.totalAmountNanogrin)],
 			['item', details.items[0].productRef, String(details.items[0].quantity)],
 			['shipping', details.shippingRef!],
 		]
@@ -258,7 +258,7 @@ describe('seller private order details query helpers', () => {
 		for (const duplicateTag of [
 			['type', '1'],
 			['order', details.orderId],
-			['amount', String(details.totalAmountSats)],
+			['amount', String(details.totalAmountNanogrin)],
 			['p', seller.pubkey],
 		]) {
 			const order = publicOrderEvent(details, buyer.privateKey, { tags: [...baseTags, duplicateTag] })
@@ -274,7 +274,7 @@ describe('seller private order details query helpers', () => {
 			['p', seller.pubkey],
 			['type', '1'],
 			['order', details.orderId],
-			['amount', String(details.totalAmountSats)],
+			['amount', String(details.totalAmountNanogrin)],
 			['item', details.items[0].productRef, String(details.items[0].quantity)],
 			['shipping', details.shippingRef!],
 		]
@@ -311,7 +311,7 @@ describe('seller private order details query helpers', () => {
 				['subject', 'order-info'],
 				['type', '1'],
 				['order', details.orderId],
-				['amount', String(details.totalAmountSats)],
+				['amount', String(details.totalAmountNanogrin)],
 				['item', `30402:${otherSeller.pubkey}:product-1`, '2'],
 				['shipping', `30406:${otherSeller.pubkey}:standard`],
 			],
@@ -324,7 +324,7 @@ describe('seller private order details query helpers', () => {
 		const buyer = keyPair()
 		const seller = keyPair()
 		const details = privateOrderDetails(buyer.pubkey, seller.pubkey)
-		const order = publicOrderEvent({ ...details, totalAmountSats: details.totalAmountSats + 1 }, buyer.privateKey)
+		const order = publicOrderEvent({ ...details, totalAmountNanogrin: details.totalAmountNanogrin + 1 }, buyer.privateKey)
 
 		expect(privateDetailsMatchPublicOrder(details, order)).toBe(false)
 	})
@@ -340,7 +340,7 @@ describe('seller private order details query helpers', () => {
 				['subject', 'order-info'],
 				['type', '1'],
 				['order', details.orderId],
-				['amount', String(details.totalAmountSats)],
+				['amount', String(details.totalAmountNanogrin)],
 				['item', `30402:${seller.pubkey}:other-product`, '2'],
 				['shipping', details.shippingRef!],
 			],
@@ -368,7 +368,7 @@ describe('seller private order details query helpers', () => {
 				['subject', 'order-info'],
 				['type', '1'],
 				['order', details.orderId],
-				['amount', String(details.totalAmountSats)],
+				['amount', String(details.totalAmountNanogrin)],
 				['item', productB, '1'],
 				['item', productA, '2'],
 				['shipping', details.shippingRef!],
@@ -394,7 +394,7 @@ describe('seller private order details query helpers', () => {
 				['subject', 'order-info'],
 				['type', '1'],
 				['order', details.orderId],
-				['amount', String(details.totalAmountSats)],
+				['amount', String(details.totalAmountNanogrin)],
 				['item', productRef, '3'],
 				['shipping', details.shippingRef!],
 			],
@@ -416,7 +416,7 @@ describe('seller private order details query helpers', () => {
 				['subject', 'order-info'],
 				['type', '1'],
 				['order', details.orderId],
-				['amount', String(details.totalAmountSats)],
+				['amount', String(details.totalAmountNanogrin)],
 				['item', details.items[0].productRef, String(details.items[0].quantity)],
 			],
 		})
@@ -437,7 +437,7 @@ describe('seller private order details query helpers', () => {
 			['subject', 'order-info'],
 			['type', '1'],
 			['order', details.orderId],
-			['amount', String(details.totalAmountSats)],
+			['amount', String(details.totalAmountNanogrin)],
 			['item', details.items[0].productRef, String(details.items[0].quantity)],
 		]
 

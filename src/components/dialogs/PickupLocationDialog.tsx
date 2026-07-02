@@ -59,7 +59,7 @@ export function PickupLocationDialog({ open, onOpenChange, locations, vendorName
 
 					const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`, {
 						headers: {
-							'User-Agent': 'PlebeianMarket/1.0',
+							'User-Agent': 'MagickMarket/1.0',
 						},
 					})
 

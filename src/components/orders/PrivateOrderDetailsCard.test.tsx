@@ -35,7 +35,7 @@ function privateDetails(overrides: Partial<PrivateOrderDeliveryDetails> = {}): P
 		orderId: 'order-123',
 		buyerPubkey: BUYER_PUBKEY,
 		sellerPubkey: SELLER_PUBKEY,
-		totalAmountSats: 1000,
+		totalAmountNanogrin: 1000,
 		items: [{ productRef: `30402:${SELLER_PUBKEY}:product`, quantity: 1 }],
 		delivery: {},
 		...overrides,

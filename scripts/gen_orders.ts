@@ -148,7 +148,7 @@ export function generatePaymentRequestData(
 	createdAt = Math.max(createdAt, MIN_SEED_TIMESTAMP)
 
 	// Use real lightning address if provided, otherwise use the fixture default
-	const lightningAddress = recipientLightningAddress || 'plebeianuser@coinos.io'
+	const lightningAddress = recipientLightningAddress || 'magickuser@coinos.io'
 
 	const tags: NDKTag[] = [
 		// Required tags
@@ -552,11 +552,11 @@ export async function fetchV4VShares(ndk: NDK, sellerPubkey: string): Promise<V4
  * Calculates payment breakdown including V4V shares
  */
 export function calculatePaymentBreakdown(
-	totalAmountSats: number,
+	totalAmountNanogrin: number,
 	v4vRecipients: V4VRecipient[],
 ): { merchantAmount: number; v4vPayments: Array<{ pubkey: string; amount: number; percentage: number }> } {
 	if (v4vRecipients.length === 0) {
-		return { merchantAmount: totalAmountSats, v4vPayments: [] }
+		return { merchantAmount: totalAmountNanogrin, v4vPayments: [] }
 	}
 
 	// Calculate total V4V percentage
@@ -572,7 +572,7 @@ export function calculatePaymentBreakdown(
 	// Calculate V4V amounts
 	const v4vPayments = v4vRecipients.map((recipient) => {
 		const percentage = recipient.percentage > 1 ? recipient.percentage / 100 : recipient.percentage
-		const amount = Math.max(1, Math.floor(totalAmountSats * percentage))
+		const amount = Math.max(1, Math.floor(totalAmountNanogrin * percentage))
 		return {
 			pubkey: recipient.pubkey,
 			amount,
@@ -582,7 +582,7 @@ export function calculatePaymentBreakdown(
 
 	// Calculate merchant amount (total - V4V amounts)
 	const totalV4VAmount = v4vPayments.reduce((sum, payment) => sum + payment.amount, 0)
-	const merchantAmount = Math.max(0, totalAmountSats - totalV4VAmount)
+	const merchantAmount = Math.max(0, totalAmountNanogrin - totalV4VAmount)
 
 	return { merchantAmount, v4vPayments }
 }
@@ -598,13 +598,13 @@ export async function generateMultiplePaymentRequests(
 	totalAmount: string,
 	baseTimestamp?: number,
 ): Promise<PaymentRequestWithRecipient[]> {
-	const totalAmountSats = parseInt(totalAmount)
+	const totalAmountNanogrin = parseInt(totalAmount)
 
 	// Fetch V4V shares for the seller
 	const v4vRecipients = await fetchV4VShares(ndk, sellerPubkey)
 
 	// Calculate payment breakdown
-	const { merchantAmount, v4vPayments } = calculatePaymentBreakdown(totalAmountSats, v4vRecipients)
+	const { merchantAmount, v4vPayments } = calculatePaymentBreakdown(totalAmountNanogrin, v4vRecipients)
 
 	const paymentRequests: PaymentRequestWithRecipient[] = []
 
@@ -612,7 +612,7 @@ export async function generateMultiplePaymentRequests(
 	paymentRequests.push({
 		recipientPubkey: sellerPubkey,
 		amount: merchantAmount.toString(),
-		description: `Merchant payment (${((merchantAmount / totalAmountSats) * 100).toFixed(1)}%)`,
+		description: `Merchant payment (${((merchantAmount / totalAmountNanogrin) * 100).toFixed(1)}%)`,
 		isV4V: false,
 	})
 
@@ -629,7 +629,9 @@ export async function generateMultiplePaymentRequests(
 	}
 
 	console.log(`💰 Order ${orderId}: Generated ${paymentRequests.length} payment requests (1 merchant + ${v4vPayments.length} V4V)`)
-	console.log(`   Total: ${totalAmountSats} sats | Merchant: ${merchantAmount} sats | V4V: ${totalAmountSats - merchantAmount} sats`)
+	console.log(
+		`   Total: ${totalAmountNanogrin} sats | Merchant: ${merchantAmount} sats | V4V: ${totalAmountNanogrin - merchantAmount} sats`,
+	)
 
 	return paymentRequests
 }
@@ -654,8 +656,8 @@ export async function createMultiplePaymentRequestEvents(
 	for (const request of paymentRequests) {
 		// Fetch the recipient's profile to get their lightning address (for testing, we use the fixture)
 		// In a real scenario, you'd fetch: const profile = await fetchProfileByIdentifier(request.recipientPubkey)
-		// const lightningAddress = profile?.lud16 || profile?.lud06 || 'plebeianuser@coinos.io'
-		const lightningAddress = 'plebeianuser@coinos.io' // Using fixture for seeding consistency
+		// const lightningAddress = profile?.lud16 || profile?.lud06 || 'magickuser@coinos.io'
+		const lightningAddress = 'magickuser@coinos.io' // Using fixture for seeding consistency
 
 		// Generate payment request data for this specific recipient
 		const paymentData = generatePaymentRequestData(

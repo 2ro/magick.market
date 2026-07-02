@@ -110,8 +110,8 @@ export function NostrConnectQR({ onError, onSuccess }: NostrConnectQRProps) {
 		params.set(
 			'metadata',
 			JSON.stringify({
-				name: 'Plebeian.market',
-				description: 'Connect with Plebeian.market',
+				name: 'Magick.market',
+				description: 'Connect with Magick.market',
 				url: window.location.origin,
 				icons: [],
 			}),

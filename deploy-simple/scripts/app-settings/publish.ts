@@ -7,7 +7,7 @@ import { finalizeEvent, SimplePool, type Event } from 'nostr-tools'
 const HANDLER_KIND = 31990
 const PRODUCT_KIND = 30402
 const COLLECTION_KIND = 30405
-const PLEBEIAN_MARKET_URL = 'https://plebeian.market'
+const MAGICK_MARKET_URL = 'https://magick.market'
 
 function helpText() {
 	return `Publish app settings events directly to a stage relay.
@@ -27,7 +27,7 @@ Options:
   --settings-file <path>                     JSON file for the kind 31990 app settings event
   --admins-file <path>                       JSON file for the kind 30000 admin list
   --editors-file <path>                      JSON file for the kind 30000 editor list
-  --handler-id <value>                       Defaults to plebeian-market-handler
+  --handler-id <value>                       Defaults to magick-market-handler
   --dry-run                                  Build events and print them without publishing
   -h, --help                                 Show this help
 `
@@ -41,9 +41,9 @@ function createHandlerEventData(pubkey: string, relayUrl: string, appSettings: R
 			['d', handlerId],
 			['k', PRODUCT_KIND.toString()],
 			['k', COLLECTION_KIND.toString()],
-			['web', `${PLEBEIAN_MARKET_URL}/product/<bech32>`, 'naddr'],
-			['web', `${PLEBEIAN_MARKET_URL}/a/<bech32>`, 'naddr'],
-			['web', `${PLEBEIAN_MARKET_URL}/collection/<bech32>`, 'naddr'],
+			['web', `${MAGICK_MARKET_URL}/product/<bech32>`, 'naddr'],
+			['web', `${MAGICK_MARKET_URL}/a/<bech32>`, 'naddr'],
+			['web', `${MAGICK_MARKET_URL}/collection/<bech32>`, 'naddr'],
 			['r', relayUrl],
 		],
 		content: JSON.stringify(appSettings),
@@ -85,7 +85,7 @@ if (values.help) {
 const stage = parseStage(values.stage)
 const { relayUrl } = resolveStageTargets(stage, values['relay-url'])
 const secretKey = parsePrivateKey(String(values['secret-key'] || process.env.APP_PRIVATE_KEY || ''))
-const handlerId = String(values['handler-id'] || 'plebeian-market-handler')
+const handlerId = String(values['handler-id'] || 'magick-market-handler')
 const dryRun = values['dry-run'] === true
 
 const secretKeyBytes = Buffer.from(secretKey, 'hex')

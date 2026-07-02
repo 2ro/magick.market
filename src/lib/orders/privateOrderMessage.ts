@@ -29,7 +29,7 @@ export type PrivateOrderDeliveryDetails = {
 	orderId: string
 	buyerPubkey: string
 	sellerPubkey: string
-	totalAmountSats: number
+	totalAmountNanogrin: number
 	shippingRef?: string
 	items: Array<{ productRef: string; quantity: number }>
 	delivery: {
@@ -85,7 +85,7 @@ export function createPrivateOrderDetailsRumor(params: CreatePrivateOrderDetails
 		['subject', GAMMA_ORDER_SUBJECT],
 		['type', GAMMA_ORDER_CREATION_TYPE],
 		['order', details.orderId],
-		['amount', String(details.totalAmountSats)],
+		['amount', String(details.totalAmountNanogrin)],
 	]
 
 	for (const item of details.items) {
@@ -217,8 +217,8 @@ export function parsePrivateOrderDetailsRumor(
 
 	const amount = getSingleTagValue(normalizedRumor.tags, 'amount')
 	if (!amount || !/^\d+$/.test(amount)) throw new Error('Private order amount is invalid')
-	const totalAmountSats = Number(amount)
-	if (!Number.isSafeInteger(totalAmountSats) || totalAmountSats <= 0) throw new Error('Private order amount is invalid')
+	const totalAmountNanogrin = Number(amount)
+	if (!Number.isSafeInteger(totalAmountNanogrin) || totalAmountNanogrin <= 0) throw new Error('Private order amount is invalid')
 
 	const itemTags = normalizedRumor.tags.filter((tag) => tag[0] === 'item')
 	if (itemTags.length === 0) throw new Error('Private order item is required')
@@ -248,7 +248,7 @@ export function parsePrivateOrderDetailsRumor(
 		orderId,
 		buyerPubkey,
 		sellerPubkey,
-		totalAmountSats,
+		totalAmountNanogrin,
 		shippingRef,
 		items,
 		delivery,
@@ -282,7 +282,8 @@ function validatePrivateOrderDetails(details: PrivateOrderDeliveryDetails): void
 	if (!details.orderId.trim()) throw new Error('Private order id is required')
 	if (!isHexPubkey(details.buyerPubkey)) throw new Error('Private order buyer pubkey is invalid')
 	if (!isHexPubkey(details.sellerPubkey)) throw new Error('Private order seller pubkey is invalid')
-	if (!Number.isSafeInteger(details.totalAmountSats) || details.totalAmountSats <= 0) throw new Error('Private order amount is invalid')
+	if (!Number.isSafeInteger(details.totalAmountNanogrin) || details.totalAmountNanogrin <= 0)
+		throw new Error('Private order amount is invalid')
 	if (details.items.length === 0) throw new Error('Private order item is required')
 
 	for (const item of details.items) {

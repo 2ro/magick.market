@@ -1,3 +1,4 @@
+import { formatGrinAmount } from '@/lib/grin'
 import { useQuery } from '@tanstack/react-query'
 import { ndkActions } from '@/lib/stores/ndk'
 import { authStore } from '@/lib/stores/auth'
@@ -95,7 +96,7 @@ export const getMessageSnippet = (event: NDKEvent, maxLength = 50): string => {
 
 		const amount = event.tags?.find((t) => t[0] === 'amount')?.[1]
 		const orderId = event.tags?.find((t) => t[0] === 'order')?.[1]
-		if (amount) return `Amount: ${amount} sats`
+		if (amount) return `Amount: ${formatGrinAmount(parseInt(amount))}`
 		if (orderId) return `Order: ${orderId.substring(0, 12)}...`
 
 		if (content && content.trim() && !looksLikeJSON(content)) {

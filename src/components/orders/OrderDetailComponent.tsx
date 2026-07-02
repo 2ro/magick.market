@@ -1,5 +1,7 @@
+import { formatGrinAmount } from '@/lib/grin'
 import { ProductCard } from '@/components/ProductCard'
 import { PaymentDialog } from '@/components/checkout/PaymentDialog'
+import type { PaymentCompletionSource } from '@/components/checkout/PaymentContent'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { authStore } from '@/lib/stores/auth'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
@@ -152,7 +154,6 @@ export function OrderDetailComponent({ order }: OrderDetailComponentProps) {
 		generatingInvoices,
 		handleGenerateNewInvoice,
 		handlePaymentComplete,
-		handlePaymentFailed,
 	} = useOrderInvoices({
 		order,
 		sellerV4VShares,
@@ -204,13 +205,9 @@ export function OrderDetailComponent({ order }: OrderDetailComponentProps) {
 		setPaymentDialogOpen(true)
 	}
 
-	const onPaymentComplete = async (invoiceId: string, preimage: string) => {
+	const onPaymentComplete = async (invoiceId: string, proof: string, source: PaymentCompletionSource) => {
 		setPaymentDialogOpen(false)
-		await handlePaymentComplete(invoiceId, preimage, dialogInvoices)
-	}
-
-	const onPaymentFailed = (invoiceId: string, error: string) => {
-		handlePaymentFailed(invoiceId, error)
+		await handlePaymentComplete(invoiceId, proof, source, dialogInvoices)
 	}
 
 	if (!order.order) {
@@ -284,7 +281,7 @@ export function OrderDetailComponent({ order }: OrderDetailComponentProps) {
 						</div>
 						<Separator className="my-4" />
 						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-							<DetailField label="Amount:" value={`${totalAmount} sats`} valueClassName="font-bold" />
+							<DetailField label="Amount:" value={formatGrinAmount(totalAmount)} valueClassName="font-bold" />
 							<DetailField
 								label="Date:"
 								value={orderEvent.created_at ? format(new Date(orderEvent.created_at * 1000), 'dd.MM.yyyy, HH:mm') : 'N/A'}
@@ -475,10 +472,8 @@ export function OrderDetailComponent({ order }: OrderDetailComponentProps) {
 				invoices={dialogInvoices}
 				currentIndex={selectedInvoiceIndex}
 				onPaymentComplete={onPaymentComplete}
-				onPaymentFailed={onPaymentFailed}
 				title={`Pay for Order #${orderId.substring(0, 8)}...`}
 				showNavigation={dialogInvoices.length > 1}
-				nwcEnabled={true}
 			/>
 		</div>
 	)

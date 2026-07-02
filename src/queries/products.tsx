@@ -32,7 +32,7 @@ export { productKeys }
 // If a new event with the same d-tag is published after the deletion, it should be visible.
 // Persisted to localStorage so deletions survive page reloads.
 
-const DELETED_PRODUCTS_STORAGE_KEY = 'plebeian_deleted_product_ids'
+const DELETED_PRODUCTS_STORAGE_KEY = 'magick_deleted_product_ids'
 const hasLocalStorage = () => typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
 
 // Map of d-tag -> deletion timestamp (unix seconds)

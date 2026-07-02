@@ -2,7 +2,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 
-export const TERMS_ACCEPTED_KEY = 'plebeian_terms_accepted'
+export const TERMS_ACCEPTED_KEY = 'magick_terms_accepted'
 
 interface TermsConditionsDialogProps {
 	open: boolean
@@ -26,7 +26,7 @@ export function TermsConditionsDialog({ open, onOpenChange, onAccept }: TermsCon
 			>
 				<DialogHeader>
 					<DialogTitle>Terms and Conditions</DialogTitle>
-					<DialogDescription>Please read and accept our terms and conditions to continue using Plebeian Market.</DialogDescription>
+					<DialogDescription>Please read and accept our terms and conditions to continue using Magick Market.</DialogDescription>
 				</DialogHeader>
 
 				<div className="h-[50vh] overflow-hidden">
@@ -36,7 +36,7 @@ export function TermsConditionsDialog({ open, onOpenChange, onAccept }: TermsCon
 								<h3 className="font-semibold text-base">User Friendly Summary</h3>
 								<ul className="list-disc pl-5 space-y-1 text-muted-foreground">
 									<li>
-										This Plebeian.Market "Instance" runs on nostr, uses open source software, and follows the laws of England and Wales.
+										This Magick.Market "Instance" runs on nostr, uses open source software, and follows the laws of England and Wales.
 									</li>
 									<li>
 										Do not list anything illegal, dangerous, or NSFW (for example: drugs, weapons, explicit adult content, counterfeit or
@@ -54,11 +54,11 @@ export function TermsConditionsDialog({ open, onOpenChange, onAccept }: TermsCon
 							<section className="space-y-2">
 								<h3 className="font-semibold text-base">1. Introduction</h3>
 								<p className="text-muted-foreground">
-									Plebeian.Market is an independent marketplace "Instance" operating on the nostr protocol using the Plebeian App open
-									source solution and is governed by the laws of England and Wales.
+									Magick.Market is an independent marketplace "Instance" operating on the nostr protocol using the Magick App open source
+									solution and is governed by the laws of England and Wales.
 								</p>
 								<p className="text-muted-foreground">
-									By accessing, registering with, or using Plebeian.Market (the "Instance"), you agree to be bound by these Terms and
+									By accessing, registering with, or using Magick.Market (the "Instance"), you agree to be bound by these Terms and
 									Conditions.
 								</p>
 								<p className="text-muted-foreground">
@@ -98,8 +98,8 @@ export function TermsConditionsDialog({ open, onOpenChange, onAccept }: TermsCon
 							<section className="space-y-2">
 								<h3 className="font-semibold text-base">4. Peer-to-Peer Nature and User Responsibility</h3>
 								<p className="text-muted-foreground">
-									Plebeian.Market operates as a peer-to-peer platform. The Instance does not act as an agent, broker, guarantor, or
-									fiduciary for any user or transaction.
+									Magick.Market operates as a peer-to-peer platform. The Instance does not act as an agent, broker, guarantor, or fiduciary
+									for any user or transaction.
 								</p>
 								<p className="text-muted-foreground">
 									There is no dedicated customer service or dispute resolution department. All questions, issues, and disputes must be
@@ -133,7 +133,7 @@ export function TermsConditionsDialog({ open, onOpenChange, onAccept }: TermsCon
 							<section className="space-y-2">
 								<h3 className="font-semibold text-base">7. Amendments to These Terms</h3>
 								<p className="text-muted-foreground">
-									Plebeian.Market may amend or update these Terms from time to time. Continued use of the Instance after any amendment
+									Magick.Market may amend or update these Terms from time to time. Continued use of the Instance after any amendment
 									constitutes acceptance of the updated Terms.
 								</p>
 							</section>
@@ -141,7 +141,7 @@ export function TermsConditionsDialog({ open, onOpenChange, onAccept }: TermsCon
 							<section className="space-y-2">
 								<h3 className="font-semibold text-base">8. Acknowledgement and Acceptance</h3>
 								<p className="text-muted-foreground">
-									By creating an account, adding products, or otherwise using Plebeian.Market, you confirm that you have read and understood
+									By creating an account, adding products, or otherwise using Magick.Market, you confirm that you have read and understood
 									these Terms and agree to be legally bound by them in full.
 								</p>
 							</section>

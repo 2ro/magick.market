@@ -1,3 +1,4 @@
+import { formatGrinAmount } from '@/lib/grin'
 import { ORDER_GENERAL_KIND, ORDER_MESSAGE_TYPE, ORDER_PROCESS_KIND, ORDER_STATUS, PAYMENT_RECEIPT_KIND } from '@/lib/schemas/order'
 import { NIP59_GIFT_WRAP_KIND, signerSupportsNip44 } from '@/lib/nostr/nip59'
 import { decryptPrivateOrderMessageWithSigner, type PrivateOrderDeliveryDetails } from '@/lib/orders/privateOrderMessage'
@@ -48,7 +49,7 @@ type PublicOrderCorrelationFields = {
 	orderId: string
 	buyerPubkey: string
 	sellerPubkey: string
-	totalAmountSats: number
+	totalAmountNanogrin: number
 	items: Map<string, number>
 	shippingRef?: string
 }
@@ -125,8 +126,8 @@ export const getPublicOrderCorrelationFields = (order: NDKEvent): PublicOrderCor
 
 	const amount = getRequiredSingleTagValue(order.tags, 'amount')
 	if (!amount || !/^\d+$/.test(amount)) return null
-	const totalAmountSats = Number(amount)
-	if (!Number.isSafeInteger(totalAmountSats) || totalAmountSats <= 0) return null
+	const totalAmountNanogrin = Number(amount)
+	if (!Number.isSafeInteger(totalAmountNanogrin) || totalAmountNanogrin <= 0) return null
 
 	const items = canonicalizeItemTags(order.tags, sellerPubkey)
 	if (!items) return null
@@ -139,7 +140,7 @@ export const getPublicOrderCorrelationFields = (order: NDKEvent): PublicOrderCor
 		orderId,
 		buyerPubkey: order.pubkey,
 		sellerPubkey,
-		totalAmountSats,
+		totalAmountNanogrin,
 		items,
 		shippingRef,
 	}
@@ -152,7 +153,7 @@ export const privateDetailsMatchPublicOrder = (details: PrivateOrderDeliveryDeta
 	if (details.orderId !== publicFields.orderId) return false
 	if (details.buyerPubkey !== publicFields.buyerPubkey) return false
 	if (details.sellerPubkey !== publicFields.sellerPubkey) return false
-	if (details.totalAmountSats !== publicFields.totalAmountSats) return false
+	if (details.totalAmountNanogrin !== publicFields.totalAmountNanogrin) return false
 
 	const privateItems = canonicalizeItems(details.items)
 	if (!privateItems) return false
@@ -1213,9 +1214,9 @@ function isHexPubkey(value: string): boolean {
 }
 
 /**
- * Format a satoshi amount for display
+ * Format a nanogrin amount (as carried in order `amount` tags) for display.
  */
 export const formatSats = (amount?: string): string => {
 	if (!amount) return '-'
-	return `${parseInt(amount).toLocaleString()} sats`
+	return formatGrinAmount(parseInt(amount))
 }

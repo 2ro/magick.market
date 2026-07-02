@@ -1,10 +1,10 @@
+import { formatGrinAmount } from '@/lib/grin'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
 import { cn, copyToClipboard } from '@/lib/utils'
-import { format } from 'date-fns'
-import { CheckCircle, Copy, CreditCard, RefreshCw, Zap } from 'lucide-react'
+import { CheckCircle, Copy, CreditCard, RefreshCw, Wallet } from 'lucide-react'
 import { getStatusColor } from '../orderDetailHelpers'
 import type { InvoiceWithSource } from '../useOrderInvoices'
 
@@ -22,19 +22,9 @@ export function InvoiceCard({ invoice, index, totalInvoices, isBuyer, isGenerati
 	const isPaid = invoice.status === 'paid'
 	const needsPayment = !isPaid
 
-	const now = Math.floor(Date.now() / 1000)
-	const validLocalCopy = invoice.localCopies.find(
-		(copy) => copy.status !== 'paid' && copy.bolt11 && (!copy.expiresAt || copy.expiresAt > now),
-	)
+	const validLocalCopy = invoice.localCopies.find((copy) => copy.status !== 'paid' && copy.payUri)
 	const invoiceToUse = validLocalCopy || invoice
-	const isExpired = invoiceToUse.expiresAt && invoiceToUse.expiresAt < now
-	const hasBolt11 = !!invoiceToUse.bolt11
-
-	const formatExpiryDisplay = (timestamp?: number) => {
-		if (!timestamp) return 'No expiry'
-		const millis = timestamp > 10_000_000_000 ? timestamp : timestamp * 1000
-		return format(millis, 'PPP p')
-	}
+	const hasPayUri = !!invoiceToUse.payUri
 
 	return (
 		<Card className={cn('p-4', isPaid ? 'bg-green-50' : 'bg-card')}>
@@ -57,19 +47,15 @@ export function InvoiceCard({ invoice, index, totalInvoices, isBuyer, isGenerati
 						<CreditCard className="w-5 h-5 text-gray-400 flex-shrink-0" />
 					)}
 					<div className="min-w-0">
-						<h4 className="font-medium truncate">{invoice.type === 'merchant' ? 'Merchant Payment' : invoice.recipientName}</h4>
+						<h4 className="font-medium truncate">Merchant Payment</h4>
 						<p className="text-sm text-muted-foreground">
-							{invoice.amount.toLocaleString()} sats
-							{invoiceToUse.expiresAt && (
-								<span className={cn('ml-2', isExpired ? 'text-red-500' : 'text-gray-400')}>
-									· {isExpired ? 'Expired' : 'Expires'} {formatExpiryDisplay(invoiceToUse.expiresAt)}
-								</span>
-							)}
+							{formatGrinAmount(invoice.amount)}
+							<span className="ml-2 text-gray-400 font-mono">· {invoice.id}</span>
 						</p>
 					</div>
 				</div>
-				<Badge className={cn('flex-shrink-0', getStatusColor(isPaid ? 'paid' : isExpired ? 'expired' : 'pending'))} variant="outline">
-					{isPaid ? 'Paid' : isExpired ? 'Expired' : 'Pending'}
+				<Badge className={cn('flex-shrink-0', getStatusColor(isPaid ? 'paid' : 'pending'))} variant="outline">
+					{isPaid ? 'Paid' : 'Pending'}
 				</Badge>
 			</div>
 
@@ -77,34 +63,26 @@ export function InvoiceCard({ invoice, index, totalInvoices, isBuyer, isGenerati
 			{isBuyer && needsPayment && (
 				<div className="mt-4 pt-4 border-t border-muted space-y-3">
 					<div className="flex flex-wrap gap-2">
-						{hasBolt11 && !isExpired && (
+						{hasPayUri && (
 							<Button size="sm" className="flex-1 min-w-[140px]" onClick={() => onPay(invoiceToUse)}>
-								<Zap className="w-4 h-4 mr-2" />
-								Pay {invoice.amount.toLocaleString()} sats
+								<Wallet className="w-4 h-4 mr-2" />
+								Pay {formatGrinAmount(invoice.amount)} with Goblin
 							</Button>
 						)}
 
-						{(isExpired || !hasBolt11) && (
-							<Button
-								variant={hasBolt11 ? 'outline' : undefined}
-								size="sm"
-								className="flex-1 min-w-[140px]"
-								onClick={() => onGenerateNew(invoice)}
-								disabled={isGenerating}
-							>
+						{!hasPayUri && (
+							<Button size="sm" className="flex-1 min-w-[140px]" onClick={() => onGenerateNew(invoice)} disabled={isGenerating}>
 								{isGenerating ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-								{isExpired ? 'Generate New Invoice' : 'Generate Invoice'}
+								Prepare Payment
 							</Button>
 						)}
 
-						{hasBolt11 && (
-							<Button variant="ghost" size="sm" onClick={() => copyToClipboard(invoiceToUse.bolt11 || '')} title="Copy lightning invoice">
+						{hasPayUri && (
+							<Button variant="ghost" size="sm" onClick={() => copyToClipboard(invoiceToUse.payUri || '')} title="Copy Goblin payment link">
 								<Copy className="w-4 h-4" />
 							</Button>
 						)}
 					</div>
-
-					{isExpired && hasBolt11 && <p className="text-xs text-amber-600">Invoice expired. Generate a new one to continue payment.</p>}
 				</div>
 			)}
 
@@ -116,26 +94,15 @@ export function InvoiceCard({ invoice, index, totalInvoices, isBuyer, isGenerati
 						<span>Payment completed</span>
 					</div>
 					<div className="flex flex-wrap gap-2">
-						{invoiceToUse.bolt11 && (
+						{(invoice.proof || invoiceToUse.proof) && (
 							<Button
 								variant="ghost"
 								size="sm"
 								className="text-gray-600 hover:text-gray-900 h-auto py-1"
-								onClick={() => copyToClipboard(invoiceToUse.bolt11 || '')}
+								onClick={() => copyToClipboard(invoice.proof || invoiceToUse.proof || '')}
 							>
 								<Copy className="w-3 h-3 mr-1" />
-								Copy invoice
-							</Button>
-						)}
-						{(invoice.preimage || invoiceToUse.preimage) && (
-							<Button
-								variant="ghost"
-								size="sm"
-								className="text-gray-600 hover:text-gray-900 h-auto py-1"
-								onClick={() => copyToClipboard(invoice.preimage || invoiceToUse.preimage || '')}
-							>
-								<Copy className="w-3 h-3 mr-1" />
-								Copy preimage
+								Copy payment proof
 							</Button>
 						)}
 					</div>

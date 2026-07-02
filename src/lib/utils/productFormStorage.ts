@@ -1,6 +1,6 @@
 import type { ProductFormState } from '@/lib/stores/product'
 
-const DB_NAME = 'plebeian_market_db'
+const DB_NAME = 'magick_market_db'
 const DB_VERSION = 1
 const STORE_NAME = 'product_form_drafts'
 

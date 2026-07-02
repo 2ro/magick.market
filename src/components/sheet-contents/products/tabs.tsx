@@ -3,329 +3,65 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ImageUploader } from '@/components/ui/image-uploader/ImageUploader'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CURRENCIES, PRODUCT_CATEGORIES } from '@/lib/constants'
+import { PRODUCT_CATEGORIES } from '@/lib/constants'
 import type { RichShippingInfo } from '@/lib/stores/cart'
 import { useNDK } from '@/lib/stores/ndk'
 import { productFormActions, productFormStore, type ProductShippingForm } from '@/lib/stores/product'
-import { uiStore } from '@/lib/stores/ui'
 import { attachShippingOptionByRef } from '@/lib/utils/productShippingQuickCreate'
 import { resolveProductShippingSelections } from '@/lib/utils/productShippingSelections'
-import { MempoolService } from '@/lib/utils/mempool'
-import { useBtcExchangeRates, type SupportedCurrency } from '@/queries/external'
 import { usePublishShippingOptionMutation, type ShippingFormData } from '@/publish/shipping'
 import { createShippingReference, getShippingInfo, useShippingOptionsByPubkey } from '@/queries/shipping'
 import { useForm } from '@tanstack/react-form'
 import { useStore } from '@tanstack/react-store'
-import { Info, ArrowRightLeft, DownloadIcon, Loader2, PackageIcon, PlusIcon, TruckIcon, X, AlertTriangle } from 'lucide-react'
+import { Info, DownloadIcon, Loader2, PackageIcon, PlusIcon, TruckIcon, X, AlertTriangle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 export function DetailTab() {
-	const {
-		price,
-		fiatPrice,
-		quantity,
-		currency,
-		status,
-		specs,
-		bitcoinUnit: storeBitcoinUnit,
-		currencyMode: storeCurrencyMode,
-		isNSFW,
-	} = useStore(productFormStore)
-	const { selectedCurrency } = useStore(uiStore)
-	const { data: exchangeRates } = useBtcExchangeRates()
-	// Initialize local state from store values (important for editing)
-	const [bitcoinUnit, setBitcoinUnit] = useState<'SATS' | 'BTC'>(storeBitcoinUnit || 'SATS')
-	const [currencyMode, setCurrencyMode] = useState<'sats' | 'fiat'>(storeCurrencyMode || 'fiat')
-	const [fiatDisplayValue, setFiatDisplayValue] = useState(fiatPrice || '')
-
-	// Use existing conversion functions from MempoolService
-	const convertSatsToBtc = MempoolService.satoshisToBtc
-	const convertBtcToSats = MempoolService.btcToSatoshis
-
-	const convertSatsToCurrency = (sats: number, targetCurrency: string): number => {
-		if (targetCurrency === 'SATS') return sats
-		if (targetCurrency === 'BTC') return convertSatsToBtc(sats)
-		if (!exchangeRates) return 0
-
-		const btcAmount = sats / 100_000_000 // Convert sats to BTC
-		const rate = exchangeRates[targetCurrency as SupportedCurrency]
-		return rate ? btcAmount * rate : 0
-	}
-
-	const convertCurrencyToSats = (amount: number, fromCurrency: string): number => {
-		if (fromCurrency === 'SATS') return amount
-		if (fromCurrency === 'BTC') return convertBtcToSats(amount)
-		if (!exchangeRates) return 0
-
-		const rate = exchangeRates[fromCurrency as SupportedCurrency]
-		if (!rate) return 0
-
-		const btcAmount = amount / rate
-		return Math.round(btcAmount * 100_000_000) // Convert BTC to sats
-	}
+	const { price, quantity, status, isNSFW } = useStore(productFormStore)
 
 	const form = useForm({
 		defaultValues: {
 			price: price,
-			fiatPrice: fiatPrice,
 			quantity: quantity,
-			currency: currency,
 			status: status,
 		},
 		onSubmit: async ({ value }) => {
 			productFormActions.updateValues({
 				price: value.price,
-				fiatPrice: value.fiatPrice,
 				quantity: value.quantity,
-				currency: value.currency,
 				status: value.status,
-				// Update currency system state
-				bitcoinUnit: bitcoinUnit,
-				currencyMode: currencyMode,
+				currency: 'GRIN',
 			})
 		},
 	})
 
-	// Handle Bitcoin price changes (SATS/BTC field)
-	const handleBitcoinPriceChange = (value: string) => {
-		const numValue = parseFloat(value) || 0
-
-		// Convert to SATS for storage
-		const satsValue = bitcoinUnit === 'SATS' ? numValue : convertBtcToSats(numValue)
-
-		productFormActions.updateValues({ price: satsValue.toString() })
-
-		// Update fiat field if a fiat currency is selected and visible
-		if (currency !== 'SATS' && currency !== 'BTC') {
-			const fiatValue = convertSatsToCurrency(satsValue, currency)
-			setFiatDisplayValue(fiatValue.toFixed(2))
-		}
+	// GRIN is the only currency: the listing price is a decimal GRIN amount.
+	const handlePriceChange = (value: string) => {
+		productFormActions.updateValues({ price: value, currency: 'GRIN' })
 	}
-
-	// Handle fiat price changes
-	const handleFiatPriceChange = (value: string) => {
-		// Store the raw input value without formatting
-		setFiatDisplayValue(value)
-
-		// Only convert to sats if we have a valid number
-		const numValue = parseFloat(value)
-		if (!isNaN(numValue) && numValue > 0) {
-			const satsValue = convertCurrencyToSats(numValue, currency)
-			// Store both the sats value (for display) and the fiat value (for publishing)
-			productFormActions.updateValues({ price: satsValue.toString(), fiatPrice: value })
-		} else if (value === '0') {
-			// Set the price to zero if the input is zero
-			productFormActions.updateValues({ price: '0', fiatPrice: '0' })
-		} else if (value === '') {
-			// Clear the price if input is empty
-			productFormActions.updateValues({ price: '', fiatPrice: '' })
-		}
-	}
-
-	// Get display value for Bitcoin field
-	const getBitcoinDisplayValue = (): string => {
-		if (!price) return ''
-		const satsValue = parseFloat(price) || 0
-		return bitcoinUnit === 'SATS' ? satsValue.toString() : convertSatsToBtc(satsValue).toFixed(8)
-	}
-
-	// Handle currency dropdown change
-	const handleCurrencyChange = (newCurrency: string) => {
-		// Determine the new currency mode
-		const newCurrencyMode = newCurrency === 'BTC' || newCurrency === 'SATS' ? 'sats' : 'fiat'
-
-		// Update store with currency and mode
-		productFormActions.updateValues({ currency: newCurrency, currencyMode: newCurrencyMode })
-
-		// Auto-switch Bitcoin unit based on currency
-		if (newCurrency === 'BTC') {
-			setBitcoinUnit('BTC')
-		} else if (newCurrency === 'SATS') {
-			setBitcoinUnit('SATS')
-		}
-
-		// Set local currency mode state
-		setCurrencyMode(newCurrencyMode)
-	}
-
-	// Function to determine what gets published to the protocol
-	const getPublishCurrency = (): { price: string; currency: string } => {
-		if (currency === 'SATS' || currency === 'BTC') {
-			// When Bitcoin currency is selected, always publish in SATS
-			const bitcoinValue = parseFloat(price || '0')
-			if (bitcoinUnit === 'BTC') {
-				// Convert BTC to SATS for publishing
-				const satsValue = bitcoinValue * 100000000
-				return { price: satsValue.toString(), currency: 'SATS' }
-			} else {
-				// Already in SATS
-				return { price: price || '0', currency: 'SATS' }
-			}
-		} else {
-			// Fiat currency selected - check radio group selection
-			if (currencyMode === 'fiat') {
-				// Use fiat currency
-				return { price: fiatDisplayValue, currency: currency }
-			} else {
-				// Use sats as currency (calculated on spot)
-				const bitcoinValue = parseFloat(price || '0')
-				const satsValue = bitcoinUnit === 'BTC' ? bitcoinValue * 100000000 : bitcoinValue
-				return { price: satsValue.toString(), currency: 'SATS' }
-			}
-		}
-	}
-
-	// Toggle Bitcoin unit (SATS/BTC)
-	const toggleBitcoinUnit = () => {
-		const newUnit = bitcoinUnit === 'SATS' ? 'BTC' : 'SATS'
-		setBitcoinUnit(newUnit)
-		productFormActions.updateValues({ bitcoinUnit: newUnit })
-	}
-
-	// Check if current currency is Bitcoin-based
-	const isBitcoinCurrency = currency === 'SATS' || currency === 'BTC'
-
-	// Check if fiat field should be visible
-	const showFiatField = !isBitcoinCurrency
-
-	// Check if radio group should be visible
-	const showRadioGroup = showFiatField
-
-	// Sync local state from store when store values change (for edit mode)
-	useEffect(() => {
-		setBitcoinUnit(storeBitcoinUnit || 'SATS')
-		setCurrencyMode(storeCurrencyMode || 'fiat')
-		if (fiatPrice) {
-			setFiatDisplayValue(fiatPrice)
-		}
-	}, [storeBitcoinUnit, storeCurrencyMode, fiatPrice])
-
-	// Update fiat display when currency or price changes (only for auto-conversion from sats)
-	useEffect(() => {
-		// Skip if we're in fiat mode and already have a fiat price - don't overwrite user input
-		if (storeCurrencyMode === 'fiat' && fiatPrice) {
-			return
-		}
-
-		if (showFiatField && price) {
-			const satsValue = parseFloat(price) || 0
-			if (satsValue > 0) {
-				const fiatValue = convertSatsToCurrency(satsValue, currency)
-				// Only update if the field is not currently being edited
-				// This prevents overwriting user input during typing
-				if (document.activeElement?.id !== 'fiat-price') {
-					setFiatDisplayValue(fiatValue.toFixed(2))
-				}
-			}
-		}
-	}, [currency, price, showFiatField, storeCurrencyMode, fiatPrice])
 
 	return (
 		<div className="space-y-6">
-			{/* Currency Dropdown */}
+			{/* GRIN Price Field */}
 			<div className="space-y-2">
-				<Label htmlFor="currency" className="text-sm font-medium">
-					Choose your local currency <span className="text-red-500">*</span>
+				<Label htmlFor="grin-price" className="text-sm font-medium">
+					Price <span className="text-red-500">*</span>
+					<span className="text-xs text-muted-foreground ml-1">(in GRIN)</span>
 				</Label>
-				<Select value={currency} onValueChange={handleCurrencyChange}>
-					<SelectTrigger>
-						<SelectValue placeholder="Select currency" />
-					</SelectTrigger>
-					<SelectContent>
-						{CURRENCIES.map((curr) => (
-							<SelectItem key={curr} value={curr}>
-								{curr}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				<Input
+					id="grin-price"
+					type="number"
+					step="any"
+					min="0"
+					placeholder="e.g., 25"
+					value={price || ''}
+					onChange={(e) => handlePriceChange(e.target.value)}
+					className="w-full"
+					data-testid="product-price-input"
+				/>
 			</div>
-
-			<div className="flex flex-row w-full items-end">
-				{/* Fiat Price Field (conditional) */}
-				{showFiatField && (
-					<div className="space-y-2 flex-1">
-						<Label htmlFor="fiat-price" className="text-sm font-medium">
-							Price <span className="text-red-500">*</span>
-							<span className="text-xs text-muted-foreground ml-1">(In {currency})</span>
-						</Label>
-						<Input
-							id="fiat-price"
-							type="number"
-							step="0.01"
-							placeholder={`e.g., 25.00`}
-							value={fiatDisplayValue}
-							onChange={(e) => handleFiatPriceChange(e.target.value)}
-							className="w-full"
-						/>
-					</div>
-				)}
-
-				{showFiatField && <ArrowRightLeft className="m-2 w-6 h-6 flex-shrink-0" />}
-				{/* Bitcoin Price Field (always visible) */}
-				<div className="space-y-2 flex-1">
-					<Label htmlFor="bitcoin-price" className="text-sm font-medium">
-						Price in {bitcoinUnit} <span className="text-red-500">*</span>
-						<span className="text-xs text-muted-foreground ml-1">(Bitcoin)</span>
-					</Label>
-					<div className="relative">
-						<Input
-							id="bitcoin-price"
-							type="number"
-							step="any"
-							placeholder={bitcoinUnit === 'SATS' ? 'e.g., 10000' : 'e.g., 0.0001'}
-							value={getBitcoinDisplayValue()}
-							onChange={(e) => handleBitcoinPriceChange(e.target.value)}
-							className="pr-20"
-						/>
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							onClick={toggleBitcoinUnit}
-							className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 text-xs"
-						>
-							{bitcoinUnit}
-						</Button>
-					</div>
-				</div>
-			</div>
-
-			{/* Radio Group for Fiat Currencies */}
-			{showRadioGroup && (
-				<div className="space-y-3">
-					<Label className="text-sm font-medium">Currency Mode</Label>
-					<RadioGroup
-						value={currencyMode}
-						onValueChange={(value: 'sats' | 'fiat') => {
-							setCurrencyMode(value)
-							// Sync to store for publishing
-							productFormActions.updateValues({ currencyMode: value })
-						}}
-						className="flex flex-col space-y-3 mt-2"
-					>
-						<div className="space-y-1">
-							<div className="flex items-center space-x-2">
-								<RadioGroupItem value="fiat" id="fiat-mode" />
-								<Label htmlFor="fiat-mode" className="text-sm">
-									Fix the price in fiat (sats price will fluctuate, recommended)
-								</Label>
-							</div>
-						</div>
-						<div className="space-y-1">
-							<div className="flex items-center space-x-2">
-								<RadioGroupItem value="sats" id="sats-mode" />
-								<Label htmlFor="sats-mode" className="text-sm">
-									Fix the price in sats (fiat price will fluctuate)
-								</Label>
-							</div>
-						</div>
-					</RadioGroup>
-				</div>
-			)}
 
 			<form.Field
 				name="quantity"

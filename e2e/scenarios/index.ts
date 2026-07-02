@@ -64,7 +64,7 @@ export async function resetRemoteCartForUser(skHex: string): Promise<void> {
 				updatedAt: Math.floor(Date.now() / 1000),
 				items: [],
 			}),
-			tags: [['d', 'plebeian-market-cart']],
+			tags: [['d', 'magick-market-cart']],
 		})
 	} finally {
 		relay.close()

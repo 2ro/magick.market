@@ -6,7 +6,6 @@ import { Nip05Badge } from '@/components/Nip05Badge'
 import { ProductCard } from '@/components/ProductCard'
 import { ProfileName } from '@/components/ProfileName'
 import { Button } from '@/components/ui/button'
-import { ZapButton } from '@/components/social/ZapButton'
 import { useBreakpoint } from '@/hooks/useBreakpoint'
 import { useEntityPermissions } from '@/hooks/useEntityPermissions'
 import { getHexColorFingerprintFromHexPubkey, truncateText, checkImageLoadable } from '@/lib/utils'
@@ -211,7 +210,6 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 					<UserCard pubkey={user?.pubkey ?? ''} className="[&>h2]:text-white" subtitle="npub" onPress="copy-npub" />
 					{!isSmallScreen && (
 						<div className="flex gap-2">
-							{user && <ZapButton event={user} />}
 							<TooltipButton
 								variant="outline"
 								size="icon"

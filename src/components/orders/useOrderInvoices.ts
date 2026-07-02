@@ -1,14 +1,22 @@
 import { getPersistedInvoicesForOrder, persistInvoicesLocally, updatePersistedInvoiceLocally } from '@/lib/utils/invoiceStorage'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
 import type { V4VDTO } from '@/lib/stores/cart'
-import type { NDKEvent } from '@nostr-dev-kit/ndk'
+import { buildGoblinPayUri } from '@/lib/grin'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useGenerateInvoiceMutation } from '@/queries/payment'
 import { publishPaymentReceipt } from '@/publish/payment'
+import type { PaymentCompletionSource } from '@/components/checkout/PaymentContent'
 import { useQueryClient } from '@tanstack/react-query'
 import { orderKeys } from '@/queries/queryKeyFactory'
-import { extractPaymentMethods, getOrderId, getSellerPubkey, isPaymentCompleted, makeInvoiceKey } from './orderDetailHelpers'
+import {
+	extractPaymentMethods,
+	getInvoiceNumber,
+	getOrderId,
+	getSellerPubkey,
+	isPaymentCompleted,
+	makeInvoiceKey,
+} from './orderDetailHelpers'
 import type { OrderWithRelatedEvents } from '@/queries/orders'
 
 type InvoiceSource = 'request' | 'both'
@@ -64,45 +72,40 @@ export function useOrderInvoices({ order, sellerV4VShares, userPubkey }: UseOrde
 			if (amount <= 0) return
 
 			const paymentMethods = extractPaymentMethods(paymentRequest)
-			const lightningPayment = paymentMethods.find((p) => p.type === 'lightning')
+			const grinPayment = paymentMethods.find((p) => p.type === 'grin')
 			const isCompleted = isPaymentCompleted(paymentRequest, paymentReceipts)
 
 			const recipientPubkey = paymentRequest.tags.find((tag) => tag[0] === 'recipient')?.[1] || paymentRequest.pubkey
-			const isSellerPayment = recipientPubkey === sellerPubkey
 
-			let recipientName = 'Merchant'
-			if (!isSellerPayment) {
-				const v4vRecipient = sellerV4VShares.find((share) => share.pubkey === recipientPubkey)
-				recipientName = v4vRecipient ? v4vRecipient.name : 'V4V Recipient'
-			}
+			// The invoice number bridges the Grin payment (memo) to the order.
+			const invoiceNumber = getInvoiceNumber(paymentRequest) || paymentRequest.id
 
-			const expirationTag = paymentRequest.tags.find((tag) => tag[0] === 'expiration')
-			const expirationValue = expirationTag?.[1]
-			const expiresAt = expirationValue ? parseInt(expirationValue, 10) : Math.floor(Date.now() / 1000) + 3600
-
-			const lightningAddress = lightningPayment?.details || ''
-			const isBolt11 = lightningAddress.toLowerCase().startsWith('lnbc') || lightningAddress.toLowerCase().startsWith('lntb')
-			const actualBolt11 = isBolt11 ? lightningAddress : ''
-			const actualLightningAddress = !isBolt11 ? lightningAddress : ''
+			const grinAddress = grinPayment?.details || null
+			const payUri = grinAddress
+				? buildGoblinPayUri({
+						to: grinAddress,
+						amountNanogrin: amount,
+						memo: invoiceNumber,
+					})
+				: null
 
 			invoices.push({
-				id: paymentRequest.id,
+				id: invoiceNumber,
 				orderId: orderId,
-				bolt11: actualBolt11,
 				amount,
-				description: isSellerPayment ? 'Merchant Payment' : 'V4V Community Payment',
-				recipientName,
-				status: isCompleted ? 'paid' : expiresAt < Math.floor(Date.now() / 1000) ? 'expired' : 'pending',
-				expiresAt,
+				description: 'Merchant Payment',
+				recipientName: 'Merchant',
+				status: isCompleted ? 'paid' : 'pending',
 				createdAt: paymentRequest.created_at || Math.floor(Date.now() / 1000),
-				lightningAddress: actualLightningAddress,
+				grinAddress,
+				payUri,
 				recipientPubkey,
-				type: isSellerPayment ? 'merchant' : 'v4v',
+				type: 'merchant',
 			})
 		})
 
 		return invoices
-	}, [order.paymentRequests, order.paymentReceipts, orderId, sellerV4VShares, sellerPubkey])
+	}, [order.paymentRequests, order.paymentReceipts, orderId, sellerPubkey])
 
 	// Map local invoices by key
 	const localInvoicesByKey = useMemo(() => {
@@ -138,17 +141,16 @@ export function useOrderInvoices({ order, sellerV4VShares, userPubkey }: UseOrde
 			return {
 				...invoice,
 				status: latestLocal?.status ?? invoice.status,
-				bolt11: latestLocal?.bolt11 || invoice.bolt11,
-				lightningAddress: latestLocal?.lightningAddress || invoice.lightningAddress,
-				preimage: latestLocal?.preimage || invoice.preimage,
-				isZap: latestLocal?.isZap ?? invoice.isZap,
-				source: latestLocal ? 'both' : 'request',
+				grinAddress: latestLocal?.grinAddress || invoice.grinAddress,
+				payUri: latestLocal?.payUri || invoice.payUri,
+				proof: latestLocal?.proof || invoice.proof,
+				source: latestLocal ? ('both' as const) : ('request' as const),
 				localCopies,
 			}
 		})
 	}, [invoicesFromPaymentRequests, localInvoicesByKey])
 
-	// Generate a new invoice
+	// Rebuild the Grin payment request (e.g. after the seller updates their Goblin address)
 	const handleGenerateNewInvoice = useCallback(
 		async (invoice: PaymentInvoiceData) => {
 			setGeneratingInvoices((prev) => new Set(prev).add(invoice.id))
@@ -157,11 +159,10 @@ export function useOrderInvoices({ order, sellerV4VShares, userPubkey }: UseOrde
 				const recipientPubkey = invoice.recipientPubkey || sellerPubkey
 				const newInvoiceData = await generateInvoice({
 					sellerPubkey: recipientPubkey,
-					amountSats: invoice.amount,
+					amountNanogrin: invoice.amount,
 					description: invoice.description || 'Payment',
 					invoiceId: invoice.id,
 					items: [],
-					type: invoice.type === 'merchant' ? 'seller' : invoice.type,
 				})
 
 				const newPersistedInvoice: PaymentInvoiceData = {
@@ -171,19 +172,17 @@ export function useOrderInvoices({ order, sellerV4VShares, userPubkey }: UseOrde
 					recipientName: invoice.recipientName,
 					amount: invoice.amount,
 					description: invoice.description,
-					bolt11: newInvoiceData.bolt11 || null,
-					lightningAddress: newInvoiceData.lightningAddress || invoice.lightningAddress || null,
-					expiresAt: newInvoiceData.expiresAt,
+					grinAddress: newInvoiceData.grinAddress,
+					payUri: newInvoiceData.payUri,
 					status: newInvoiceData.status === 'failed' ? 'expired' : (newInvoiceData.status as 'pending' | 'paid' | 'expired'),
 					type: invoice.type,
 					createdAt: Date.now(),
-					isZap: newInvoiceData.isZap,
 				}
 
 				persistInvoicesLocally([newPersistedInvoice])
 				refreshLocalInvoices()
 
-				toast.success(`New invoice generated for ${invoice.recipientName}`)
+				toast.success(`New payment request prepared for ${invoice.recipientName}`)
 			} catch (error) {
 				console.error('Failed to generate new invoice:', error)
 				toast.error(`Failed to generate new invoice: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -198,14 +197,16 @@ export function useOrderInvoices({ order, sellerV4VShares, userPubkey }: UseOrde
 		[orderId, sellerPubkey, generateInvoice, refreshLocalInvoices],
 	)
 
-	// Handle payment completion
+	// Handle payment completion (dual confirmation, M5):
+	// - 'receipt': a kind 17 receipt already landed over Nostr, nothing to publish
+	// - 'proof-import': the buyer pasted the Grin payment proof; publish it as a kind 17 receipt
 	const handlePaymentComplete = useCallback(
-		async (invoiceId: string, preimage: string, dialogInvoices: PaymentInvoiceData[]) => {
+		async (invoiceId: string, proof: string, source: PaymentCompletionSource, dialogInvoices: PaymentInvoiceData[]) => {
 			toast.success('Payment completed successfully!')
 
 			const invoice = enrichedInvoices.find((inv) => inv.id === invoiceId) || dialogInvoices.find((inv) => inv.id === invoiceId)
 
-			if (invoice && invoice.bolt11) {
+			if (invoice && source === 'proof-import') {
 				try {
 					await publishPaymentReceipt({
 						invoice: {
@@ -214,10 +215,8 @@ export function useOrderInvoices({ order, sellerV4VShares, userPubkey }: UseOrde
 							amount: invoice.amount,
 							description: invoice.description,
 							id: invoice.id,
-							bolt11: invoice.bolt11,
 						},
-						preimage,
-						bolt11: invoice.bolt11,
+						proof,
 					})
 
 					queryClient.invalidateQueries({ queryKey: orderKeys.details(orderId) })
@@ -228,7 +227,7 @@ export function useOrderInvoices({ order, sellerV4VShares, userPubkey }: UseOrde
 
 			updatePersistedInvoiceLocally(orderId, invoiceId, {
 				status: 'paid',
-				preimage,
+				proof,
 			})
 			refreshLocalInvoices()
 		},

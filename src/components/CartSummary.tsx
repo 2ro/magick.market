@@ -1,3 +1,4 @@
+import { formatGrinAmount } from '@/lib/grin'
 import CartItem from '@/components/CartItem'
 import { Separator } from '@/components/ui/separator'
 import { cartActions, cartStore } from '@/lib/stores/cart'
@@ -20,7 +21,8 @@ export function CartSummary({
 	allowShippingChanges = true,
 	showExpandedDetails = false,
 }: CartSummaryProps) {
-	const { cart, sellerData, productsBySeller, totalInSats, totalShippingInSats, totalByCurrency, shippingByCurrency } = useStore(cartStore)
+	const { cart, sellerData, productsBySeller, totalInNanogrin, totalShippingInNanogrin, totalByCurrency, shippingByCurrency } =
+		useStore(cartStore)
 
 	const [parent, enableAnimations] = useAutoAnimate()
 	const [detailsExpanded, setDetailsExpanded] = useState(showExpandedDetails)
@@ -36,10 +38,6 @@ export function CartSummary({
 	const missingShippingCount = useMemo(() => {
 		return Object.values(cart.products).filter((product) => !product.shippingMethodId).length
 	}, [cart.products])
-
-	const formatSats = (sats: number): string => {
-		return Math.round(sats).toLocaleString()
-	}
 
 	useEffect(() => {
 		if (Object.keys(cart.products).length > 0) {
@@ -81,10 +79,10 @@ export function CartSummary({
 			<div className="space-y-6" ref={parent}>
 				{Object.entries(productsBySeller).map(([sellerPubkey, products]) => {
 					const data = sellerData[sellerPubkey] || {
-						satsTotal: 0,
+						nanogrinTotal: 0,
 						currencyTotals: {},
 						shares: { sellerAmount: 0, communityAmount: 0, sellerPercentage: 90 },
-						shippingSats: 0,
+						shippingNanogrin: 0,
 					}
 
 					return (
@@ -120,12 +118,12 @@ export function CartSummary({
 
 							<div className="flex justify-between mt-1">
 								<p className="text-sm">Shipping:</p>
-								<p className="text-sm font-semibold">{formatSats(data.shippingSats)} sat</p>
+								<p className="text-sm font-semibold">{formatGrinAmount(data.shippingNanogrin)}</p>
 							</div>
 
 							<div className="flex justify-between mt-1 font-semibold">
 								<p className="text-sm">Total:</p>
-								<p className="text-sm">{formatSats(data.satsTotal)} sat</p>
+								<p className="text-sm">{formatGrinAmount(data.nanogrinTotal)}</p>
 							</div>
 
 							<div className="mt-3">
@@ -138,7 +136,7 @@ export function CartSummary({
 								<div className="flex justify-between mt-1">
 									<p className="text-sm">Merchant: </p>
 									<p className="text-sm">
-										{formatSats(data.shares.sellerAmount)} sat ({data.shares.sellerPercentage.toFixed(2)}%)
+										{formatGrinAmount(data.shares.sellerAmount)} ({data.shares.sellerPercentage.toFixed(2)}%)
 									</p>
 								</div>
 
@@ -146,7 +144,7 @@ export function CartSummary({
 									<div className="flex justify-between">
 										<p className="text-sm">Community Share: </p>
 										<p className="text-sm">
-											{formatSats(data.shares.communityAmount)} sat ({(100 - data.shares.sellerPercentage).toFixed(2)}%)
+											{formatGrinAmount(data.shares.communityAmount)} ({(100 - data.shares.sellerPercentage).toFixed(2)}%)
 										</p>
 									</div>
 								)}
@@ -161,15 +159,15 @@ export function CartSummary({
 					<div className="space-y-1 mb-2">
 						<div className="flex justify-between">
 							<p className="text-sm">Subtotal:</p>
-							<p className="text-sm">{formatSats(totalInSats - totalShippingInSats)} sat</p>
+							<p className="text-sm">{formatGrinAmount(totalInNanogrin - totalShippingInNanogrin)}</p>
 						</div>
 						<div className="flex justify-between">
 							<p className="text-sm">Shipping:</p>
-							<p className="text-sm">{formatSats(totalShippingInSats)} sat</p>
+							<p className="text-sm">{formatGrinAmount(totalShippingInNanogrin)}</p>
 						</div>
 						<div className="flex justify-between text-lg font-bold">
 							<p>Total:</p>
-							<p>{formatSats(totalInSats)} sat</p>
+							<p>{formatGrinAmount(totalInNanogrin)}</p>
 						</div>
 					</div>
 
@@ -200,19 +198,19 @@ export function CartSummary({
 							<Separator className="my-2" />
 							<div className="flex justify-between">
 								<p className="text-sm">Subtotal:</p>
-								<p className="text-sm">{formatSats(totalInSats - totalShippingInSats)} sat</p>
+								<p className="text-sm">{formatGrinAmount(totalInNanogrin - totalShippingInNanogrin)}</p>
 							</div>
 
 							<div className="flex justify-between">
 								<p className="text-sm">Shipping:</p>
-								<p className="text-sm">{formatSats(totalShippingInSats)} sat</p>
+								<p className="text-sm">{formatGrinAmount(totalShippingInNanogrin)}</p>
 							</div>
 
 							<Separator className="my-2" />
 
 							<div className="flex justify-between font-semibold">
 								<p className="text-sm">Grand Total:</p>
-								<p className="text-sm">{formatSats(totalInSats)} sat</p>
+								<p className="text-sm">{formatGrinAmount(totalInNanogrin)}</p>
 							</div>
 						</div>
 					)}

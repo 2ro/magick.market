@@ -1,7 +1,8 @@
 import { ORDER_MESSAGE_TYPE, ORDER_PROCESS_KIND, ORDER_GENERAL_KIND, PAYMENT_RECEIPT_KIND, ORDER_STATUS } from '@/lib/schemas/order'
+import { mintInvoiceNumber } from '@/lib/grin'
 import { ndkActions } from '@/lib/stores/ndk'
 import { orderKeys } from '@/queries/queryKeyFactory'
-import { NDKEvent } from '@nostr-dev-kit/ndk'
+import { NDKEvent, type NDKSigner } from '@nostr-dev-kit/ndk'
 import type { NDKTag } from '@nostr-dev-kit/ndk'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -13,7 +14,6 @@ import {
 	type CheckoutDeliveryRequirements,
 } from '@/lib/checkout/deliveryRequirements'
 import { createEncryptedPrivateOrderMessageWithSigner, type PrivateOrderDeliveryDetails } from '@/lib/orders/privateOrderMessage'
-import { fetchProfileByIdentifier } from '@/queries/profiles'
 import { getShippingEvent, getShippingService } from '@/queries/shipping'
 import type { Event } from 'nostr-tools'
 // import type { CartProduct, SellerData, V4VShare } from '@/lib/stores/cart'
@@ -73,14 +73,9 @@ interface CartProduct {
 	amount: number
 	shippingMethodId?: string | null
 }
-interface V4VShare {
-	pubkey: string
-	name: string
-	percentage: number
-}
 interface SellerData {
-	satsTotal: number
-	shippingSats: number
+	nanogrinTotal: number
+	shippingNanogrin: number
 	shares: {
 		sellerAmount: number
 	}
@@ -112,7 +107,7 @@ export const createOrder = async (params: OrderCreateParams): Promise<string> =>
 	const user = ndk.activeUser
 	if (!user) throw new Error('No active user')
 
-	const currency = params.currency || 'USD'
+	const currency = params.currency || 'GRIN'
 	const total = (params.price * params.quantity).toFixed(2)
 	const orderId = uuidv4()
 
@@ -288,7 +283,7 @@ export const useUpdateOrderStatusMutation = () => {
 
 export type PaymentReceiptParams = {
 	orderEventId: string
-	method: 'lightning' | 'bitcoin' | 'fiat' | 'other'
+	method: 'grin'
 	amount: number
 	currency?: string
 	txid?: string
@@ -305,7 +300,7 @@ export const createPaymentReceipt = async (params: PaymentReceiptParams): Promis
 	const signer = ndkActions.getSigner()
 	if (!signer) throw new Error('No active user')
 
-	const currency = params.currency || 'USD'
+	const currency = params.currency || 'GRIN'
 
 	// Get the merchant pubkey from the original order
 	const originalOrder = await ndk.fetchEvent({
@@ -385,7 +380,10 @@ export interface OrderCreationData {
 		productRef: string // "30402:<pubkey>:<d-tag>"
 		quantity: number
 	}>
-	totalAmountSats: number
+	/** Total amount in integer nanogrin. */
+	totalAmountNanogrin: number
+	/** Opaque invoice number bridging the Grin payment (memo) to this order. */
+	invoiceNumber?: string
 	shippingRef?: string // "30406:<pubkey>:<d-tag>"
 	shippingAddress?: CheckoutFormData
 	email?: string
@@ -397,11 +395,14 @@ export interface PaymentRequestData {
 	buyerPubkey: string
 	merchantPubkey: string
 	orderId: string
-	amountSats: number
+	/** Amount in integer nanogrin. */
+	amountNanogrin: number
 	paymentMethods: Array<{
-		type: 'lightning' | 'bitcoin' | 'other'
-		details: string // BOLT11, address, etc.
+		type: 'grin'
+		details: string // Goblin nprofile / slatepack address
 	}>
+	/** Opaque invoice number carried in the Goblin pay memo. */
+	invoiceNumber?: string
 	expirationTime?: number
 	notes?: string
 }
@@ -418,11 +419,12 @@ export interface PaymentReceiptData {
 	merchantPubkey: string
 	buyerPubkey: string
 	orderId: string
-	amountSats: number
+	/** Amount in integer nanogrin. */
+	amountNanogrin: number
 	paymentProof: {
-		medium: 'lightning' | 'bitcoin' | 'other'
-		reference: string // invoice, address, etc.
-		proof: string // preimage, txid, etc.
+		medium: 'grin'
+		reference: string // invoice number
+		proof: string // receiver-signed Grin payment proof
 	}
 	notes?: string
 }
@@ -435,7 +437,7 @@ export async function createOrderCreationEvent(data: OrderCreationData): Promise
 	return createOrderCreationEventWithOrderId(data, uuidv4())
 }
 
-async function createOrderCreationEventWithOrderId(data: OrderCreationData, orderId: string): Promise<NDKEvent> {
+async function createOrderCreationEventWithOrderId(data: OrderCreationData, orderId: string, signer?: NDKSigner): Promise<NDKEvent> {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
@@ -448,8 +450,14 @@ async function createOrderCreationEventWithOrderId(data: OrderCreationData, orde
 		['subject', 'order-info'],
 		['type', ORDER_MESSAGE_TYPE.ORDER_CREATION],
 		['order', orderId],
-		['amount', data.totalAmountSats.toString()],
+		['amount', data.totalAmountNanogrin.toString()],
 	]
+
+	// The invoice number bridges the anonymous order to the Grin payment
+	// (it rides in the Goblin pay-URI memo and in kind 17 receipts).
+	if (data.invoiceNumber) {
+		tags.push(['invoice', data.invoiceNumber])
+	}
 
 	// Add item tags
 	data.orderItems.forEach((item) => {
@@ -468,9 +476,12 @@ async function createOrderCreationEventWithOrderId(data: OrderCreationData, orde
 	event.created_at = now
 	event.content = 'Order created'
 	event.tags = tags
+	if (signer) {
+		event.pubkey = (await signer.user()).pubkey
+	}
 
 	// Sign the event
-	await event.sign()
+	await event.sign(signer)
 
 	return event
 }
@@ -479,7 +490,7 @@ async function createOrderCreationEventWithOrderId(data: OrderCreationData, orde
  * Creates a spec-compliant payment request event (Kind 16, type 2)
  * Following gamma_spec.md section 4.2
  */
-export async function createPaymentRequestEvent(data: PaymentRequestData): Promise<NDKEvent> {
+export async function createPaymentRequestEvent(data: PaymentRequestData, signer?: NDKSigner): Promise<NDKEvent> {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
@@ -493,8 +504,13 @@ export async function createPaymentRequestEvent(data: PaymentRequestData): Promi
 		['subject', 'order-payment'],
 		['type', ORDER_MESSAGE_TYPE.PAYMENT_REQUEST],
 		['order', data.orderId],
-		['amount', data.amountSats.toString()],
+		['amount', data.amountNanogrin.toString()],
 	]
+
+	// The invoice number the buyer's Goblin wallet carries in the payment memo
+	if (data.invoiceNumber) {
+		tags.push(['payment-request', data.invoiceNumber])
+	}
 
 	// Add payment method tags
 	data.paymentMethods.forEach((method) => {
@@ -512,9 +528,12 @@ export async function createPaymentRequestEvent(data: PaymentRequestData): Promi
 	event.created_at = now
 	event.content = data.notes || 'Payment request for your order'
 	event.tags = tags
+	if (signer) {
+		event.pubkey = (await signer.user()).pubkey
+	}
 
 	// Sign the event
-	await event.sign()
+	await event.sign(signer)
 
 	return event
 }
@@ -569,7 +588,7 @@ export async function createPaymentReceiptEvent(data: PaymentReceiptData): Promi
 		['subject', 'order-receipt'],
 		['order', data.orderId],
 		['payment', data.paymentProof.medium, data.paymentProof.reference, data.paymentProof.proof],
-		['amount', data.amountSats.toString()],
+		['amount', data.amountNanogrin.toString()],
 	]
 
 	// Create the event
@@ -693,7 +712,21 @@ export interface PublishOrderDependenciesParams {
 	sellers: string[]
 	productsBySeller: Record<string, CartProduct[]>
 	sellerData: Record<string, SellerData>
-	v4vShares: Record<string, V4VShare[]>
+	/**
+	 * Signer for the order events. For anonymous guest checkout this is the
+	 * one-off ephemeral key minted at checkout; when omitted, the logged-in
+	 * user's signer is used.
+	 */
+	signer?: NDKSigner
+}
+
+export interface CreatedOrderInfo {
+	orderId: string
+	/** The opaque invoice number bridging the Grin payment (memo) to the order. */
+	invoiceNumber: string
+	sellerPubkey: string
+	/** Total amount in integer nanogrin. */
+	amountNanogrin: number
 }
 
 type SellerOrderPreflight = {
@@ -707,6 +740,7 @@ type SellerOrderPreflight = {
 type PreparedSellerOrderData = SellerOrderPreflight & {
 	orderData: OrderCreationData
 	orderId: string
+	invoiceNumber: string
 	privateGiftWrapEvent?: NDKEvent
 }
 
@@ -756,7 +790,7 @@ function createPrivateOrderDeliveryDetails(params: {
 		orderId,
 		buyerPubkey,
 		sellerPubkey,
-		totalAmountSats: data.satsTotal,
+		totalAmountNanogrin: data.nanogrinTotal,
 		shippingRef,
 		items: sellerProducts.map((product) => ({
 			productRef: `30402:${sellerPubkey}:${product.id}`,
@@ -803,20 +837,33 @@ async function publishRequiredPrivateGiftWrap(event: NDKEvent): Promise<void> {
 
 /**
  * Creates and publishes a spec-compliant order for each seller,
- * then creates and publishes all necessary payment requests (merchant + V4V).
+ * then creates and publishes the GRIN payment request for each order.
  * This function orchestrates the entire order creation and payment setup process.
  *
- * @returns An array of the created spec-compliant order IDs.
+ * @returns An array of created order infos (order id + invoice number per seller).
  */
-export async function publishOrderWithDependencies(params: PublishOrderDependenciesParams): Promise<string[]> {
-	const { shippingData, sellers, productsBySeller, sellerData, v4vShares } = params
+export async function publishOrderWithDependencies(params: PublishOrderDependenciesParams): Promise<CreatedOrderInfo[]> {
+	const { shippingData, sellers, productsBySeller, sellerData } = params
 
 	const ndk = ndkActions.getNDK()
-	const currentUser = ndk?.activeUser
-	const buyerPubkey = currentUser?.pubkey
+	const orderSigner = params.signer || ndkActions.getSigner()
 
+	// Fail closed before anything publishes: without a signing key neither the
+	// encrypted seller delivery nor the order events can be produced safely.
+	if (!orderSigner) {
+		throw new Error('Encrypted seller delivery could not be prepared')
+	}
+
+	const buyerPubkey = (await orderSigner.user()).pubkey
 	if (!buyerPubkey) {
-		throw new Error('No active user found for order creation')
+		throw new Error('Encrypted seller delivery could not be prepared')
+	}
+
+	// When relying on the logged-in signer (no explicit guest signer), it must
+	// match the active user; a mismatch means encrypted delivery would be
+	// prepared for the wrong identity - fail closed before any publish.
+	if (!params.signer && ndk?.activeUser?.pubkey && ndk.activeUser.pubkey !== buyerPubkey) {
+		throw new Error('Encrypted seller delivery could not be prepared')
 	}
 
 	const buyerEmail = shippingData.email.trim()
@@ -854,17 +901,12 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 		})
 	}
 
-	const signerRequired = preflight.some(({ requirements }) => requiresPrivateBuyerDeliveryDetails(requirements))
-	const signer = signerRequired ? ndkActions.getSigner() : undefined
-	if (signerRequired && !signer) {
-		throw new Error('Encrypted seller delivery could not be prepared')
-	}
-
 	const preparedOrderData: PreparedSellerOrderData[] = []
 
 	for (const preflightItem of preflight) {
 		const { sellerPubkey, sellerProducts, data, requirements, shippingRef } = preflightItem
 		const orderId = uuidv4()
+		const invoiceNumber = mintInvoiceNumber()
 		const orderData: OrderCreationData = {
 			merchantPubkey: sellerPubkey,
 			buyerPubkey: buyerPubkey,
@@ -872,7 +914,8 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 				productRef: `30402:${sellerPubkey}:${product.id}`,
 				quantity: product.amount,
 			})),
-			totalAmountSats: data.satsTotal,
+			totalAmountNanogrin: data.nanogrinTotal,
+			invoiceNumber,
 			shippingRef: shippingRef || undefined,
 		}
 
@@ -891,7 +934,7 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 				})
 				const { giftWrap } = await createEncryptedPrivateOrderMessageWithSigner({
 					details: privateDetails,
-					signer,
+					signer: orderSigner,
 				})
 				privateGiftWrapEvent = createNdkEventFromRawEvent(giftWrap)
 			} catch {
@@ -903,13 +946,14 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 			...preflightItem,
 			orderData,
 			orderId,
+			invoiceNumber,
 			privateGiftWrapEvent,
 		})
 	}
 
 	const preparedOrders: PreparedSellerOrderPublishWork[] = []
 	for (const preparedOrder of preparedOrderData) {
-		const orderEvent = await createOrderCreationEventWithOrderId(preparedOrder.orderData, preparedOrder.orderId)
+		const orderEvent = await createOrderCreationEventWithOrderId(preparedOrder.orderData, preparedOrder.orderId, orderSigner)
 		preparedOrders.push({
 			...preparedOrder,
 			orderEvent,
@@ -925,83 +969,58 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 		}
 	}
 
-	const newOrderIds: string[] = []
+	const newOrders: CreatedOrderInfo[] = []
 
-	for (const { sellerPubkey, data, orderEvent, orderId } of preparedOrders) {
+	for (const { sellerPubkey, sellerProducts, data, orderEvent, orderId, invoiceNumber } of preparedOrders) {
 		// 1. Publish the sanitized public order marker only after required private details are published.
 		const orderPublishResult = await ndkActions.publishEvent(orderEvent)
 		if (publishResultHasRelayDetails(orderPublishResult) && !publishResultHasRelaySuccess(orderPublishResult)) {
 			throw new Error('Order could not be published')
 		}
-		newOrderIds.push(orderId)
+		newOrders.push({ orderId, invoiceNumber, sellerPubkey, amountNanogrin: data.nanogrinTotal })
 		console.log(`✅ Spec-compliant order created for seller ${sellerPubkey.substring(0, 8)}...:`, orderId)
 
-		// 2. Create payment requests for the order (merchant + V4V)
-		const paymentRequests: PaymentRequestData[] = []
-		const productSubtotal = data.satsTotal - data.shippingSats
-		const v4vRecipients = v4vShares[sellerPubkey] || []
-
-		// 2a. Payment request for the merchant's share
-		const merchantShare = data.shares.sellerAmount
-		const sellerProfile = await fetchProfileByIdentifier(sellerPubkey)
-		const sellerLnAddress = sellerProfile?.profile?.lud16 || sellerProfile?.profile?.lud06
-
-		// Always create a payment request event, even if no lightning address is available.
-		// This ensures the order workflow is complete and the payment can be retried later
-		// when the seller configures their payment details.
-		if (!sellerLnAddress) {
-			console.warn(`Seller ${sellerPubkey} has no lightning address. Creating payment request without payment method.`)
+		// 2. Create the GRIN payment request for the order.
+		// The seller's payment detail is their Goblin nprofile / slatepack address.
+		let grinAddress: string | null = null
+		try {
+			const { getAvailablePaymentOptions } = await import('@/queries/payment')
+			const options = await getAvailablePaymentOptions(
+				sellerProducts.map((p) => p.id),
+				sellerPubkey,
+			)
+			grinAddress = options[0]?.paymentDetail || null
+		} catch (error) {
+			console.error(`Failed to resolve Goblin payment address for seller ${sellerPubkey}:`, error)
 		}
-		paymentRequests.push({
+
+		// Always create a payment request event, even if no Goblin address is available.
+		// This keeps the order workflow complete so payment can be retried later
+		// when the seller configures their payment details.
+		if (!grinAddress) {
+			console.warn(`Seller ${sellerPubkey} has no Goblin payment address. Creating payment request without payment method.`)
+		}
+		const paymentRequest: PaymentRequestData = {
 			buyerPubkey: buyerPubkey,
 			merchantPubkey: sellerPubkey,
 			orderId: orderId,
-			amountSats: merchantShare,
-			// Include payment method if available, otherwise empty array indicates pending payment setup
-			paymentMethods: sellerLnAddress ? [{ type: 'lightning', details: sellerLnAddress }] : [],
-			notes: sellerLnAddress ? `Payment for order ${orderId}` : `Payment for order ${orderId} (seller payment details pending)`,
-		})
-
-		// 2b. Payment requests for V4V shares
-		for (const recipient of v4vRecipients) {
-			const recipientPercentage = recipient.percentage > 1 ? recipient.percentage / 100 : recipient.percentage
-			const recipientAmount = Math.max(1, Math.floor(productSubtotal * recipientPercentage))
-
-			if (recipientAmount > 0) {
-				const recipientProfile = await fetchProfileByIdentifier(recipient.pubkey)
-				const recipientLnAddress = recipientProfile?.profile?.lud16 || recipientProfile?.profile?.lud06
-
-				// Always create a payment request event for V4V recipients, even if no lightning address is available
-				if (!recipientLnAddress) {
-					console.warn(`V4V recipient ${recipient.name} has no lightning address. Creating payment request without payment method.`)
-				}
-				paymentRequests.push({
-					buyerPubkey: buyerPubkey,
-					merchantPubkey: recipient.pubkey, // V4V recipient is the one getting paid
-					orderId: orderId,
-					amountSats: recipientAmount,
-					// Include payment method if available, otherwise empty array indicates pending payment setup
-					paymentMethods: recipientLnAddress ? [{ type: 'lightning', details: recipientLnAddress }] : [],
-					notes: recipientLnAddress
-						? `V4V share for order ${orderId} (${(recipientPercentage * 100).toFixed(1)}%)`
-						: `V4V share for order ${orderId} (${(recipientPercentage * 100).toFixed(1)}%) - payment details pending`,
-				})
-			}
+			amountNanogrin: data.nanogrinTotal,
+			invoiceNumber,
+			paymentMethods: grinAddress ? [{ type: 'grin', details: grinAddress }] : [],
+			notes: grinAddress
+				? `Grin payment for order ${orderId} (invoice ${invoiceNumber})`
+				: `Grin payment for order ${orderId} (invoice ${invoiceNumber}) - seller payment details pending`,
 		}
 
-		// 3. Publish all payment request events
-		let successfulRequests = 0
-		for (const req of paymentRequests) {
-			try {
-				const paymentRequestEvent = await createPaymentRequestEvent(req)
-				await ndkActions.publishEvent(paymentRequestEvent)
-				successfulRequests++
-			} catch (error) {
-				console.error(`Failed to create payment request for ${req.notes}:`, error)
-			}
+		// 3. Publish the payment request event
+		try {
+			const paymentRequestEvent = await createPaymentRequestEvent(paymentRequest, orderSigner)
+			await ndkActions.publishEvent(paymentRequestEvent)
+			console.log(`✅ Created GRIN payment request for order ${orderId} (invoice ${invoiceNumber})`)
+		} catch (error) {
+			console.error(`Failed to create payment request for order ${orderId}:`, error)
 		}
-		console.log(`✅ Created ${successfulRequests}/${paymentRequests.length} payment request events for order ${orderId}`)
 	}
 
-	return newOrderIds
+	return newOrders
 }

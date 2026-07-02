@@ -130,7 +130,7 @@ export function NewProductContent({
 			<SheetContent side="right" className="p-6">
 				{/* This is for Accessibility but we don't need to show it */}
 				<SheetHeader className="hidden">
-					<SheetTitle>Welcome to Plebeian Market</SheetTitle>
+					<SheetTitle>Welcome to Magick Market</SheetTitle>
 					<SheetDescription>Start selling your products in just a few minutes</SheetDescription>
 				</SheetHeader>
 				<ProductWelcomeScreen onGetStarted={() => setShowForm(true)} />

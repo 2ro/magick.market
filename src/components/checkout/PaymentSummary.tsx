@@ -1,3 +1,4 @@
+import { formatGrinAmount } from '@/lib/grin'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Check, Clock, Zap, Users, CreditCard, SkipForward } from 'lucide-react'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
@@ -9,8 +10,6 @@ interface PaymentSummaryProps {
 }
 
 export function PaymentSummary({ invoices, currentIndex, onSelectInvoice }: PaymentSummaryProps) {
-	const formatSats = (sats: number) => Math.round(sats).toLocaleString()
-
 	const paidCount = invoices.filter((inv) => inv.status === 'paid').length
 	const skippedCount = invoices.filter((inv) => inv.status === 'skipped').length
 	const totalAmount = invoices.reduce((sum, inv) => sum + inv.amount, 0)
@@ -44,21 +43,21 @@ export function PaymentSummary({ invoices, currentIndex, onSelectInvoice }: Paym
 					)}
 					<div className="flex justify-between text-sm">
 						<span>Completed</span>
-						<span className="font-medium text-green-600">{formatSats(paidAmount)} sats</span>
+						<span className="font-medium text-green-600">{formatGrinAmount(paidAmount)}</span>
 					</div>
 					{skippedAmount > 0 && (
 						<div className="flex justify-between text-sm">
 							<span>Skipped Amount</span>
-							<span className="font-medium text-orange-600">{formatSats(skippedAmount)} sats</span>
+							<span className="font-medium text-orange-600">{formatGrinAmount(skippedAmount)}</span>
 						</div>
 					)}
 					<div className="flex justify-between text-sm">
 						<span>Remaining</span>
-						<span className="font-medium">{formatSats(remainingAmount)} sats</span>
+						<span className="font-medium">{formatGrinAmount(remainingAmount)}</span>
 					</div>
 					<div className="border-t pt-2 flex justify-between font-medium">
 						<span>Total</span>
-						<span>{formatSats(totalAmount)} sats</span>
+						<span>{formatGrinAmount(totalAmount)}</span>
 					</div>
 				</CardContent>
 			</Card>
@@ -86,11 +85,7 @@ export function PaymentSummary({ invoices, currentIndex, onSelectInvoice }: Paym
 							>
 								<div className="flex items-center justify-between mb-1">
 									<div className="flex items-center gap-2">
-										{invoice.type === 'v4v' ? (
-											<Users className="w-4 h-4 text-purple-600" />
-										) : (
-											<CreditCard className="w-4 h-4 text-blue-600" />
-										)}
+										<CreditCard className="w-4 h-4 text-blue-600" />
 										<span className="font-medium text-sm truncate">{invoice.recipientName}</span>
 										{invoice.status === 'paid' && <Check className="w-4 h-4 text-green-600" />}
 										{invoice.status === 'skipped' && <SkipForward className="w-4 h-4 text-orange-600" />}
@@ -98,9 +93,9 @@ export function PaymentSummary({ invoices, currentIndex, onSelectInvoice }: Paym
 								</div>
 
 								<div className="flex items-center justify-between">
-									<span className="text-xs text-gray-500">{invoice.type === 'v4v' ? 'V4V Payment' : 'Merchant Payment'}</span>
+									<span className="text-xs text-gray-500">Grin Payment</span>
 									<div className="text-right">
-										<div className="font-medium text-sm">{formatSats(invoice.amount)} sats</div>
+										<div className="font-medium text-sm">{formatGrinAmount(invoice.amount)}</div>
 										{invoice.status === 'paid' && <div className="text-xs text-green-600">Paid</div>}
 										{invoice.status === 'skipped' && <div className="text-xs text-orange-600">Skipped</div>}
 										{invoice.status === 'pending' && invoice.expiresAt && (

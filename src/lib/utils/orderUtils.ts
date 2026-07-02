@@ -3,7 +3,7 @@ export interface InvoiceData {
 	id: string
 	orderId: string
 	sellerPubkey: string
-	amountSats: number
+	amountNanogrin: number
 	status: 'pending' | 'paid' | 'expired' | 'failed'
 	bolt11?: string
 	createdAt: number
@@ -26,7 +26,7 @@ export interface OrderInvoiceSet {
 export function createInvoiceData(
 	orderId: string,
 	sellerPubkey: string,
-	amountSats: number,
+	amountNanogrin: number,
 	type: 'merchant' | 'v4v' = 'merchant',
 	bolt11?: string,
 ): InvoiceData {
@@ -36,7 +36,7 @@ export function createInvoiceData(
 		id: `${orderId}-${type}-${sellerPubkey}`,
 		orderId,
 		sellerPubkey,
-		amountSats,
+		amountNanogrin,
 		status: 'pending',
 		bolt11,
 		createdAt: now,

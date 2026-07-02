@@ -41,7 +41,7 @@ async function setupExtensionOnly(context: BrowserContext, user: { sk: string; p
 		}
 
 		// Pre-accept terms so they don't interfere with login testing
-		localStorage.setItem('plebeian_terms_accepted', 'true')
+		localStorage.setItem('magick_terms_accepted', 'true')
 		// Do NOT set nostr_auto_login — user must use the dialog
 	})
 }
@@ -50,7 +50,7 @@ async function setupExtensionOnly(context: BrowserContext, user: { sk: string; p
 async function createFreshPage(context: BrowserContext): Promise<Page> {
 	await context.addInitScript(() => {
 		// Pre-accept terms so they don't interfere with login testing
-		localStorage.setItem('plebeian_terms_accepted', 'true')
+		localStorage.setItem('magick_terms_accepted', 'true')
 	})
 	return await context.newPage()
 }
@@ -208,7 +208,7 @@ test.describe('Authentication', () => {
 			await context.addInitScript(
 				({ pk, ncryptsec }: { pk: string; ncryptsec: string }) => {
 					localStorage.setItem('nostr_local_encrypted_signer_key', `${pk}:${ncryptsec}`)
-					localStorage.setItem('plebeian_terms_accepted', 'true')
+					localStorage.setItem('magick_terms_accepted', 'true')
 				},
 				{ pk: devUser2.pk, ncryptsec },
 			)
@@ -246,7 +246,7 @@ test.describe('Authentication', () => {
 			await context.addInitScript(
 				({ pk, ncryptsec }: { pk: string; ncryptsec: string }) => {
 					localStorage.setItem('nostr_local_encrypted_signer_key', `${pk}:${ncryptsec}`)
-					localStorage.setItem('plebeian_terms_accepted', 'true')
+					localStorage.setItem('magick_terms_accepted', 'true')
 				},
 				{ pk: devUser2.pk, ncryptsec },
 			)
@@ -284,7 +284,7 @@ test.describe('Authentication', () => {
 			await context.addInitScript(
 				({ pk, nsec }: { pk: string; nsec: string }) => {
 					localStorage.setItem('nostr_local_encrypted_signer_key', `${pk}:${nsec}`)
-					localStorage.setItem('plebeian_terms_accepted', 'true')
+					localStorage.setItem('magick_terms_accepted', 'true')
 				},
 				{ pk: devUser2.pk, nsec },
 			)
@@ -483,7 +483,7 @@ test.describe('Authentication', () => {
 					// Simulate a previously stored encrypted key with auto-login enabled
 					localStorage.setItem('nostr_local_encrypted_signer_key', `${pk}:${ncryptsec}`)
 					localStorage.setItem('nostr_auto_login', 'true')
-					localStorage.setItem('plebeian_terms_accepted', 'true')
+					localStorage.setItem('magick_terms_accepted', 'true')
 				},
 				{ pk: devUser2.pk, ncryptsec },
 			)
@@ -517,7 +517,7 @@ test.describe('Authentication', () => {
 					// Simulate a previously stored encrypted key with auto-login enabled
 					localStorage.setItem('nostr_local_encrypted_signer_key', `${pk}:${ncryptsec}`)
 					localStorage.setItem('nostr_auto_login', 'true')
-					localStorage.setItem('plebeian_terms_accepted', 'true')
+					localStorage.setItem('magick_terms_accepted', 'true')
 				},
 				{ pk: devUser2.pk, ncryptsec },
 			)

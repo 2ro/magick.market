@@ -1,4 +1,3 @@
-import { CurrencyDropdown } from '@/components/CurrencyDropdown'
 import { Pattern } from '@/components/pattern'
 import { authActions, authStore } from '@/lib/stores/auth'
 import { uiActions, uiStore } from '@/lib/stores/ui'
@@ -94,11 +93,6 @@ export function MobileMenu() {
 									</button>
 								</div>
 							)}
-
-							{/* Currency Dropdown for mobile */}
-							<div className="py-3 px-6 flex justify-center">
-								<CurrencyDropdown />
-							</div>
 						</nav>
 					</div>
 				</div>

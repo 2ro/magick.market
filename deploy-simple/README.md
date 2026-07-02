@@ -1,6 +1,6 @@
-# Plebeian Market - Simple Deployment
+# Magick Market - Simple Deployment
 
-Multi-stage deployment for Plebeian Market with support for development, staging, and production environments.
+Multi-stage deployment for Magick Market with support for development, staging, and production environments.
 
 ## Table of Contents
 
@@ -141,20 +141,20 @@ Go to Settings → Secrets and variables → Actions → New repository secret
 **Staging secrets:**
 
 ```
-STAGING_HOST=staging.plebeian.market
+STAGING_HOST=staging.magick.market
 STAGING_USER=deployer
 STAGING_PASSWORD=<deployer password>
-STAGING_RELAY_URL=wss://relay.staging.plebeian.market
+STAGING_RELAY_URL=wss://relay.staging.magick.market
 STAGING_APP_PRIVATE_KEY=<64-char hex private key>
 ```
 
 **Production secrets:**
 
 ```
-PROD_HOST=plebeian.market
+PROD_HOST=magick.market
 PROD_USER=deployer
 PROD_PASSWORD=<deployer password>
-PROD_RELAY_URL=wss://relay.plebeian.market
+PROD_RELAY_URL=wss://relay.magick.market
 PROD_APP_PRIVATE_KEY=<64-char hex private key>
 ```
 
@@ -195,7 +195,7 @@ cp env/.env.staging.example env/.env.staging
 nano env/.env.staging  # Add your secrets
 
 # 2. Deploy
-./deploy.sh staging deployer@staging.plebeian.market
+./deploy.sh staging deployer@staging.magick.market
 
 # 3. Verify
 ./control.sh staging status
@@ -210,11 +210,11 @@ cp env/.env.production.example env/.env.production
 nano env/.env.production  # Add your secrets
 
 # 2. Deploy
-SSH_KEY=~/.ssh/prod_key ./deploy.sh production deployer@plebeian.market
+SSH_KEY=~/.ssh/prod_key ./deploy.sh production deployer@magick.market
 
 # 3. Verify
 ./control.sh production status
-curl https://plebeian.market/api/config
+curl https://magick.market/api/config
 ```
 
 ---
@@ -237,7 +237,7 @@ sudo npm install -g pm2
 # - Stop old systemd service
 # - Disable systemd service
 # - Start PM2 process
-./deploy.sh production deployer@plebeian.market
+./deploy.sh production deployer@magick.market
 ```
 
 ### Step 3: Verify and cleanup
@@ -247,10 +247,10 @@ sudo npm install -g pm2
 ./control.sh production status
 
 # Verify old service is stopped
-ssh deployer@plebeian.market "sudo systemctl status market.service"
+ssh deployer@magick.market "sudo systemctl status market.service"
 
 # Optionally remove old systemd unit
-ssh deployer@plebeian.market "sudo rm /etc/systemd/system/market.service"
+ssh deployer@magick.market "sudo rm /etc/systemd/system/market.service"
 ```
 
 ---
@@ -463,13 +463,13 @@ The project includes GitHub Actions workflows for automated deployments:
 
 - **Trigger:** Successful completion of `E2E Tests` on `master`, or manual dispatch
 - **Environment:** `staging`
-- **URL:** https://staging.plebeian.market
+- **URL:** https://staging.magick.market
 
 ### Production (`.github/workflows/release.yml`)
 
 - **Trigger:** Push tag matching `*-release` (e.g., `v1.0.0-release`), or manual dispatch to redeploy an existing release tag
 - **Environment:** `production` (requires approval)
-- **URL:** https://plebeian.market
+- **URL:** https://magick.market
 
 ### Production Promotion (`.github/workflows/promote-production.yml`)
 
@@ -481,23 +481,23 @@ The project includes GitHub Actions workflows for automated deployments:
 
 #### Staging Environment
 
-| Secret                    | Description                                                   |
-| ------------------------- | ------------------------------------------------------------- |
-| `STAGING_HOST`            | Staging server hostname                                       |
-| `STAGING_USER`            | SSH username                                                  |
-| `STAGING_PASSWORD`        | SSH password                                                  |
-| `STAGING_RELAY_URL`       | Nostr relay URL (e.g., `wss://relay.staging.plebeian.market`) |
-| `STAGING_APP_PRIVATE_KEY` | App's Nostr private key (hex)                                 |
+| Secret                    | Description                                                 |
+| ------------------------- | ----------------------------------------------------------- |
+| `STAGING_HOST`            | Staging server hostname                                     |
+| `STAGING_USER`            | SSH username                                                |
+| `STAGING_PASSWORD`        | SSH password                                                |
+| `STAGING_RELAY_URL`       | Nostr relay URL (e.g., `wss://relay.staging.magick.market`) |
+| `STAGING_APP_PRIVATE_KEY` | App's Nostr private key (hex)                               |
 
 #### Production Environment
 
-| Secret                 | Description                                           |
-| ---------------------- | ----------------------------------------------------- |
-| `PROD_HOST`            | Production server hostname                            |
-| `PROD_USER`            | SSH username                                          |
-| `PROD_PASSWORD`        | SSH password                                          |
-| `PROD_RELAY_URL`       | Nostr relay URL (e.g., `wss://relay.plebeian.market`) |
-| `PROD_APP_PRIVATE_KEY` | App's Nostr private key (hex)                         |
+| Secret                 | Description                                         |
+| ---------------------- | --------------------------------------------------- |
+| `PROD_HOST`            | Production server hostname                          |
+| `PROD_USER`            | SSH username                                        |
+| `PROD_PASSWORD`        | SSH password                                        |
+| `PROD_RELAY_URL`       | Nostr relay URL (e.g., `wss://relay.magick.market`) |
+| `PROD_APP_PRIVATE_KEY` | App's Nostr private key (hex)                       |
 
 ### Creating a Release
 
@@ -512,6 +512,6 @@ git push origin v1.0.0-release
 The production Caddyfile (`caddyfiles/Caddyfile.production`) manages the public
 relay and preserves the legacy app:
 
-- `plebeian.market` → Market app (PM2, port 3001)
-- `relay.plebeian.market` → Nostr relay (port 3334)
-- `legacy.plebeian.market` → Legacy version (port 4173)
+- `magick.market` → Market app (PM2, port 3001)
+- `relay.magick.market` → Nostr relay (port 3334)
+- `legacy.magick.market` → Legacy version (port 4173)

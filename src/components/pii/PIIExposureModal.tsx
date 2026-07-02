@@ -145,13 +145,13 @@ export function PIIExposureModal({ isOpen, onClose, scanResult }: PIIExposureMod
 											⚠️ Please avoid public posts about this leak to protect exposed community members
 										</strong>{' '}
 										and allow them to delete data before the official announcement.{' '}
-										<strong className="text-yellow-800">Do not share on Plebeian telegram or Nostr.</strong> A public announcement will
-										follow once all affected users have deleted their data.
+										<strong className="text-yellow-800">Do not share on Magick telegram or Nostr.</strong> A public announcement will follow
+										once all affected users have deleted their data.
 									</li>
 									<li>
-										<strong>On Nostr, users control their data.</strong> The Plebeian team cannot delete events for users, so this feature
-										is added to detect and request event deletions automatically. Pressing the button below requests deletion and checks if
-										any events remain.
+										<strong>On Nostr, users control their data.</strong> The Magick team cannot delete events for users, so this feature is
+										added to detect and request event deletions automatically. Pressing the button below requests deletion and checks if any
+										events remain.
 									</li>
 									<li>
 										<strong>Deletion by relays isn't guaranteed</strong>, but tests show it usually works as events disappear from queries

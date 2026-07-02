@@ -1,14 +1,11 @@
 import { configStore } from '@/lib/stores/config'
 import { ndkActions } from '@/lib/stores/ndk'
-import { parseNwcUri } from '@/lib/stores/wallet'
 import type { PublishPaymentDetailParams } from '@/queries/payment'
 import { publishPaymentDetail } from '@/queries/payment'
 import { paymentDetailsKeys } from '@/queries/queryKeyFactory'
-import NDK from '@nostr-dev-kit/ndk'
-import { NDKNWCWallet, NDKWalletStatus } from '@nostr-dev-kit/wallet'
+import { NDKEvent, type NDKSigner } from '@nostr-dev-kit/ndk'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { validatePreimage } from '@/lib/utils/payment.utils'
 
 /**
  * Mutation hook for publishing payment details with query invalidation
@@ -52,7 +49,10 @@ export const usePublishPaymentDetailMutation = () => {
 			}
 
 			if (params.coordinates) {
-				queryClient.invalidateQueries({ queryKey: paymentDetailsKeys.byProductOrCollection(params.coordinates) })
+				const coordinatesArray = Array.isArray(params.coordinates) ? params.coordinates : [params.coordinates]
+				coordinatesArray.forEach((coord) => {
+					queryClient.invalidateQueries({ queryKey: paymentDetailsKeys.byProductOrCollection(coord) })
+				})
 			}
 
 			toast.success('Payment details published successfully')
@@ -67,171 +67,32 @@ export const usePublishPaymentDetailMutation = () => {
 }
 
 /**
- * Helper function for creating lightning payment details
+ * Helper mutation for saving a seller's GRIN payment detail:
+ * a Goblin nprofile (Grin-over-Nostr) or a Grin slatepack address.
  */
-export const useLightningPaymentDetailMutation = () => {
+export const useGrinPaymentDetailMutation = () => {
 	const publishPaymentDetailMutation = usePublishPaymentDetailMutation()
 
 	return useMutation({
-		mutationFn: async (params: { lightningAddress: string; coordinates?: string; appPubkey?: string }) => {
+		mutationFn: async (params: { goblinAddress: string; coordinates?: string; appPubkey?: string }) => {
 			return publishPaymentDetailMutation.mutateAsync({
-				paymentMethod: 'ln',
-				paymentDetail: params.lightningAddress,
+				paymentMethod: 'grin',
+				paymentDetail: params.goblinAddress,
 				coordinates: params.coordinates,
 				appPubkey: params.appPubkey,
 			})
 		},
 
 		onSuccess: (eventId) => {
-			toast.success('Lightning payment details saved')
+			toast.success('Goblin payment address saved')
 			return eventId
 		},
 
 		onError: (error) => {
-			console.error('Failed to save lightning payment details:', error)
-			toast.error('Failed to save lightning payment details')
+			console.error('Failed to save Goblin payment address:', error)
+			toast.error('Failed to save Goblin payment address')
 		},
 	})
-}
-
-/**
- * Helper function for creating on-chain payment details
- */
-export const useOnChainPaymentDetailMutation = () => {
-	const publishPaymentDetailMutation = usePublishPaymentDetailMutation()
-
-	return useMutation({
-		mutationFn: async (params: { bitcoinAddress: string; coordinates?: string; appPubkey?: string }) => {
-			return publishPaymentDetailMutation.mutateAsync({
-				paymentMethod: 'on-chain',
-				paymentDetail: params.bitcoinAddress,
-				coordinates: params.coordinates,
-				appPubkey: params.appPubkey,
-			})
-		},
-
-		onSuccess: (eventId) => {
-			toast.success('Bitcoin address saved')
-			return eventId
-		},
-
-		onError: (error) => {
-			console.error('Failed to save bitcoin address:', error)
-			toast.error('Failed to save bitcoin address')
-		},
-	})
-}
-
-export interface PayWithNwcParams {
-	bolt11: string
-	nwcUri: string
-	userPubkey: string
-	recipientPubkey: string
-	invoiceId: string
-	amount: number
-	description: string
-}
-
-/**
- * Pays an invoice using an NWC connection via direct NIP-47 pay_invoice method
- * @returns The payment preimage on success
- */
-export const payInvoiceWithNwc = async (params: PayWithNwcParams): Promise<string> => {
-	const { bolt11, nwcUri, userPubkey } = params
-
-	// Parse the NWC URI to get the relay URL
-	const parsedUri = parseNwcUri(nwcUri)
-	if (!parsedUri || !parsedUri.relay) {
-		throw new Error('Failed to parse NWC URI or missing relay URL')
-	}
-
-	// Create a dedicated NDK instance for this specific NWC wallet
-	const nwcNdk = new NDK({
-		explicitRelayUrls: [parsedUri.relay],
-	})
-
-	// Set the signer from the main NDK instance
-	const mainNdk = ndkActions.getNDK()
-	if (!mainNdk || !mainNdk.signer) {
-		throw new Error('Main NDK instance or signer not available')
-	}
-	nwcNdk.signer = mainNdk.signer
-
-	// Connect to the NWC relay
-	try {
-		console.log('Connecting to NWC relay for payment:', parsedUri.relay)
-		await nwcNdk.connect()
-	} catch (error) {
-		throw new Error(`Failed to connect to NWC relay: ${error}`)
-	}
-
-	const nwcWalletForPayment = new NDKNWCWallet(nwcNdk, { pairingCode: nwcUri })
-
-	// Wait for the wallet to connect
-	const timeout = 10000 // 10 seconds
-	const startTime = Date.now()
-
-	while (nwcWalletForPayment.status !== NDKWalletStatus.READY) {
-		if (Date.now() - startTime > timeout) {
-			throw new Error('NWC wallet connection timeout')
-		}
-		await new Promise((resolve) => setTimeout(resolve, 100))
-	}
-
-	console.log(`Initiating NWC pay_invoice request for ${params.amount} sats`)
-
-	try {
-		const response = await nwcWalletForPayment.lnPay({
-			pr: bolt11,
-		})
-
-		const candidate =
-			response?.preimage ||
-			// Some wallets may use different keys (or nest results)
-			(response as any)?.payment_preimage ||
-			(response as any)?.paymentPreimage ||
-			(response as any)?.preimageHex ||
-			(response as any)?.preimage_hex ||
-			(response as any)?.result?.preimage ||
-			undefined
-
-		if (typeof candidate === 'string' && candidate.length > 0 && validatePreimage(bolt11, candidate)) {
-			console.log(`✅ NWC payment successful, preimage: ${candidate.substring(0, 16)}...`)
-			return candidate
-		}
-
-		// Some wallets (e.g. Primal) may not return a real Lightning preimage.
-		// Treat the successful response as an ACK and rely on zap receipts / other signals for confirmation.
-		return 'external-payment'
-	} catch (error) {
-		console.error('❌ NWC payment failed:', error)
-		throw new Error(`NWC payment failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
-	} finally {
-		// NDK doesn't expose a disconnect API
-	}
-}
-
-/**
- * Initiates a payment using a WebLN-compatible browser extension (e.g., Alby).
- * @param bolt11 The BOLT11 payment request string.
- * @returns A promise that resolves with the payment preimage if successful.
- * @throws If WebLN is not available or the payment fails.
- */
-export const payInvoiceWithWebln = async (bolt11: string): Promise<string> => {
-	if (!window.webln) {
-		throw new Error('WebLN not available. Please install a WebLN-compatible wallet extension.')
-	}
-
-	await window.webln.enable()
-	const result = await window.webln.sendPayment(bolt11)
-
-	const candidate = result?.preimage
-	if (typeof candidate === 'string' && candidate.length > 0 && validatePreimage(bolt11, candidate)) {
-		return candidate
-	}
-
-	// WebLN is expected to return a preimage, but fall back to a generic proof string if missing/invalid.
-	return 'external-payment'
 }
 
 /**
@@ -241,46 +102,47 @@ export interface PublishPaymentReceiptParams {
 	invoice: {
 		orderId: string
 		recipientPubkey?: string
+		/** Amount in integer nanogrin. */
 		amount: number
 		description?: string
+		/** The opaque invoice number (memo) bridging payment to order. */
 		id: string
-		bolt11?: string
 	}
-	preimage: string
-	bolt11: string
+	/** The receiver-signed Grin payment proof pasted/imported from Goblin. */
+	proof: string
+	/** Optional signer override (the guest buyer's ephemeral key). */
+	signer?: NDKSigner
 }
 
 /**
- * Publishes a payment receipt (Kind 17) to the Nostr network
- * This creates a proof of payment for the order
+ * Publishes a payment receipt (Kind 17) to the Nostr network.
+ * This is the buyer-proof confirmation path: the buyer imports the
+ * receiver-signed Grin payment proof from Goblin and the market publishes it
+ * as a kind 17 receipt carrying the grin_proof. The seller-receipt path
+ * (seller's Goblin publishing its own receipt) uses the same event shape.
  */
 export const publishPaymentReceipt = async (params: PublishPaymentReceiptParams): Promise<string> => {
-	const { invoice, preimage, bolt11 } = params
+	const { invoice, proof } = params
 
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
-	const signer = ndkActions.getSigner()
+	const signer = params.signer || ndkActions.getSigner()
 	if (!signer) throw new Error('No signer available')
 
-	// Get current user
-	const user = await signer.user()
-	if (!user) throw new Error('No user available')
-
 	// Create the payment receipt event (Kind 17)
-	const event = new (await import('@nostr-dev-kit/ndk')).NDKEvent(ndk)
+	const event = new NDKEvent(ndk)
 	event.kind = 17 // Payment Receipt Kind
 	event.content = invoice.description || 'Payment confirmation'
 
-	const tags = [
+	event.tags = [
 		['p', invoice.recipientPubkey || ''], // Merchant's pubkey
 		['subject', 'order-receipt'],
 		['order', invoice.orderId],
-		['payment', 'lightning', bolt11, preimage], // Payment proof
-		['amount', invoice.amount.toString()],
+		['payment-request', invoice.id], // Invoice number (bridges payment to order)
+		['payment', 'grin', invoice.id, proof], // Payment proof: grin_proof keyed by invoice number
+		['amount', invoice.amount.toString()], // nanogrin
 	]
-
-	event.tags = tags
 	event.created_at = Math.floor(Date.now() / 1000)
 
 	try {

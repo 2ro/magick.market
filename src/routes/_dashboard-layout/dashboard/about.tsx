@@ -118,7 +118,7 @@ function useGitHubContributors() {
 	return useQuery({
 		queryKey: ['github-contributors'],
 		queryFn: async (): Promise<GitHubContributor[]> => {
-			const response = await fetch('https://api.github.com/repos/PlebeianApp/market/contributors')
+			const response = await fetch('https://api.github.com/repos/MagickApp/market/contributors')
 			if (!response.ok) throw new Error('Failed to fetch contributors')
 			return response.json()
 		},
@@ -135,7 +135,7 @@ function AboutComponent() {
 
 	const appPubkey = config?.appPublicKey
 	const appRelay = config?.appRelay
-	const instanceName = appSettings?.displayName || appSettings?.name || 'Plebeian Market'
+	const instanceName = appSettings?.displayName || appSettings?.name || 'Magick Market'
 	const ownerPubkey = appSettings?.ownerPk
 	const contactEmail = appSettings?.contactEmail
 
@@ -170,7 +170,7 @@ function AboutComponent() {
 					<Card>
 						<CardHeader>
 							<CardTitle className="text-lg">Instance Information</CardTitle>
-							<CardDescription>Details about this Plebeian Market instance</CardDescription>
+							<CardDescription>Details about this Magick Market instance</CardDescription>
 						</CardHeader>
 						<CardContent className="space-y-4">
 							<div className="flex items-center gap-3 p-3 border rounded-md bg-muted/50">
@@ -243,21 +243,21 @@ function AboutComponent() {
 						</Card>
 					)}
 
-					{/* About Plebeian Market */}
+					{/* About Magick Market */}
 					<Card>
 						<CardHeader>
 							<CardTitle className="text-lg flex items-center gap-2">
 								<SiGithub className="w-5 h-5" />
-								About Plebeian Market
+								About Magick Market
 							</CardTitle>
 						</CardHeader>
 						<CardContent className="space-y-4 text-sm text-muted-foreground">
 							<p>
-								Plebeian Market is a decentralized marketplace built on the Nostr protocol. All data is stored on Nostr relays, giving you
+								Magick Market is a decentralized marketplace built on the Nostr protocol. All data is stored on Nostr relays, giving you
 								full ownership and control of your data.
 							</p>
 							<a
-								href="https://github.com/PlebeianApp/market"
+								href="https://github.com/MagickApp/market"
 								target="_blank"
 								rel="noopener noreferrer"
 								className="flex items-center gap-3 p-3 border rounded-md bg-muted/50 hover:bg-muted transition-colors"
@@ -265,7 +265,7 @@ function AboutComponent() {
 								<SiGithub className="w-5 h-5 text-muted-foreground flex-shrink-0" />
 								<div>
 									<p className="text-sm font-medium text-muted-foreground">Repository</p>
-									<p className="font-medium text-blue-600">PlebeianApp/market</p>
+									<p className="font-medium text-blue-600">MagickApp/market</p>
 								</div>
 								<ExternalLink className="w-4 h-4 text-muted-foreground ml-auto" />
 							</a>
@@ -279,7 +279,7 @@ function AboutComponent() {
 								<User className="w-5 h-5" />
 								Contributors
 							</CardTitle>
-							<CardDescription>People who have contributed to Plebeian Market</CardDescription>
+							<CardDescription>People who have contributed to Magick Market</CardDescription>
 						</CardHeader>
 						<CardContent>
 							{contributorsLoading ? (

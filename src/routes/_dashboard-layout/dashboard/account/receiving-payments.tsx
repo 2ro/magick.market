@@ -1,34 +1,33 @@
 import { DashboardListItem } from '@/components/layout/DashboardListItem'
-import { ProfileWalletCheck } from '@/components/ProfileWalletCheck'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import { WalletSetupGuide } from '@/components/WalletSetupGuide'
 import { PAYMENT_DETAILS_METHOD, type PaymentDetailsMethod } from '@/lib/constants'
+import { isValidGoblinPayAddress } from '@/lib/grin'
 import { useNDK } from '@/lib/stores/ndk'
-import { isValidNip05 } from '@/lib/utils'
-import { deriveAddresses, isExtendedPublicKey, parsePaymentDetailsFromClipboard, paymentMethodLabels } from '@/lib/utils/paymentDetails'
 import { getCollectionId, getCollectionTitle, useCollectionsByPubkey } from '@/queries/collections'
 import {
 	useDeletePaymentDetail,
 	usePublishRichPaymentDetail,
 	useRichUserPaymentDetails,
 	useUpdatePaymentDetail,
-	useWalletDetail,
 	type PaymentScope,
 	type RichPaymentDetail,
 } from '@/queries/payment'
 import { getProductId, getProductTitle, useProductsByPubkey } from '@/queries/products'
 import { useDashboardTitle } from '@/routes/_dashboard-layout'
 import { createFileRoute } from '@tanstack/react-router'
-import { format } from 'date-fns'
-import { ClipboardIcon, GlobeIcon, PackageIcon, PlusIcon, StarIcon, StoreIcon, TrashIcon, ZapIcon } from 'lucide-react'
+import { ClipboardIcon, GlobeIcon, PackageIcon, PlusIcon, StarIcon, StoreIcon, TrashIcon, WalletIcon } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+
+const paymentMethodLabels: Record<PaymentDetailsMethod, string> = {
+	[PAYMENT_DETAILS_METHOD.GRIN]: 'Goblin (GRIN)',
+}
 
 interface ScopeSelectorProps {
 	value: PaymentScope
@@ -184,84 +183,7 @@ export const Route = createFileRoute('/_dashboard-layout/dashboard/account/recei
 	component: ReceivingPaymentsComponent,
 })
 
-type FormState = 'idle' | 'validating' | 'confirming' | 'submitting'
-type OnChainConfirmationType = 'extended_public_key' | 'single_address'
-
-interface PaymentDetailConfirmationProps {
-	value: string
-	type: OnChainConfirmationType
-	onConfirm: () => void
-	onCancel: () => void
-}
-
-function PaymentDetailConfirmationCard({ value, type, onConfirm, onCancel }: PaymentDetailConfirmationProps) {
-	const numAddresses = 5
-
-	return (
-		<Card className="border-yellow-200 bg-yellow-50">
-			<CardHeader>
-				<CardTitle className="text-yellow-800">Confirm Payment Details</CardTitle>
-				<CardDescription>
-					{type === 'extended_public_key'
-						? 'Extended Public Key detected. This will generate receiving addresses.'
-						: 'Single Bitcoin address detected.'}
-				</CardDescription>
-			</CardHeader>
-			<CardContent className="space-y-4">
-				<div className="p-3 bg-white rounded border">
-					<p className="text-sm font-mono break-all">{value}</p>
-				</div>
-
-				{type === 'extended_public_key' &&
-					(() => {
-						try {
-							const derivedAddresses = deriveAddresses(value, numAddresses)
-
-							if (!derivedAddresses || derivedAddresses.length === 0) {
-								return (
-									<div className="space-y-2">
-										<Label className="text-sm font-medium text-red-700">Error:</Label>
-										<div className="text-sm text-red-600 p-2 bg-red-50 rounded">
-											Unable to derive addresses from this extended public key. Please check the format.
-										</div>
-									</div>
-								)
-							}
-
-							return (
-								<div className="space-y-2">
-									<Label className="text-sm font-medium">Preview of derived addresses:</Label>
-									<div className="space-y-1">
-										{derivedAddresses.slice(0, numAddresses).map((address, index) => (
-											<div key={index} className="text-xs font-mono p-2 bg-gray-50 rounded">
-												{index}: {address}
-											</div>
-										))}
-									</div>
-								</div>
-							)
-						} catch (error) {
-							console.error('Error previewing derived addresses:', error)
-							return (
-								<div className="space-y-2">
-									<Label className="text-sm font-medium text-red-700">Error:</Label>
-									<div className="text-sm text-red-600 p-2 bg-red-50 rounded">
-										Invalid extended public key format. Please verify the key is correct.
-									</div>
-								</div>
-							)
-						}
-					})()}
-			</CardContent>
-			<CardFooter className="flex justify-end gap-2">
-				<Button variant="outline" onClick={onCancel}>
-					Cancel
-				</Button>
-				<Button onClick={onConfirm}>Confirm</Button>
-			</CardFooter>
-		</Card>
-	)
-}
+type FormState = 'idle' | 'validating' | 'submitting'
 
 interface PaymentDetailFormProps {
 	paymentDetail: RichPaymentDetail | null
@@ -275,9 +197,6 @@ function PaymentDetailForm({ paymentDetail, isOpen, onOpenChange, onSuccess }: P
 	const [user, setUser] = useState<any>(null)
 	const [formState, setFormState] = useState<FormState>('idle')
 	const [validationMessage, setValidationMessage] = useState('')
-	const [showConfirmation, setShowConfirmation] = useState(false)
-	const [tempValidatedValue, setTempValidatedValue] = useState('')
-	const [confirmationType, setConfirmationType] = useState<OnChainConfirmationType>('single_address')
 
 	const publishMutation = usePublishRichPaymentDetail()
 	const updateMutation = useUpdatePaymentDetail()
@@ -293,7 +212,7 @@ function PaymentDetailForm({ paymentDetail, isOpen, onOpenChange, onSuccess }: P
 			id: '',
 			dTag: '',
 			userId: '',
-			paymentMethod: PAYMENT_DETAILS_METHOD.LIGHTNING_NETWORK,
+			paymentMethod: PAYMENT_DETAILS_METHOD.GRIN,
 			paymentDetail: '',
 			scope: 'global',
 			scopeId: null,
@@ -320,19 +239,15 @@ function PaymentDetailForm({ paymentDetail, isOpen, onOpenChange, onSuccess }: P
 		if (!isOpen) {
 			setValidationMessage('')
 			setFormState('idle')
-			setShowConfirmation(false)
 		}
 	}, [isOpen])
-
-	// Get wallet detail for on-chain extended public keys
-	const walletDetailQuery = useWalletDetail(user?.pubkey || '', paymentDetail?.id || '')
 
 	const resetForm = useCallback(() => {
 		setEditedPaymentDetail({
 			id: '',
 			dTag: '',
 			userId: user?.pubkey || '',
-			paymentMethod: PAYMENT_DETAILS_METHOD.LIGHTNING_NETWORK,
+			paymentMethod: PAYMENT_DETAILS_METHOD.GRIN,
 			paymentDetail: '',
 			scope: 'global',
 			scopeId: null,
@@ -342,68 +257,22 @@ function PaymentDetailForm({ paymentDetail, isOpen, onOpenChange, onSuccess }: P
 		})
 		setFormState('idle')
 		setValidationMessage('')
-		setShowConfirmation(false)
 	}, [user])
-
-	const validatePaymentDetails = async (value: string, method: PaymentDetailsMethod): Promise<boolean | 'needsConfirmation'> => {
-		switch (method) {
-			case PAYMENT_DETAILS_METHOD.LIGHTNING_NETWORK: {
-				if (isValidNip05(value)) {
-					// In a real implementation, you might validate the lightning address
-					return true
-				}
-				return false
-			}
-			// case PAYMENT_DETAILS_METHOD.ON_CHAIN: {
-			// 	if (isExtendedPublicKey(value)) {
-			// 		setConfirmationType('extended_public_key')
-			// 		const validation = validateExtendedPublicKey(value)
-			// 		if (!validation.isValid) {
-			// 			setValidationMessage(validation.error || 'Invalid extended public key')
-			// 			return false
-			// 		}
-			// 		return 'needsConfirmation'
-			// 	}
-			// 	if (value.startsWith('bc1')) {
-			// 		setConfirmationType('single_address')
-			// 		return checkAddress(value) ? 'needsConfirmation' : false
-			// 	}
-			// 	return false
-			// }
-			default:
-				return false
-		}
-	}
 
 	const handleValidateAndConfirm = async (e?: React.FormEvent) => {
 		if (e) e.preventDefault()
 
 		if (!editedPaymentDetail.paymentDetail) {
-			setValidationMessage('Please fill in the payment details')
+			setValidationMessage('Please fill in your Goblin payment address')
 			return
 		}
 
-		setFormState('validating')
-		setValidationMessage('Validating...')
-
-		try {
-			const result = await validatePaymentDetails(editedPaymentDetail.paymentDetail, editedPaymentDetail.paymentMethod)
-
-			if (result === 'needsConfirmation') {
-				setFormState('confirming')
-				setTempValidatedValue(editedPaymentDetail.paymentDetail)
-				setShowConfirmation(true)
-			} else if (result) {
-				await handleSubmit()
-			} else {
-				setFormState('idle')
-				setValidationMessage(`Invalid ${paymentMethodLabels[editedPaymentDetail.paymentMethod]}`)
-			}
-		} catch (error) {
-			setFormState('idle')
-			setValidationMessage('An error occurred during validation')
-			console.error('Validation error:', error)
+		if (!isValidGoblinPayAddress(editedPaymentDetail.paymentDetail)) {
+			setValidationMessage('Enter a Goblin nprofile (nprofile1...), npub, or Grin slatepack address (grin1...)')
+			return
 		}
+
+		await handleSubmit()
 	}
 
 	const handleSubmit = async () => {
@@ -430,7 +299,7 @@ function PaymentDetailForm({ paymentDetail, isOpen, onOpenChange, onSuccess }: P
 
 			const payload = {
 				paymentMethod: editedPaymentDetail.paymentMethod,
-				paymentDetail: editedPaymentDetail.paymentDetail,
+				paymentDetail: editedPaymentDetail.paymentDetail.trim(),
 				coordinates: coordinates.length > 0 ? coordinates : undefined,
 				scope: editedPaymentDetail.scope,
 				scopeId: editedPaymentDetail.scopeId,
@@ -459,17 +328,6 @@ function PaymentDetailForm({ paymentDetail, isOpen, onOpenChange, onSuccess }: P
 		}
 	}
 
-	const handleConfirmation = () => {
-		setShowConfirmation(false)
-		handleSubmit()
-	}
-
-	const handleCancellation = () => {
-		setShowConfirmation(false)
-		setFormState('idle')
-		setValidationMessage('Confirmation cancelled')
-	}
-
 	const handleDelete = () => {
 		if (isEditing && editedPaymentDetail.dTag && user?.pubkey) {
 			deleteMutation.mutate({
@@ -482,218 +340,120 @@ function PaymentDetailForm({ paymentDetail, isOpen, onOpenChange, onSuccess }: P
 
 	const handlePasteFromClipboard = async () => {
 		try {
-			const result = await parsePaymentDetailsFromClipboard()
-
-			if (result.success && result.paymentDetails && result.method) {
+			const text = (await navigator.clipboard.readText()).trim()
+			if (isValidGoblinPayAddress(text)) {
 				setEditedPaymentDetail((prev) => ({
 					...prev,
-					paymentDetail: result.paymentDetails!,
-					paymentMethod: result.method!,
+					paymentDetail: text,
+					paymentMethod: PAYMENT_DETAILS_METHOD.GRIN,
 				}))
-				toast.success(
-					`${result.method === PAYMENT_DETAILS_METHOD.LIGHTNING_NETWORK ? 'Lightning Network' : 'On Chain'} payment details pasted`,
-				)
+				toast.success('Goblin payment address pasted')
 			} else {
-				toast.error(result.error || 'Unknown error')
+				toast.error('Clipboard does not contain a Goblin nprofile or Grin slatepack address')
 			}
 		} catch (error) {
 			toast.error('Failed to read clipboard')
 		}
 	}
 
-	const PaymentMethodIcon = ({ method }: { method: PaymentDetailsMethod }) => {
-		switch (method) {
-			case PAYMENT_DETAILS_METHOD.LIGHTNING_NETWORK:
-				return <ZapIcon className="w-5 h-5" />
-			// case PAYMENT_DETAILS_METHOD.ON_CHAIN:
-			// 	return <AnchorIcon className="w-5 h-5" />
-			default:
-				return null
-		}
-	}
-
-	const triggerContent = isEditing ? (
-		<div className="flex items-center gap-2 min-w-0 flex-1">
-			<PaymentMethodIcon method={editedPaymentDetail.paymentMethod} />
-			<span className="truncate">
-				{editedPaymentDetail.paymentDetail.length > 30
-					? editedPaymentDetail.paymentDetail.substring(0, 30) + '...'
-					: editedPaymentDetail.paymentDetail}
-			</span>
-		</div>
-	) : (
-		<div className="flex items-center gap-2">
-			<PlusIcon className="w-6 h-6" />
-			<span>Add new payment method</span>
-		</div>
-	)
-
-	const triggerActions = isEditing ? (
-		<div className="flex items-center gap-2">
-			{editedPaymentDetail.isDefault && <StarIcon className="w-6 h-6 text-yellow-400 fill-current" />}
-			{editedPaymentDetail.scope === 'global' ? (
-				<>
-					<span className="font-bold">Global</span>
-					<GlobeIcon className="w-6 h-6" />
-				</>
-			) : (
-				<>
-					<span className="font-bold">{editedPaymentDetail.scopeName}</span>
-					{editedPaymentDetail.scope === 'collection' ? <StoreIcon className="w-6 h-6" /> : <PackageIcon className="w-6 h-6" />}
-				</>
-			)}
-		</div>
-	) : (
-		<Button
-			variant="ghost"
-			size="icon"
-			onClick={(e) => {
-				e.stopPropagation()
-				handlePasteFromClipboard()
-			}}
-			className="text-black"
-		>
-			<ClipboardIcon className="w-6 h-6" />
-		</Button>
-	)
-
 	return (
 		<div className="border-t pt-4">
-			{showConfirmation ? (
-				<PaymentDetailConfirmationCard
-					value={tempValidatedValue}
-					type={confirmationType}
-					onConfirm={handleConfirmation}
-					onCancel={handleCancellation}
-				/>
-			) : (
-				<form onSubmit={handleValidateAndConfirm} className="space-y-4">
-					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<div className="space-y-2">
-							<Label htmlFor="payment-method" className="font-medium">
-								Payment Method
-							</Label>
-							<Select
-								value={editedPaymentDetail.paymentMethod}
-								onValueChange={(value: PaymentDetailsMethod) => setEditedPaymentDetail((prev) => ({ ...prev, paymentMethod: value }))}
-							>
-								<SelectTrigger data-testid="payment-method-selector">
-									<SelectValue placeholder="Payment method" />
-								</SelectTrigger>
-								<SelectContent>
-									{Object.values(PAYMENT_DETAILS_METHOD).map((method) => (
-										<SelectItem key={method} value={method} data-testid={`payment-method-${method}`}>
-											<div className="flex items-center gap-2">
-												<PaymentMethodIcon method={method} />
-												{paymentMethodLabels[method]}
-											</div>
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-
-						<div className="space-y-2">
-							<Label htmlFor="scope" className="font-medium">
-								Scope
-							</Label>
-							<ScopeSelector
-								value={editedPaymentDetail.scope}
-								scopeId={editedPaymentDetail.scopeId}
-								scopeIds={(editedPaymentDetail as any).scopeIds}
-								userPubkey={user?.pubkey || ''}
-								onChange={(scope, scopeId, scopeName, scopeIds) => {
-									setEditedPaymentDetail(
-										(prev) =>
-											({
-												...prev,
-												scope,
-												scopeId,
-												scopeName,
-												scopeIds: scopeIds || [],
-											}) as any,
-									)
-								}}
-							/>
-						</div>
+			<form onSubmit={handleValidateAndConfirm} className="space-y-4">
+				<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<div className="space-y-2">
+						<Label htmlFor="payment-method" className="font-medium">
+							Payment Method
+						</Label>
+						<Select
+							value={editedPaymentDetail.paymentMethod}
+							onValueChange={(value: PaymentDetailsMethod) => setEditedPaymentDetail((prev) => ({ ...prev, paymentMethod: value }))}
+						>
+							<SelectTrigger data-testid="payment-method-selector">
+								<SelectValue placeholder="Payment method" />
+							</SelectTrigger>
+							<SelectContent>
+								{Object.values(PAYMENT_DETAILS_METHOD).map((method) => (
+									<SelectItem key={method} value={method} data-testid={`payment-method-${method}`}>
+										<div className="flex items-center gap-2">
+											<WalletIcon className="w-5 h-5" />
+											{paymentMethodLabels[method]}
+										</div>
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</div>
 
 					<div className="space-y-2">
-						<Label htmlFor="payment-details" className="font-medium">
-							Payment details
+						<Label htmlFor="scope" className="font-medium">
+							Scope
 						</Label>
-						<Input
-							id="payment-details"
-							data-testid="payment-details-input"
-							value={editedPaymentDetail.paymentDetail}
-							onChange={(e) => setEditedPaymentDetail((prev) => ({ ...prev, paymentDetail: e.target.value }))}
-							placeholder="Enter payment details e.g. plebeian@getalby.com"
-							className="w-full"
+						<ScopeSelector
+							value={editedPaymentDetail.scope}
+							scopeId={editedPaymentDetail.scopeId}
+							scopeIds={(editedPaymentDetail as any).scopeIds}
+							userPubkey={user?.pubkey || ''}
+							onChange={(scope, scopeId, scopeName, scopeIds) => {
+								setEditedPaymentDetail(
+									(prev) =>
+										({
+											...prev,
+											scope,
+											scopeId,
+											scopeName,
+											scopeIds: scopeIds || [],
+										}) as any,
+								)
+							}}
 						/>
+					</div>
+				</div>
 
-						{walletDetailQuery.data &&
-							paymentDetail?.paymentDetail &&
-							isExtendedPublicKey(paymentDetail.paymentDetail) &&
-							(() => {
-								try {
-									const derivedAddresses = deriveAddresses(paymentDetail.paymentDetail, 1, walletDetailQuery.data.valueNumeric)
-									const currentAddress = derivedAddresses?.[0]
+				<div className="space-y-2">
+					<Label htmlFor="payment-details" className="font-medium">
+						Goblin payment address
+					</Label>
+					<Input
+						id="payment-details"
+						data-testid="payment-details-input"
+						value={editedPaymentDetail.paymentDetail}
+						onChange={(e) => setEditedPaymentDetail((prev) => ({ ...prev, paymentDetail: e.target.value }))}
+						placeholder="nprofile1... (from your Goblin wallet) or grin1..."
+						className="w-full"
+					/>
+					<p className="text-xs text-muted-foreground">
+						Buyers pay this address in Grin from their Goblin wallet. Share your Goblin nprofile (preferred, works over Nostr even while you
+						are offline) or a Grin slatepack address.
+					</p>
+				</div>
 
-									if (!currentAddress) {
-										return (
-											<div className="bg-red-50 p-3 rounded-md space-y-2">
-												<Label className="font-medium text-red-700">Error</Label>
-												<small className="text-red-600">Unable to derive address from extended public key</small>
-											</div>
-										)
-									}
+				{validationMessage && formState === 'idle' && <p className="text-red-500 text-sm">{validationMessage}</p>}
 
-									return (
-										<div className="bg-gray-50 p-3 rounded-md space-y-2">
-											<Label className="font-medium">Current address</Label>
-											<div className="space-y-1">
-												<small className="font-mono">
-													Index: {walletDetailQuery.data.valueNumeric} - {currentAddress}
-												</small>
-												<small>Last updated: {format(walletDetailQuery.data.updatedAt, 'PPp')}</small>
-											</div>
-										</div>
-									)
-								} catch (error) {
-									console.error('Error displaying current address:', error)
-									return (
-										<div className="bg-red-50 p-3 rounded-md space-y-2">
-											<Label className="font-medium text-red-700">Error</Label>
-											<small className="text-red-600">Invalid extended public key format</small>
-										</div>
-									)
-								}
-							})()}
+				{formState !== 'idle' && (
+					<div className="flex items-center gap-2">
+						<Spinner />
+						<span className="text-sm">Saving...</span>
+					</div>
+				)}
+
+				<div className="space-y-4">
+					<div className="flex items-center gap-2">
+						<Checkbox
+							id="default-payment"
+							data-testid="default-payment-checkbox"
+							checked={editedPaymentDetail.isDefault}
+							onCheckedChange={(checked) => setEditedPaymentDetail((prev) => ({ ...prev, isDefault: !!checked }))}
+						/>
+						<Label htmlFor="default-payment" className="font-medium">
+							Default
+						</Label>
 					</div>
 
-					{validationMessage && formState === 'idle' && <p className="text-red-500 text-sm">{validationMessage}</p>}
-
-					{formState !== 'idle' && (
-						<div className="flex items-center gap-2">
-							<Spinner />
-							<span className="text-sm">{formState === 'validating' ? 'Validating...' : 'Saving...'}</span>
-						</div>
-					)}
-
-					<div className="space-y-4">
-						<div className="flex items-center gap-2">
-							<Checkbox
-								id="default-payment"
-								data-testid="default-payment-checkbox"
-								checked={editedPaymentDetail.isDefault}
-								onCheckedChange={(checked) => setEditedPaymentDetail((prev) => ({ ...prev, isDefault: !!checked }))}
-							/>
-							<Label htmlFor="default-payment" className="font-medium">
-								Default
-							</Label>
-						</div>
-
-						<div className="flex justify-end gap-2">
+					<div className="flex justify-between gap-2">
+						<Button type="button" variant="ghost" size="icon" onClick={handlePasteFromClipboard} aria-label="Paste from clipboard">
+							<ClipboardIcon className="w-5 h-5" />
+						</Button>
+						<div className="flex gap-2">
 							<Button
 								type="button"
 								variant="outline"
@@ -718,12 +478,12 @@ function PaymentDetailForm({ paymentDetail, isOpen, onOpenChange, onSuccess }: P
 
 							<Button type="submit" disabled={formState !== 'idle'} data-testid="save-payment-button">
 								{formState === 'submitting' && <Spinner />}
-								{formState === 'validating' ? 'Validating...' : formState === 'submitting' ? 'Saving...' : isEditing ? 'Update' : 'Save'}
+								{formState === 'submitting' ? 'Saving...' : isEditing ? 'Update' : 'Save'}
 							</Button>
 						</div>
 					</div>
-				</form>
-			)}
+				</div>
+			</form>
 		</div>
 	)
 }
@@ -756,20 +516,9 @@ function PaymentDetailListItem({ paymentDetail, isOpen, onOpenChange, isDeleting
 		}
 	}
 
-	const PaymentMethodIcon = ({ method }: { method: PaymentDetailsMethod }) => {
-		switch (method) {
-			// case PAYMENT_DETAILS_METHOD.ON_CHAIN:
-			// 	return <AnchorIcon className="w-5 h-5 text-muted-foreground" />
-			case PAYMENT_DETAILS_METHOD.LIGHTNING_NETWORK:
-				return <ZapIcon className="w-5 h-5 text-muted-foreground" />
-			default:
-				return <GlobeIcon className="w-5 h-5 text-muted-foreground" />
-		}
-	}
-
 	const triggerContent = (
 		<div>
-			<p className="font-semibold">{paymentMethodLabels[paymentDetail.paymentMethod]}</p>
+			<p className="font-semibold">{paymentMethodLabels[paymentDetail.paymentMethod] || 'Goblin (GRIN)'}</p>
 			<p className="text-sm text-muted-foreground break-all">
 				{paymentDetail.paymentDetail} - {paymentDetail.scopeName}
 			</p>
@@ -777,19 +526,22 @@ function PaymentDetailListItem({ paymentDetail, isOpen, onOpenChange, isDeleting
 	)
 
 	const actions = (
-		<Button
-			variant="ghost"
-			size="icon"
-			onClick={(e) => {
-				e.stopPropagation()
-				handleDelete()
-			}}
-			className="h-8 w-8 text-destructive hover:bg-destructive/10"
-			aria-label="Delete payment detail"
-			disabled={deleteMutation.isPending}
-		>
-			{deleteMutation.isPending ? <Spinner className="h-4 w-4" /> : <TrashIcon className="h-4 w-4" />}
-		</Button>
+		<div className="flex items-center gap-2">
+			{paymentDetail.isDefault && <StarIcon className="w-5 h-5 text-yellow-400 fill-current" />}
+			<Button
+				variant="ghost"
+				size="icon"
+				onClick={(e) => {
+					e.stopPropagation()
+					handleDelete()
+				}}
+				className="h-8 w-8 text-destructive hover:bg-destructive/10"
+				aria-label="Delete payment detail"
+				disabled={deleteMutation.isPending}
+			>
+				{deleteMutation.isPending ? <Spinner className="h-4 w-4" /> : <TrashIcon className="h-4 w-4" />}
+			</Button>
+		</div>
 	)
 
 	return (
@@ -799,7 +551,7 @@ function PaymentDetailListItem({ paymentDetail, isOpen, onOpenChange, isDeleting
 			triggerContent={triggerContent}
 			actions={actions}
 			isDeleting={deleteMutation.isPending}
-			icon={<PaymentMethodIcon method={paymentDetail.paymentMethod} />}
+			icon={<WalletIcon className="w-5 h-5 text-muted-foreground" />}
 		>
 			<PaymentDetailForm paymentDetail={paymentDetail} isOpen={isOpen} onOpenChange={onOpenChange} onSuccess={onSuccess} />
 		</DashboardListItem>
@@ -810,7 +562,6 @@ function ReceivingPaymentsComponent() {
 	const { getUser } = useNDK()
 	const [user, setUser] = useState<any>(null)
 	const [openPaymentDetailId, setOpenPaymentDetailId] = useState<string | null>(null)
-	const [paymentMethodFilter, setPaymentMethodFilter] = useState<PaymentDetailsMethod | 'all'>('all')
 	useDashboardTitle('Receiving Payments')
 
 	useEffect(() => {
@@ -858,22 +609,28 @@ function ReceivingPaymentsComponent() {
 			<div className="space-y-4 p-4 lg:p-6">
 				{!hasPaymentDetails && openPaymentDetailId !== 'new' ? (
 					<>
-						<ProfileWalletCheck />
-						<WalletSetupGuide />
+						<Card>
+							<CardHeader>
+								<CardTitle>Get paid in Grin with Goblin</CardTitle>
+								<CardDescription>
+									magick.market is GRIN-only. Buyers pay you directly from their Goblin wallet - no server, no middleman. To receive
+									payments, add your Goblin payment address: open Goblin, copy your nprofile (Contacts &gt; your identity), and paste it
+									here. Payments arrive over Nostr even if you are offline when the buyer pays; open Goblin to finalize them.
+								</CardDescription>
+							</CardHeader>
+						</Card>
 						<div className="flex justify-center pt-4">
 							<Button
 								onClick={() => handleOpenChange('new', true)}
 								size="lg"
 								className="bg-neutral-800 hover:bg-neutral-700 text-white flex items-center gap-2 px-6 py-3"
 							>
-								<PlusIcon className="w-5 h-5" />I Already Have a Wallet - Add Payment Method
+								<PlusIcon className="w-5 h-5" />I Have a Goblin Wallet - Add Payment Address
 							</Button>
 						</div>
 					</>
 				) : (
 					<>
-						<ProfileWalletCheck />
-
 						<div className="lg:hidden">
 							<Button
 								onClick={() => handleOpenChange('new', true)}
@@ -889,7 +646,7 @@ function ReceivingPaymentsComponent() {
 							<Card className="mt-4">
 								<CardHeader>
 									<CardTitle>Add New Payment Detail</CardTitle>
-									<CardDescription>Configure a new way to receive payments</CardDescription>
+									<CardDescription>Configure a new way to receive Grin payments</CardDescription>
 								</CardHeader>
 								<CardContent>
 									<PaymentDetailForm

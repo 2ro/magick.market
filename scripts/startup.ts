@@ -28,15 +28,15 @@ const ndk = ndkActions.initialize([relay])
 
 async function createAppSettingsEvent(signer: NDKPrivateKeySigner) {
 	const appSettings = AppSettingsSchema.parse({
-		name: 'Plebeian Market',
-		displayName: 'Plebeian Market',
-		picture: 'https://plebeian.market/images/logo.svg',
-		banner: 'https://plebeian.market/banner.png',
+		name: 'Magick Market',
+		displayName: 'Magick Market',
+		picture: 'https://magick.market/images/logo.svg',
+		banner: 'https://magick.market/banner.png',
 		ownerPk: devUser1.pk,
 		allowRegister: true,
-		defaultCurrency: 'USD',
-		blossom_server: 'https://blossom.plebeian.market',
-		nip96_server: 'https://nip96.plebeian.market',
+		defaultCurrency: 'GRIN',
+		blossom_server: 'https://blossom.magick.market',
+		nip96_server: 'https://nip96.magick.market',
 	})
 
 	// Create kind 31990 event
@@ -44,13 +44,13 @@ async function createAppSettingsEvent(signer: NDKPrivateKeySigner) {
 	appHandlerEvent.kind = 31990
 	appHandlerEvent.content = JSON.stringify(appSettings)
 	appHandlerEvent.tags = [
-		['d', 'plebeian-market-handler'],
+		['d', 'magick-market-handler'],
 		['k', '30402'], // Product events
 		['k', '30405'], // Collection events
 		['k', String(SHIPPING_KIND)], // Shipping events
 		['k', '30407'], // Review events
-		['web', 'https://plebeian.market/a/', 'nevent'],
-		['web', 'https://plebeian.market/p/', 'nprofile'],
+		['web', 'https://magick.market/a/', 'nevent'],
+		['web', 'https://magick.market/p/', 'nprofile'],
 		['r', relay],
 	]
 

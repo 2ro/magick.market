@@ -1,4 +1,4 @@
-# Plebeian Market Relay
+# Magick Market Relay
 
 This directory contains the declarative relay deployment assets for both
 `staging` and `production`.

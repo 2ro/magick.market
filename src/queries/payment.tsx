@@ -1,15 +1,13 @@
-import { PAYMENT_DETAILS_METHOD, ZAP_RELAYS, type PaymentDetailsMethod } from '@/lib/constants'
+import { PAYMENT_DETAILS_METHOD, type PaymentDetailsMethod } from '@/lib/constants'
+import { buildGoblinPayUri, isValidGoblinPayAddress } from '@/lib/grin'
 import { configStore } from '@/lib/stores/config'
 import { ndkActions } from '@/lib/stores/ndk'
-import type { PayWithNwcParams } from '@/publish/payment'
-import { payInvoiceWithNwc, payInvoiceWithWebln } from '@/publish/payment'
-import { LightningAddress, type Invoice, type NostrProvider } from '@getalby/lightning-tools'
 import { NDKEvent, NDKKind } from '@nostr-dev-kit/ndk'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { nip04, nip19 } from 'nostr-tools'
+import { nip19 } from 'nostr-tools'
 import { toast } from 'sonner'
 import { v4 as uuidv4 } from 'uuid'
-import { paymentDetailsKeys, walletDetailsKeys } from './queryKeyFactory'
+import { paymentDetailsKeys } from './queryKeyFactory'
 
 /**
  * Payment method types as defined in the spec
@@ -23,7 +21,7 @@ export interface PaymentDetail {
 	id: string // Event ID
 	dTag: string // d-tag for addressable event (needed for proper NIP-09 deletion)
 	paymentMethod: PaymentMethod
-	paymentDetail: string // Could be bolt11, btc address, etc.
+	paymentDetail: string // Goblin payment address: nprofile (Grin-over-Nostr) or slatepack address
 	createdAt: number
 	coordinates?: string // Optional product/collection coordinates
 	isDefault?: boolean // Whether this is the default payment method
@@ -35,7 +33,7 @@ export interface PaymentDetail {
 // If a new event with the same d-tag is published after the deletion, it should be visible.
 // Persisted to localStorage so deletions survive page reloads.
 
-const DELETED_PAYMENT_DETAILS_STORAGE_KEY = 'plebeian_deleted_payment_detail_ids'
+const DELETED_PAYMENT_DETAILS_STORAGE_KEY = 'magick_deleted_payment_detail_ids'
 
 // Map of d-tag -> deletion timestamp (unix seconds)
 const loadDeletedPaymentDetailIds = (): Map<string, number> => {
@@ -100,18 +98,6 @@ export interface RichPaymentDetail extends PaymentDetail {
 	scopeIds?: string[] // All product/collection IDs (for multi-product wallets)
 	scopeName?: string // Collection or product name
 	isDefault: boolean
-}
-
-/**
- * Wallet detail interface for tracking on-chain indices
- */
-export interface WalletDetail {
-	id: string
-	key: string
-	valueNumeric: number
-	valueString: string
-	updatedAt: Date
-	paymentDetailId: string
 }
 
 /**
@@ -361,8 +347,8 @@ export const publishPaymentDetail = async (params: PublishPaymentDetailParams): 
 			is_default: params.isDefault || false,
 		}
 
-		// Payment details are public (Lightning addresses, BTC addresses)
-		// No encryption needed - buyers need to read these to generate invoices
+		// Payment details are public (Goblin nprofiles / slatepack addresses)
+		// No encryption needed - buyers need to read these to build the Goblin pay request
 		const contentStr = JSON.stringify(contentObj)
 
 		// Create the event
@@ -767,308 +753,116 @@ export const useDeletePaymentDetail = () => {
 	})
 }
 
-// ===============================
-// WALLET DETAILS FOR ON-CHAIN INDEX TRACKING
-// ===============================
-
-/**
- * Fetches wallet details for on-chain index tracking
- */
-export const fetchWalletDetail = async (userPubkey: string, paymentDetailId: string): Promise<WalletDetail | null> => {
-	try {
-		const ndk = ndkActions.getNDK()
-		if (!ndk) throw new Error('NDK not initialized')
-
-		// Fetch wallet detail events
-		const events = await ndk.fetchEvents({
-			kinds: [NDKKind.AppSpecificData],
-			'#l': ['wallet_detail'],
-			'#a': [`30078:${userPubkey}:${paymentDetailId}`],
-		})
-
-		if (!events || events.size === 0) {
-			return null
-		}
-
-		// Get the most recent event
-		const eventArray = Array.from(events)
-		const mostRecentEvent = eventArray.reduce((latest, current) =>
-			(current.created_at || 0) > (latest.created_at || 0) ? current : latest,
-		)
-
-		// Decrypt and parse the content
-		const signer = ndkActions.getSigner()
-		if (!signer) return null
-
-		const user = await signer.user()
-		if (!user) return null
-
-		const appPubkey = configStore.state.config.appPublicKey
-		if (!appPubkey) return null
-
-		let content
-		try {
-			content = await nip04.decrypt(user.pubkey, appPubkey, mostRecentEvent.content)
-			const parsedContent = JSON.parse(content)
-
-			return {
-				id: mostRecentEvent.id,
-				key: parsedContent.key || 'on-chain-index',
-				valueNumeric: parseInt(parsedContent.value || '0'),
-				valueString: parsedContent.value || '0',
-				updatedAt: new Date((mostRecentEvent.created_at || 0) * 1000),
-				paymentDetailId,
-			}
-		} catch (error) {
-			console.error('Error decrypting wallet details:', error)
-			return null
-		}
-	} catch (error) {
-		console.error('Error fetching wallet detail:', error)
-		return null
-	}
-}
-
-/**
- * React query hook for fetching wallet details
- */
-export const useWalletDetail = (userPubkey: string, paymentDetailId: string) => {
-	return useQuery({
-		queryKey: walletDetailsKeys.onChainIndex(userPubkey, paymentDetailId),
-		queryFn: () => fetchWalletDetail(userPubkey, paymentDetailId),
-		enabled: !!userPubkey && !!paymentDetailId,
-	})
-}
-
 export interface GeneratedInvoice {
 	id: string
 	sellerPubkey: string
 	sellerName: string
+	/** Amount in integer nanogrin. */
 	amount: number
-	bolt11: string | null
-	lightningAddress: string | null
-	expiresAt: number | undefined
+	/** The seller's Goblin payment address (nprofile or slatepack address). */
+	grinAddress: string | null
+	/** The Goblin pay deeplink / QR payload: goblin:pay?to=...&amount=...&memo=... */
+	payUri: string | null
 	status: 'pending' | 'paid' | 'expired' | 'failed'
-	isZap?: boolean
 }
 
 export interface GenerateInvoiceParams {
 	sellerPubkey: string
-	amountSats: number
+	/** Amount in integer nanogrin. */
+	amountNanogrin: number
 	description: string
-	invoiceId: string // A unique ID for this specific invoice generation attempt
+	invoiceId: string // The opaque invoice number (memo) bridging payment to order
 	items: Array<{ productId: string; name: string; amount: number; price: number }>
-	type: 'seller' | 'v4v'
 	selectedPaymentDetailId?: string // Optional: Specific payment detail to use (bypasses resolution)
 }
 
-const createZapNostrProvider = async (ndkInstance: ReturnType<typeof ndkActions.getNDK>): Promise<NostrProvider | null> => {
-	if (!ndkInstance || !ndkInstance.signer) {
-		return null
-	}
-
-	const signer = ndkInstance.signer
-
-	const getPubkey = async () => {
-		try {
-			const user = await signer.user()
-			return user?.pubkey || signer.pubkey
-		} catch (error) {
-			console.warn('Failed to resolve signer pubkey for zap invoice:', error)
-			return signer.pubkey
-		}
-	}
-
-	const provider: NostrProvider = {
-		getPublicKey: getPubkey,
-		signEvent: async (event) => {
-			const ndkEvent = new NDKEvent(ndkInstance)
-			ndkEvent.kind = event.kind
-			ndkEvent.content = event.content
-			ndkEvent.tags = event.tags
-			ndkEvent.created_at = event.created_at
-			ndkEvent.pubkey = event.pubkey || (await getPubkey())
-			if (event.id) {
-				ndkEvent.id = event.id
-			}
-
-			await ndkEvent.sign(signer)
-
-			return {
-				...event,
-				id: ndkEvent.id || event.id || '',
-				sig: ndkEvent.sig || event.sig || '',
-				pubkey: ndkEvent.pubkey || (await getPubkey()),
-			}
-		},
-	}
-
-	return provider
-}
-
 /**
- * Generates a BOLT11 invoice from a seller's payment details or lightning address.
- * Priority order:
+ * Builds a GRIN payment request for a seller.
+ *
+ * Unlike Lightning there is no network round trip: the "invoice" is the
+ * seller's Goblin payment address plus the amount and the opaque invoice
+ * number, encoded as a `goblin:pay` URI the buyer opens or scans in their
+ * Goblin wallet. Priority order for the address:
  * 1. Product-specific payment details
  * 2. Collection-specific payment details
  * 3. Global payment details
- * 4. Seller's lud16 from profile
  */
 export const generateInvoice = async (params: GenerateInvoiceParams): Promise<GeneratedInvoice> => {
-	const { sellerPubkey, amountSats, description, items, type, selectedPaymentDetailId } = params
+	const { sellerPubkey, amountNanogrin, items, selectedPaymentDetailId } = params
 
-	// Fetch profile to get seller name and lud16 fallback
+	// Fetch profile to get seller display name
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
 	const user = ndk.getUser({ pubkey: sellerPubkey })
-	await user.fetchProfile()
+	try {
+		await user.fetchProfile()
+	} catch {
+		// Profile fetch is cosmetic only
+	}
 	const sellerName = user.profile?.displayName || user.profile?.name || nip19.npubEncode(sellerPubkey).substring(0, 12)
-	const fallbackLnAddress = user.profile?.lud16 || user.profile?.lud06
 
-	let paymentDetails: PaymentDetail[] = []
-	let lnAddress: string | null = null
+	let grinAddress: string | null = null
 
-	// For V4V payments, skip payment details resolution and use profile lud16 directly
-	if (type === 'v4v') {
-		console.log(`V4V payment - using seller's profile lud16 for ${sellerName}`)
-		lnAddress = fallbackLnAddress || null
-	} else if (selectedPaymentDetailId) {
+	if (selectedPaymentDetailId) {
 		// If a specific payment detail was selected, use it directly
-		console.log(`🎯 Using buyer-selected payment detail ID: ${selectedPaymentDetailId}`)
 		try {
 			const selectedDetail = await fetchPaymentDetail(selectedPaymentDetailId)
-			if (selectedDetail && selectedDetail.paymentMethod === PAYMENT_DETAILS_METHOD.LIGHTNING_NETWORK) {
-				lnAddress = selectedDetail.paymentDetail
-				console.log(`📍 Using buyer-selected lightning address: ${lnAddress}`)
+			if (selectedDetail && selectedDetail.paymentMethod === PAYMENT_DETAILS_METHOD.GRIN) {
+				grinAddress = selectedDetail.paymentDetail
 			} else {
-				console.warn(`⚠️ Selected payment detail not found or not Lightning, falling back to resolution`)
+				console.warn(`Selected payment detail not found or not GRIN, falling back to resolution`)
 			}
 		} catch (error) {
-			console.error(`❌ Error fetching selected payment detail, falling back to resolution:`, error)
+			console.error(`Error fetching selected payment detail, falling back to resolution:`, error)
 		}
 	}
 
 	// If no specific payment detail was selected or fetching failed, use resolution logic
-	if (!lnAddress && type !== 'v4v') {
-		// For seller payments, resolve payment details using the priority order:
-		// 1. Product-specific 2. Collection-specific 3. Global 4. Profile lud16
+	if (!grinAddress) {
 		const productIds = items.map((item) => item.productId)
 
-		// Try each product in order until we find payment details
 		for (const productId of productIds) {
 			try {
-				console.log(`🔍 Resolving payment details for product ${productId}`)
 				const resolvedDetails = await resolvePaymentDetailsForProduct(productId, sellerPubkey)
-
-				if (resolvedDetails.length > 0) {
-					console.log(`✅ Found ${resolvedDetails.length} payment detail(s) for product ${productId}`)
-					paymentDetails = resolvedDetails
-					break // Use the first product's payment details
+				const grinDetail = resolvedDetails.find((pd) => pd.paymentMethod === PAYMENT_DETAILS_METHOD.GRIN)
+				if (grinDetail) {
+					grinAddress = grinDetail.paymentDetail
+					break
 				}
 			} catch (error) {
-				console.error(`❌ Error resolving payment details for product ${productId}:`, error)
+				console.error(`Error resolving payment details for product ${productId}:`, error)
 			}
-		}
-
-		// Extract Lightning Network address from resolved payment details
-		if (paymentDetails.length > 0) {
-			const lightningPaymentDetail = paymentDetails.find((pd) => pd.paymentMethod === PAYMENT_DETAILS_METHOD.LIGHTNING_NETWORK)
-			if (lightningPaymentDetail) {
-				lnAddress = lightningPaymentDetail.paymentDetail
-				console.log(`📍 Using resolved lightning address: ${lnAddress}`)
-			}
-		}
-
-		// Fallback to profile lud16 if no payment details found
-		if (!lnAddress && fallbackLnAddress) {
-			console.log(`⚠️ No payment details found, using fallback lud16: ${fallbackLnAddress}`)
-			lnAddress = fallbackLnAddress
 		}
 	}
 
-	// If still no lightning address found, return failed status
-	if (!lnAddress) {
-		console.warn(`❌ No lightning address found for seller ${sellerName}`)
+	if (!grinAddress || !isValidGoblinPayAddress(grinAddress)) {
+		console.warn(`No Goblin payment address found for seller ${sellerName}`)
 		return {
-			...params,
 			id: params.invoiceId,
+			sellerPubkey,
 			sellerName,
-			amount: amountSats,
-			bolt11: null,
-			lightningAddress: null,
-			expiresAt: undefined,
+			amount: amountNanogrin,
+			grinAddress: null,
+			payUri: null,
 			status: 'failed',
 		}
 	}
 
-	// Generate the invoice using the resolved lightning address
-	try {
-		console.log(`⚡ Generating invoice for ${lnAddress} (${amountSats} sats)`)
-		const ln = new LightningAddress(lnAddress)
-		await ln.fetch()
+	const payUri = buildGoblinPayUri({
+		to: grinAddress.trim(),
+		amountNanogrin,
+		memo: params.invoiceId,
+	})
 
-		const zapSupported = (ln.lnurlpData?.allowsNostr ?? ln.lnurlpData?.rawData?.allowsNostr ?? false) && !!ln.nostrPubkey
-		let invoice: Invoice | null = null
-		let generatedViaZap = false
-
-		if (zapSupported) {
-			try {
-				const nostrProvider = await createZapNostrProvider(ndk)
-				if (nostrProvider) {
-					console.log('⚡ Attempting zap invoice generation via LNURLp')
-					invoice = await ln.zapInvoice(
-						{
-							satoshi: amountSats,
-							comment: description,
-							relays: ZAP_RELAYS,
-							p: sellerPubkey,
-						},
-						{ nostr: nostrProvider },
-					)
-					generatedViaZap = true
-				} else {
-					console.warn('Zap invoice requested but no signer available. Falling back to regular invoice.')
-				}
-			} catch (zapError) {
-				console.warn('Zap invoice generation failed, falling back to regular invoice:', zapError)
-			}
-		}
-
-		if (!invoice) {
-			invoice = await ln.requestInvoice({ satoshi: amountSats, comment: description })
-		}
-
-		if (!invoice.paymentRequest) {
-			throw new Error('Failed to retrieve BOLT11 invoice from lightning address.')
-		}
-
-		console.log(`✅ Invoice generated successfully for ${sellerName}`)
-		return {
-			...params,
-			id: params.invoiceId,
-			sellerName,
-			amount: amountSats,
-			bolt11: invoice.paymentRequest,
-			lightningAddress: lnAddress,
-			expiresAt: invoice.expiry,
-			status: 'pending',
-			isZap: generatedViaZap,
-		}
-	} catch (error) {
-		console.error(`❌ Failed to generate invoice for ${lnAddress}:`, error)
-		// Return failed status on error
-		return {
-			...params,
-			id: params.invoiceId,
-			sellerName,
-			amount: amountSats,
-			bolt11: null,
-			lightningAddress: lnAddress,
-			expiresAt: undefined,
-			status: 'failed',
-			isZap: false,
-		}
+	return {
+		id: params.invoiceId,
+		sellerPubkey,
+		sellerName,
+		amount: amountNanogrin,
+		grinAddress: grinAddress.trim(),
+		payUri,
+		status: 'pending',
 	}
 }
 
@@ -1108,11 +902,11 @@ export const getAvailablePaymentOptions = async (productIds: string[], sellerPub
 		// Remove duplicates based on payment detail ID
 		const uniquePaymentDetails = Array.from(new Map(allPaymentDetails.map((pd) => [pd.id, pd])).values())
 
-		// Filter to only Lightning Network payment methods
-		const lightningPayments = uniquePaymentDetails.filter((pd) => pd.paymentMethod === PAYMENT_DETAILS_METHOD.LIGHTNING_NETWORK)
+		// Filter to only GRIN payment methods
+		const grinPayments = uniquePaymentDetails.filter((pd) => pd.paymentMethod === PAYMENT_DETAILS_METHOD.GRIN)
 
-		console.log(`Found ${lightningPayments.length} unique Lightning payment option(s) for seller`)
-		return lightningPayments
+		console.log(`Found ${grinPayments.length} unique GRIN payment option(s) for seller`)
+		return grinPayments
 	} catch (error) {
 		console.error('Error getting available payment options:', error)
 		return []
@@ -1137,7 +931,6 @@ export const useAvailablePaymentOptions = (productIds: string[], sellerPubkey: s
  * 1. Product-specific payment details
  * 2. Collection-specific payment details (if product is in a collection)
  * 3. Global payment details
- * 4. Seller's lud16 from profile metadata
  *
  * @param productId - The product ID (d-tag)
  * @param sellerPubkey - The seller's pubkey
@@ -1189,31 +982,13 @@ export const resolvePaymentDetailsForProduct = async (productId: string, sellerP
 			return globalOnly
 		}
 
-		// 4. Fallback: no payment details found, will use seller's lud16 from profile
-		console.log(`No payment details found for product ${productId}, will use seller's lud16`)
+		// No payment details found - the seller has not configured a Goblin payment address
+		console.log(`No payment details found for product ${productId}`)
 		return []
 	} catch (error) {
 		console.error(`Error resolving payment details for product ${productId}:`, error)
 		return []
 	}
-}
-
-export interface LightningInvoiceData {
-	id: string
-	sellerPubkey: string
-	sellerName: string
-	amount: number
-	bolt11: string
-	expiresAt?: number
-	items: Array<{
-		productId: string
-		name: string
-		amount: number
-		price: number
-	}>
-	status: 'pending' | 'processing' | 'paid' | 'expired' | 'failed' | 'skipped'
-	invoiceType?: 'seller' | 'v4v'
-	originalSellerPubkey?: string
 }
 
 export interface PaymentReceiptSubscriptionParams {
@@ -1224,8 +999,11 @@ export interface PaymentReceiptSubscriptionParams {
 }
 
 /**
- * Subscribes to Kind 17 payment receipts for a specific invoice.
- * @returns The payment preimage when a valid receipt is found.
+ * Subscribes to Kind 17 payment receipts for a specific invoice number.
+ * Both confirmation paths land here: the seller-published receipt (when the
+ * seller's Goblin receiver is online) and the buyer-published grin_proof
+ * receipt. Whichever arrives first flips the order to paid.
+ * @returns The Grin payment proof string (or 'external-payment') when a valid receipt is found.
  */
 export const usePaymentReceiptSubscription = (params: PaymentReceiptSubscriptionParams) => {
 	const { orderId, invoiceId, sessionStartTime, enabled } = params
@@ -1293,39 +1071,5 @@ export const usePaymentReceiptSubscription = (params: PaymentReceiptSubscription
 		enabled: enabled,
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: true,
-	})
-}
-
-/**
- * A mutation hook for paying an invoice using Nostr Wallet Connect (NWC).
- */
-export const useNwcPaymentMutation = () => {
-	return useMutation({
-		mutationFn: async (params: PayWithNwcParams) => {
-			return payInvoiceWithNwc(params)
-		},
-		onSuccess: () => {
-			toast.success('NWC payment successful!')
-		},
-		onError: (error) => {
-			toast.error(`NWC Payment Failed: ${error.message}`)
-		},
-	})
-}
-
-/**
- * A mutation hook for paying an invoice using WebLN.
- */
-export const useWeblnPaymentMutation = () => {
-	return useMutation({
-		mutationFn: async (bolt11: string) => {
-			return payInvoiceWithWebln(bolt11)
-		},
-		onSuccess: () => {
-			toast.success('WebLN payment successful!')
-		},
-		onError: (error) => {
-			toast.error(`WebLN Payment Failed: ${error.message}`)
-		},
 	})
 }

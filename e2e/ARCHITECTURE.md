@@ -376,7 +376,7 @@ await context.exposeFunction('__nostrSign', async (eventJSON: string) => {
 await page.addInitScript(
 	({ publicKey }) => {
 		// Pre-accept Terms & Conditions to prevent modal blocking tests
-		localStorage.setItem('plebeian_terms_accepted', 'true')
+		localStorage.setItem('magick_terms_accepted', 'true')
 
 		window.nostr = {
 			getPublicKey: async () => publicKey,
@@ -391,7 +391,7 @@ await page.addInitScript(
 )
 ```
 
-> **Pitfall: Terms & Conditions dialog.** The app shows a modal T&C dialog on first dashboard access. Without pre-accepting via `localStorage.setItem('plebeian_terms_accepted', 'true')`, all dashboard tests fail because the dialog blocks interaction.
+> **Pitfall: Terms & Conditions dialog.** The app shows a modal T&C dialog on first dashboard access. Without pre-accepting via `localStorage.setItem('magick_terms_accepted', 'true')`, all dashboard tests fail because the dialog blocks interaction.
 
 ### Auth Fixtures
 
@@ -1200,7 +1200,7 @@ The product publish button validates multiple required fields:
 
 ### Terms & Conditions Modal
 
-A modal T&C dialog blocks all dashboard interaction until accepted. It checks `localStorage.getItem('plebeian_terms_accepted')`. Pre-set this in the auth fixture's `addInitScript` to prevent it from appearing.
+A modal T&C dialog blocks all dashboard interaction until accepted. It checks `localStorage.getItem('magick_terms_accepted')`. Pre-set this in the auth fixture's `addInitScript` to prevent it from appearing.
 
 ### Production Data Leak via `reuseExistingServer`
 

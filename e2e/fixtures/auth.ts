@@ -58,7 +58,7 @@ export async function setupAuthContext(context: BrowserContext, user: TestUser):
 		localStorage.setItem('nostr_auto_login', 'true')
 
 		// Pre-accept Terms & Conditions so the dialog doesn't block tests
-		localStorage.setItem('plebeian_terms_accepted', 'true')
+		localStorage.setItem('magick_terms_accepted', 'true')
 	})
 }
 

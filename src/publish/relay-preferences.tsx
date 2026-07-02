@@ -5,7 +5,7 @@ export interface RelayPreferencesSettings {
 	includeAppDefaults: boolean
 }
 
-const RELAY_PREFERENCES_D_TAG = 'plebeian-market-relay-preferences'
+const RELAY_PREFERENCES_D_TAG = 'magick-market-relay-preferences'
 
 /**
  * Publishes user's relay preferences as a kind 30078 event (NIP-78 Application Specific Data)

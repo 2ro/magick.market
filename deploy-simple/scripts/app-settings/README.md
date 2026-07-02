@@ -23,8 +23,8 @@ Optional overrides:
 ```bash
 bun run deploy-simple/scripts/app-settings/inspect.ts \
   --stage staging \
-  --relay-url wss://relay.staging.plebeian.market \
-  --api-url https://staging.plebeian.market/api/config
+  --relay-url wss://relay.staging.magick.market \
+  --api-url https://staging.magick.market/api/config
 ```
 
 ## Publish
@@ -67,15 +67,15 @@ bun run deploy-simple/scripts/app-settings/publish.ts \
 ```json
 {
 	"name": "staging",
-	"displayName": "Plebeian Market Staging",
-	"picture": "https://staging.plebeian.market/images/logo.svg",
-	"banner": "https://staging.plebeian.market/banner.svg",
+	"displayName": "Magick Market Staging",
+	"picture": "https://staging.magick.market/images/logo.svg",
+	"banner": "https://staging.magick.market/banner.svg",
 	"ownerPk": "1111111111111111111111111111111111111111111111111111111111111111",
 	"contactEmail": "ops@example.com",
 	"allowRegister": true,
 	"defaultCurrency": "USD",
-	"blossom_server": "https://blossom.staging.plebeian.market",
-	"nip96_server": "https://nip96.staging.plebeian.market",
+	"blossom_server": "https://blossom.staging.magick.market",
+	"nip96_server": "https://nip96.staging.magick.market",
 	"showNostrLink": false
 }
 ```

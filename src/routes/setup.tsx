@@ -51,9 +51,9 @@ export const Route = createFileRoute('/setup')({
 	component: SetupRoute,
 })
 
-const availableLogos = [{ label: 'Default Logo', value: 'https://plebeian.market/images/logo.svg' }]
+const availableLogos = [{ label: 'Default Logo', value: 'https://magick.market/images/logo.svg' }]
 
-const currencies = ['USD', 'EUR', 'BTC', 'SATS']
+const currencies = ['GRIN']
 
 function SetupRoute() {
 	const { data: config } = useConfigQuery()
@@ -69,7 +69,7 @@ function SetupRoute() {
 			name: '',
 			displayName: '',
 			picture: availableLogos[0].value,
-			banner: 'https://plebeian.market/banner.svg',
+			banner: 'https://magick.market/banner.svg',
 			ownerPk: '',
 			contactEmail: '',
 			allowRegister: true as boolean,
@@ -164,7 +164,7 @@ function SetupRoute() {
 				}
 
 				// Use a fixed handler ID for consistency across setup and seeding
-				const handlerId = 'plebeian-market-handler'
+				const handlerId = 'magick-market-handler'
 				let handlerEvent = createHandlerInfoEventData(ownerPubkeyHex, appSettingsContent, config.appRelay, handlerId)
 				handlerEvent = finalizeEvent(handlerEvent, generateSecretKey())
 				await submitAppSettings(handlerEvent)

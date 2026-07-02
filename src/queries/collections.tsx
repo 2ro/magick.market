@@ -21,7 +21,7 @@ import {
 // If a new event with the same d-tag is published after the deletion, it should be visible.
 // Persisted to localStorage so deletions survive page reloads.
 
-const DELETED_COLLECTIONS_STORAGE_KEY = 'plebeian_deleted_collection_ids'
+const DELETED_COLLECTIONS_STORAGE_KEY = 'magick_deleted_collection_ids'
 
 // Map of d-tag -> deletion timestamp (unix seconds)
 const loadDeletedCollectionIds = (): Map<string, number> => {

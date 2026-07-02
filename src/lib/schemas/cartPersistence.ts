@@ -2,7 +2,7 @@ import type { NDKEvent } from '@nostr-dev-kit/ndk'
 import { z } from 'zod'
 
 export const CART_PERSISTENCE_KIND = 30078
-export const CART_PERSISTENCE_D_TAG = 'plebeian-market-cart'
+export const CART_PERSISTENCE_D_TAG = 'magick-market-cart'
 export const CART_PERSISTENCE_VERSION = 1 as const
 
 export const MAX_PERSISTED_CART_ITEMS = 100

@@ -42,15 +42,15 @@ const FIXTURE_USERS = [
 ]
 
 const PUBLIC_RELAYS = [
-	'wss://relay.plebeian.market',
-	'wss://relay.staging.plebeian.market',
+	'wss://relay.magick.market',
+	'wss://relay.staging.magick.market',
 	'wss://sendit.nosflare.com',
 	'wss://nostr.mom',
 	'wss://nos.lol',
 	'wss://relay.nostr.net',
 	'wss://relay.damus.io',
 	'wss://relay.minibits.cash',
-	'wss://bugs.plebeian.market',
+	'wss://bugs.magick.market',
 	'wss://relay.coinos.io',
 	'wss://relay.primal.net',
 ]

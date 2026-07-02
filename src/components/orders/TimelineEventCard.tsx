@@ -1,3 +1,4 @@
+import { formatGrinAmount } from '@/lib/grin'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -54,7 +55,7 @@ export function TimelineEventCard({ event, title, icon, type, timelineIndex }: T
 						variant="outline"
 						className="w-full justify-center border-green-300 bg-green-100 text-green-800 sm:w-auto sm:justify-start"
 					>
-						Paid: {amount.toLocaleString()} sats
+						Paid: {formatGrinAmount(amount)}
 					</Badge>
 				)
 
@@ -93,7 +94,7 @@ export function TimelineEventCard({ event, title, icon, type, timelineIndex }: T
 			} else {
 				extraInfo = (
 					<Badge variant="outline" className="w-full justify-center sm:w-auto sm:justify-start">
-						Request: {amount.toLocaleString()} sats
+						Request: {formatGrinAmount(amount)}
 					</Badge>
 				)
 			}

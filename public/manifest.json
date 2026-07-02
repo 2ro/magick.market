@@ -1,6 +1,6 @@
 {
-	"name": "Plebeian Market",
-	"short_name": "Plebeian",
+	"name": "Magick Market",
+	"short_name": "Magick",
 	"description": "Bitcoin-native marketplace powered by Nostr",
 	"start_url": "/",
 	"display": "standalone",
@@ -15,7 +15,7 @@
 			"purpose": "any"
 		},
 		{
-			"src": "/images/Plebeian_Logo_OpenGraph.png",
+			"src": "/images/Magick_Logo_OpenGraph.png",
 			"sizes": "512x512",
 			"type": "image/png",
 			"purpose": "any"

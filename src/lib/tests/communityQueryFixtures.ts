@@ -32,8 +32,8 @@ type CommunityQueryFixtureMap = Partial<
 	Record<CommunityQueryName, CommunityQueryFixtureStep<unknown> | CommunityQueryFixtureStep<unknown>[]>
 >
 
-export const COMMUNITY_QUERY_FIXTURE_STORAGE_KEY = 'plebeian_community_query_fixtures'
-export const COMMUNITY_QUERY_FIXTURE_CALLS_STORAGE_KEY_PREFIX = 'plebeian_community_query_fixture_calls:'
+export const COMMUNITY_QUERY_FIXTURE_STORAGE_KEY = 'magick_community_query_fixtures'
+export const COMMUNITY_QUERY_FIXTURE_CALLS_STORAGE_KEY_PREFIX = 'magick_community_query_fixture_calls:'
 
 const isCommunityFixtureEnvironment = () => process.env.NODE_ENV === 'test' && typeof window !== 'undefined'
 

@@ -1,16 +1,16 @@
 # Relay Configuration
 
-This document describes how the Plebeian Market application connects to Nostr relays based on the deployment environment.
+This document describes how the Magick Market application connects to Nostr relays based on the deployment environment.
 
 ## Overview
 
 The application supports three deployment stages, each with different relay behavior:
 
-| Stage           | Main Relay                            | Default Relays | Behavior                            |
-| --------------- | ------------------------------------- | -------------- | ----------------------------------- |
-| **Production**  | `wss://relay.plebeian.market`         | ✅             | Read & write to all                 |
-| **Staging**     | `wss://relay.staging.plebeian.market` | ✅             | Read all, **write only to staging** |
-| **Development** | `ws://localhost:10547`                | Configurable   | See below                           |
+| Stage           | Main Relay                          | Default Relays | Behavior                            |
+| --------------- | ----------------------------------- | -------------- | ----------------------------------- |
+| **Production**  | `wss://relay.magick.market`         | ✅             | Read & write to all                 |
+| **Staging**     | `wss://relay.staging.magick.market` | ✅             | Read all, **write only to staging** |
+| **Development** | `ws://localhost:10547`              | Configurable   | See below                           |
 
 ## Architecture
 
@@ -33,14 +33,14 @@ flowchart TB
     API --> DEV
 
     subgraph Production
-        PROD_MAIN["wss://relay.plebeian.market"]
+        PROD_MAIN["wss://relay.magick.market"]
         PROD_DEFAULT["Default Public Relays"]
         PROD --> PROD_MAIN
         PROD --> PROD_DEFAULT
     end
 
     subgraph Staging
-        STG_MAIN["wss://relay.staging.plebeian.market"]
+        STG_MAIN["wss://relay.staging.magick.market"]
         STG_DEFAULT["Default Public Relays"]
         STAGING --> STG_MAIN
         STAGING --> STG_DEFAULT
@@ -90,7 +90,7 @@ flowchart LR
     end
 
     subgraph ReadRelays["READ from All"]
-        R1["relay.staging.plebeian.market"]
+        R1["relay.staging.magick.market"]
         R2["relay.nostr.band"]
         R3["nos.lol"]
         R4["relay.damus.io"]
@@ -98,7 +98,7 @@ flowchart LR
     end
 
     subgraph WriteRelay["WRITE to Staging Only"]
-        W1["relay.staging.plebeian.market"]
+        W1["relay.staging.magick.market"]
     end
 
     APP -->|"subscribe()"| R1
@@ -149,11 +149,11 @@ LOCAL_RELAY_ONLY=true  # Set to 'false' to include default relays
 
 # Staging
 NODE_ENV=staging
-APP_RELAY_URL=wss://relay.staging.plebeian.market
+APP_RELAY_URL=wss://relay.staging.magick.market
 
 # Production
 NODE_ENV=production
-APP_RELAY_URL=wss://relay.plebeian.market
+APP_RELAY_URL=wss://relay.magick.market
 ```
 
 ## Default Public Relays

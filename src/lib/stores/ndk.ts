@@ -1,34 +1,25 @@
-import { defaultRelaysUrls, ZAP_RELAYS, DEFAULT_PUBLIC_RELAYS, MAIN_RELAY_BY_STAGE, type Stage } from '@/lib/constants'
-import { fetchNwcWalletBalance, fetchUserNwcWallets } from '@/queries/wallet'
+import { defaultRelaysUrls, DEFAULT_PUBLIC_RELAYS, MAIN_RELAY_BY_STAGE, type Stage } from '@/lib/constants'
 import { fetchUserRelayListWithPreferences } from '@/queries/relay-list'
 import type { NDKFilter, NDKSigner, NDKSubscriptionOptions, NDKUser } from '@nostr-dev-kit/ndk'
-import NDK, { NDKEvent, NDKKind, NDKRelaySet } from '@nostr-dev-kit/ndk'
+import NDK, { NDKEvent, NDKRelaySet } from '@nostr-dev-kit/ndk'
 import { Store } from '@tanstack/store'
 import { configStore } from './config'
-import { nip60Actions } from './nip60'
-import { walletActions, walletStore, type Wallet } from './wallet'
 
 export interface NDKState {
 	ndk: NDK | null
-	zapNdk: NDK | null
 	isConnecting: boolean
 	isConnected: boolean
-	isZapNdkConnected: boolean
 	explicitRelayUrls: string[]
 	writeRelayUrls: string[] // Relays we're allowed to write to (staging restriction)
-	activeNwcWalletUri: string | null
 	signer?: NDKSigner
 }
 
 const initialState: NDKState = {
 	ndk: null,
-	zapNdk: null,
 	isConnecting: false,
 	isConnected: false,
-	isZapNdkConnected: false,
 	explicitRelayUrls: [],
 	writeRelayUrls: [],
-	activeNwcWalletUri: null,
 	signer: undefined,
 }
 
@@ -37,7 +28,6 @@ export const ndkStore = new Store<NDKState>(initialState)
 let configRelaySyncInitialized = false
 let lastSyncedAppRelay: string | undefined
 let connectPromise: Promise<void> | null = null
-let connectZapPromise: Promise<void> | null = null
 
 /**
  * Helper to connect an NDK instance with timeout
@@ -306,11 +296,6 @@ export const ndkActions = {
 			},
 		})
 
-		// Always monitor zap receipts on public ZAP_RELAYS (plus the app relay).
-		// LSPs publish zap receipts to their own public relays, not the local/app relay,
-		// so we must subscribe there to detect paid invoices.
-		const zapNdk = new NDK({ explicitRelayUrls: [...new Set([...ZAP_RELAYS, ...explicitRelays])] })
-
 		// Determine write relays - staging only writes to main relay, others write to all
 		const mainRelay = getMainRelay()
 		const writeRelays =
@@ -321,7 +306,6 @@ export const ndkActions = {
 		ndkStore.setState((s) => ({
 			...s,
 			ndk,
-			zapNdk,
 			explicitRelayUrls: explicitRelays,
 			writeRelayUrls: writeRelays,
 		}))
@@ -351,11 +335,6 @@ export const ndkActions = {
 				const connected = await connectNdkWithTimeout(state.ndk!, timeoutMs, 'NDK')
 				ndkStore.setState((s) => ({ ...s, isConnected: connected }))
 				if (connected) console.log('✅ NDK connected to relays')
-
-				// Also connect zap NDK in background (if available - skipped in local-relay-only mode)
-				if (state.zapNdk) {
-					void ndkActions.connectZapNdk(5000)
-				}
 			} finally {
 				ndkStore.setState((s) => ({ ...s, isConnecting: false }))
 				connectPromise = null
@@ -363,31 +342,6 @@ export const ndkActions = {
 		})()
 
 		return await connectPromise
-	},
-
-	/**
-	 * Connect the dedicated zap monitoring NDK
-	 */
-	connectZapNdk: async (timeoutMs = 10000): Promise<void> => {
-		const state = ndkStore.state
-		if (!state.zapNdk) return
-		if (state.isZapNdkConnected) return
-		if (connectZapPromise) return await connectZapPromise
-
-		connectZapPromise = (async () => {
-			const connected = await connectNdkWithTimeout(state.zapNdk!, timeoutMs, 'Zap NDK')
-			ndkStore.setState((s) => ({ ...s, isZapNdkConnected: connected }))
-
-			if (connected) {
-				console.log('✅ Zap NDK connected to relays:', ZAP_RELAYS)
-			} else {
-				console.warn('⚠️ Zap NDK could not connect. Zap monitoring will be unavailable.')
-			}
-		})().finally(() => {
-			connectZapPromise = null
-		})
-
-		return await connectZapPromise
 	},
 
 	addExplicitRelay: (relayUrls: string[]): string[] => {
@@ -477,35 +431,14 @@ export const ndkActions = {
 			}
 			const newState = ndkStore.state
 			newState.ndk!.signer = signer
-			// Also set signer for zap NDK
-			if (newState.zapNdk) {
-				newState.zapNdk.signer = signer
-			}
 		} else {
 			state.ndk.signer = signer
-			// Also set signer for zap NDK
-			if (state.zapNdk) {
-				state.zapNdk.signer = signer
-			}
 		}
 
 		ndkStore.setState((s) => ({ ...s, signer }))
 
 		if (signer) {
-			await Promise.all([ndkActions.loadRelaysFromNostr(), ndkActions.selectAndSetInitialNwcWallet()])
-
-			// Initialize NIP-60 Cashu wallet
-			try {
-				const user = await signer.user()
-				if (user?.pubkey) {
-					void nip60Actions.initialize(user.pubkey)
-				}
-			} catch (e) {
-				console.error('[ndk] Failed to initialize NIP-60 wallet:', e)
-			}
-		} else {
-			ndkActions.setActiveNwcWalletUri(null)
-			nip60Actions.reset()
+			await ndkActions.loadRelaysFromNostr()
 		}
 	},
 
@@ -552,96 +485,8 @@ export const ndkActions = {
 		ndkActions.setSigner(undefined)
 	},
 
-	setActiveNwcWalletUri: (uri: string | null) => {
-		ndkStore.setState((state) => ({ ...state, activeNwcWalletUri: uri }))
-	},
-
-	selectAndSetInitialNwcWallet: async () => {
-		const ndk = ndkStore.state.ndk
-		if (!ndk || !ndk.signer) {
-			console.warn('NDK or signer not available for NWC wallet selection.')
-			return
-		}
-
-		let user: NDKUser | null = null
-		try {
-			user = await ndk.signer.user()
-		} catch (e) {
-			console.error('Error getting user from signer:', e)
-			return
-		}
-
-		if (!user || !user.pubkey) {
-			console.warn('User or user pubkey not available from signer.')
-			return
-		}
-
-		const userPubkey = user.pubkey
-
-		// Set loading state for wallet operations
-		walletStore.setState((state) => ({ ...state, isLoading: true }))
-
-		await walletActions.initialize()
-
-		try {
-			const nostrWallets = await fetchUserNwcWallets(userPubkey)
-			if (nostrWallets && nostrWallets.length > 0) {
-				walletActions.setNostrWallets(nostrWallets as Wallet[])
-			}
-		} catch (error) {
-			console.error('Failed to fetch or merge Nostr NWC wallets during initial setup:', error)
-		}
-
-		const allWallets = walletActions.getWallets()
-
-		if (allWallets.length === 0) {
-			ndkActions.setActiveNwcWalletUri(null)
-			// Clear loading state when done
-			walletStore.setState((state) => ({ ...state, isLoading: false }))
-			return
-		}
-
-		let highestBalance = -1
-		let bestWallet: Wallet | null = null
-
-		const balancePromises = allWallets
-			.filter((wallet) => wallet.nwcUri)
-			.map(async (wallet) => {
-				try {
-					const balanceInfo = await fetchNwcWalletBalance(wallet.nwcUri)
-					const currentBalance = balanceInfo?.balance ?? -1
-					return { ...wallet, balance: currentBalance }
-				} catch (error) {
-					console.error(`Failed to fetch balance for wallet ${wallet.name} (ID: ${wallet.id}):`, error)
-					return { ...wallet, balance: -1 }
-				}
-			})
-
-		const walletsWithBalances = await Promise.all(balancePromises)
-
-		for (const wallet of walletsWithBalances) {
-			if (wallet.balance > highestBalance) {
-				highestBalance = wallet.balance
-				bestWallet = wallet
-			}
-		}
-
-		if (bestWallet && bestWallet.nwcUri) {
-			ndkActions.setActiveNwcWalletUri(bestWallet.nwcUri)
-		} else {
-			ndkActions.setActiveNwcWalletUri(null)
-		}
-
-		// Clear loading state when done
-		walletStore.setState((state) => ({ ...state, isLoading: false }))
-	},
-
 	getNDK: () => {
 		return ndkStore.state.ndk
-	},
-
-	getZapNdk: () => {
-		return ndkStore.state.zapNdk
 	},
 
 	getUser: async (): Promise<NDKUser | null> => {
@@ -670,127 +515,6 @@ export const ndkActions = {
 	publishEvent: async (event: NDKEvent): Promise<Set<any>> => {
 		const relaySet = getWriteRelaySet()
 		return event.publish(relaySet)
-	},
-
-	/**
-	 * Creates a zap receipt subscription for monitoring zap payments
-	 * @param onZapEvent Callback function to handle zap events
-	 * @param bolt11 Optional specific invoice to monitor
-	 * @returns Cleanup function to stop the subscription
-	 */
-	createZapReceiptSubscription: (onZapEvent: (event: NDKEvent) => void, bolt11?: string): (() => void) => {
-		const state = ndkStore.state
-		if (!state.zapNdk || !state.isZapNdkConnected) {
-			console.warn('Zap NDK not connected. Cannot create zap subscription.')
-			return () => {}
-		}
-
-		const filters: any = {
-			kinds: [NDKKind.Zap],
-			since: Math.floor(Date.now() / 1000) - 60, // Look back 1 minute for recent zaps
-		}
-
-		const subscription = state.zapNdk.subscribe(filters, { closeOnEose: false })
-
-		subscription.on('event', (event: NDKEvent) => {
-			// If we're monitoring a specific invoice, filter by bolt11
-			if (bolt11) {
-				const eventBolt11 = event.tagValue('bolt11')
-				if (eventBolt11 === bolt11) {
-					onZapEvent(event)
-				}
-			} else {
-				// No specific invoice filter, pass all zaps
-				onZapEvent(event)
-			}
-		})
-
-		subscription.start()
-
-		console.log('🔔 Started zap receipt subscription', bolt11 ? `for invoice: ${bolt11.substring(0, 20)}...` : '(all zaps)')
-
-		return () => {
-			subscription.stop()
-			console.log('🔕 Stopped zap receipt subscription')
-		}
-	},
-
-	/**
-	 * Monitors a specific lightning invoice for zap receipts
-	 * @param bolt11 Lightning invoice to monitor
-	 * @param onZapReceived Callback when zap is detected (receives eventId and optional receipt preimage)
-	 * @param timeoutMs Optional timeout in milliseconds (default: 30 seconds)
-	 * @param onTimeout Optional callback when timeout is reached without receiving a zap receipt
-	 * @returns Cleanup function
-	 */
-	monitorZapPayment: (
-		bolt11: string,
-		onZapReceived: (receipt: { eventId: string; receiptPreimage?: string }) => void,
-		timeoutMs: number = 30000,
-		onTimeout?: () => void,
-	): (() => void) => {
-		console.log('👀 Starting zap payment monitoring for invoice:', bolt11.substring(0, 20) + '...')
-
-		let hasReceivedZap = false
-		const cleanupFunctions: Array<() => void> = []
-
-		// Create zap subscription
-		const stopSubscription = ndkActions.createZapReceiptSubscription((event: NDKEvent) => {
-			const eventBolt11 = event.tagValue('bolt11')
-			if (eventBolt11 === bolt11 && !hasReceivedZap) {
-				hasReceivedZap = true
-
-				// Try to extract preimage from zap receipt per NIP-57
-				// The preimage tag is optional (MAY contain), so we need fallbacks
-				const receiptPreimage = event.tagValue('preimage')
-
-				// Log all available tags for debugging
-				console.log('📋 Zap receipt tags:', {
-					bolt11: eventBolt11?.substring(0, 30) + '...',
-					receiptPreimage: receiptPreimage || 'not included',
-					eventId: event.id,
-					pubkey: event.pubkey.substring(0, 16) + '...',
-					allTags: event.tags.map((t) => t[0]),
-				})
-
-				console.log('⚡ Zap receipt detected!', {
-					preimageSource: receiptPreimage ? 'receipt' : 'event-id',
-					receiptPreimage: receiptPreimage ? receiptPreimage.substring(0, 30) + '...' : 'not included',
-					eventId: event.id,
-				})
-				onZapReceived({ eventId: event.id, receiptPreimage: receiptPreimage || undefined })
-
-				// Cleanup after successful detection
-				setTimeout(() => {
-					cleanupFunctions.forEach((fn) => fn())
-				}, 100)
-			}
-		}, bolt11)
-
-		cleanupFunctions.push(stopSubscription)
-
-		// Set timeout for monitoring
-		const timeout = setTimeout(() => {
-			if (!hasReceivedZap) {
-				console.log('⏰ Zap monitoring timeout reached for invoice:', bolt11.substring(0, 20) + '...')
-				if (onTimeout) {
-					console.log('🔄 Triggering timeout callback...')
-					onTimeout()
-				} else {
-					console.log('💡 Tip: The zap may have succeeded but the receipt may not have propagated to relays yet')
-				}
-				// Cleanup on timeout
-				cleanupFunctions.forEach((fn) => fn())
-			}
-		}, timeoutMs)
-
-		cleanupFunctions.push(() => clearTimeout(timeout))
-
-		// Return cleanup function
-		return () => {
-			console.log('🧹 Cleaning up zap monitoring for invoice:', bolt11.substring(0, 20) + '...')
-			cleanupFunctions.forEach((fn) => fn())
-		}
 	},
 }
 

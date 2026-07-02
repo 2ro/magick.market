@@ -4,7 +4,6 @@ import { Nip05Badge } from '@/components/Nip05Badge.tsx'
 import { ProductCard } from '@/components/ProductCard'
 import { Button } from '@/components/ui/button'
 import { UserCard } from '@/components/UserCard'
-import { ZapButton } from '@/components/social/ZapButton'
 import { useBreakpoint } from '@/hooks/useBreakpoint'
 import { useEntityPermissions } from '@/hooks/useEntityPermissions'
 import { ndkActions } from '@/lib/stores/ndk'
@@ -221,7 +220,6 @@ function RouteComponent() {
 					<UserCard pubkey={pubkey} size="md" className="[&>h2]:text-white" />
 					{!isSmallScreen && (
 						<div className="flex gap-2">
-							{user && <ZapButton event={user} />}
 							<TooltipButton
 								variant="outline"
 								size="icon"

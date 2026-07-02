@@ -111,7 +111,7 @@ function Index() {
 				<div className="hero-content">
 					<div className="z-20 relative flex flex-col justify-center items-center lg:col-span-2 mt-16 lg:mt-0 text-white text-center">
 						<div className="flex justify-center items-center h-24 lg:h-32">
-							<h1 className="font-theylive text-4xl lg:text-5xl transition-opacity duration-500">Buy & Sell Stuff with sats</h1>
+							<h1 className="font-theylive text-4xl lg:text-5xl transition-opacity duration-500">Buy & Sell Stuff with Grin</h1>
 						</div>
 
 						<Button variant="secondary" size="lg" onClick={handleStartSelling} className="bg-focus rounded hover:bg-focus-foreground-hover">

@@ -18,7 +18,6 @@ import { useEffect, useState } from 'react'
 import { PriceDisplay } from './PriceDisplay'
 import { Button } from './ui/button'
 import { authStore, useAuth } from '@/lib/stores/auth'
-import { ZapButton } from './social/ZapButton'
 import { cn } from '@/lib/utils'
 
 export interface ProductCardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -191,9 +190,7 @@ export function ProductCard({ product, className }: ProductCardProps) {
 							</Button>
 						)}
 					</div>
-					<div>
-						<ZapButton event={product} />
-					</div>
+					<div></div>
 				</div>
 			</div>
 		</Link>

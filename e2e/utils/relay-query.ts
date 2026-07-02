@@ -81,7 +81,7 @@ export async function waitForLatestCartSnapshotToBeEmpty(opts: {
 		const events = await queryRelayEvents({
 			authors: [pubkey],
 			kinds: [30078],
-			'#d': ['plebeian-market-cart'],
+			'#d': ['magick-market-cart'],
 			limit: 20,
 		})
 

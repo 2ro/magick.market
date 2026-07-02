@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Plebeian Market - Service Control Script
+# Magick Market - Service Control Script
 # =============================================================================
 #
 # Convenience commands for managing deployed services.
@@ -195,7 +195,7 @@ case "$COMMAND" in
 
     help|--help|-h|*)
         echo ""
-        echo "Plebeian Market - Service Control"
+        echo "Magick Market - Service Control"
         echo ""
         echo "Usage: ./control.sh [stage] <command>"
         echo ""

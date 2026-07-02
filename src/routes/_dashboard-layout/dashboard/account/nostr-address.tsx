@@ -13,9 +13,7 @@ import { NIP05_PRICING } from '@/server/Nip05Manager'
 import { AlertCircle, CheckCircle2, Clock, Copy, Zap, RefreshCw, AtSign } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LightningPaymentProcessor } from '@/components/lightning/LightningPaymentProcessor'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { purchaseNip05ForPubkey } from '@/lib/zapPurchase'
 
 export const Route = createFileRoute('/_dashboard-layout/dashboard/account/nostr-address')({
 	component: NostrAddressComponent,
@@ -177,22 +175,10 @@ function NostrAddressComponent() {
 			return
 		}
 
-		try {
-			const { pr, invoiceId } = await purchaseNip05ForPubkey(
-				{ ndk, appPubkey: config.appPublicKey, appRelay: config.appRelay },
-				{ username, amountSats: tier.sats },
-			)
-
-			setPaymentState({
-				isOpen: true,
-				invoice: pr,
-				amount: tier.sats,
-				invoiceId: invoiceId,
-			})
-		} catch (error) {
-			console.error('Payment error:', error)
-			toast.error(error instanceof Error ? error.message : 'Failed to create payment')
-		}
+		// Lightning purchases were removed with the GRIN-only migration.
+		// Grin-paid name registration is a follow-up; purchases are paused until then.
+		void tier
+		toast.info('Address purchases are paused while magick.market moves to Grin payments.')
 	}
 
 	if (!pubkey) {
@@ -373,31 +359,6 @@ function NostrAddressComponent() {
 								</div>
 							</CardContent>
 						</Card>
-						<Dialog open={paymentState.isOpen} onOpenChange={(open) => setPaymentState((prev) => ({ ...prev, isOpen: open }))}>
-							<DialogContent className="sm:max-w-md">
-								<DialogHeader>
-									<DialogTitle>Complete Payment</DialogTitle>
-								</DialogHeader>
-								<LightningPaymentProcessor
-									data={{
-										amount: paymentState.amount,
-										invoiceId: paymentState.invoiceId || 'nip05-reg',
-										description: `NIP-05 Address Registration: ${username}@${domain}`,
-										bolt11: paymentState.invoice,
-										isZap: true,
-										monitorZapReceipt: true,
-										requireZapReceipt: false,
-									}}
-									onPaymentComplete={() => {
-										console.log('Zap payment confirmed for invoice:', paymentState.invoiceId)
-										setPaymentState((prev) => ({ ...prev, isOpen: false }))
-										setUsername('')
-										toast.success('Zap confirmed! Your Nostr address is being registered.')
-									}}
-									onCancel={() => setPaymentState((prev) => ({ ...prev, isOpen: false }))}
-								/>
-							</DialogContent>
-						</Dialog>
 					</>
 				)}
 			</div>

@@ -1,3 +1,4 @@
+import { formatGrinAmount } from '@/lib/grin'
 import { CreditCard, Package, Users } from 'lucide-react'
 import type { InvoiceWithSource } from '../useOrderInvoices'
 
@@ -26,7 +27,7 @@ export function PaymentSummary({ enrichedInvoices }: PaymentSummaryProps) {
 				<Package className="w-4 h-4 text-blue-600" />
 				<div>
 					<p className="text-gray-500">Total Amount</p>
-					<p className="font-semibold">{enrichedInvoices.reduce((sum, inv) => sum + inv.amount, 0).toLocaleString()} sats</p>
+					<p className="font-semibold">{formatGrinAmount(enrichedInvoices.reduce((sum, inv) => sum + inv.amount, 0))}</p>
 				</div>
 			</div>
 		</div>

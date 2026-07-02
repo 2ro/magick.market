@@ -29,11 +29,11 @@ export function ShareProductDialog({ open, onOpenChange, productId, pubkey, titl
 	// Generate default share text when dialog opens
 	useEffect(() => {
 		if (open) {
-			const defaultText = `Check out "${title}" on Plebeian!
+			const defaultText = `Check out "${title}" on Magick!
 
 ${productUrl}
 
-#plebeian`
+#magick`
 			setShareText(defaultText)
 			setIsCopied(false)
 		}
@@ -78,7 +78,7 @@ ${productUrl}
 			event.tags = [
 				['a', `30402:${pubkey}:${productId}`], // Reference to the product event (kind:pubkey:d-tag)
 				['r', productUrl], // Reference to the product URL
-				['t', 'plebeian'], // Hashtag for discoverability
+				['t', 'magick'], // Hashtag for discoverability
 			]
 
 			// Sign the event with timeout

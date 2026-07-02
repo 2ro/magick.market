@@ -1,6 +1,6 @@
 # Workflow: Registration, Verification, Validation, and Purchase
 
-The ZapPurchaseManager manages the whole workflow of buying Lightning-powered(zaps) "purchasables"(nip05 addresses, badges and vanity url) on Plebeian market.
+The ZapPurchaseManager manages the whole workflow of buying Lightning-powered(zaps) "purchasables"(nip05 addresses, badges and vanity url) on Magick market.
 
 It handled verification of tiers for the various "purchasables", checking their validity, creating their payment receipts, verifying the paid receipts and registering/publishing records for the "purchasable items".
 
@@ -63,7 +63,7 @@ This workflow ensures that every purchase is cryptographically signed, validated
 
 ## Overview
 
-`ZapPurchaseManager` is an abstract base class for managing Lightning-powered purchases ("zap purchases") in the Plebeian Market backend. It handles payment validation, registry management, and publishing registry events to Nostr relays. Each purchase type (e.g., vanity URLs, NIP-05, badges) implements a domain-specific subclass.
+`ZapPurchaseManager` is an abstract base class for managing Lightning-powered purchases ("zap purchases") in the Magick Market backend. It handles payment validation, registry management, and publishing registry events to Nostr relays. Each purchase type (e.g., vanity URLs, NIP-05, badges) implements a domain-specific subclass.
 
 An example implementation would be:
 

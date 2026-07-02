@@ -1,10 +1,10 @@
-// Service Worker for Plebeian Market
+// Service Worker for Magick Market
 // Focused on update detection with minimal caching
 
-const CACHE_NAME = 'plebeian-v1'
+const CACHE_NAME = 'magick-v1'
 
 // Assets to cache (static files only)
-const STATIC_ASSETS = ['/images/logo.svg', '/images/Plebeian_Logo_OpenGraph.png']
+const STATIC_ASSETS = ['/images/logo.svg', '/images/Magick_Logo_OpenGraph.png']
 
 // Install: cache static assets
 self.addEventListener('install', (event) => {

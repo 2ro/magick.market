@@ -1,3 +1,4 @@
+import { formatGrinAmount } from '@/lib/grin'
 import { Button } from '@/components/ui/button'
 import type { CheckoutDeliveryRequirements } from '@/lib/checkout/deliveryRequirements'
 import { cartStore } from '@/lib/stores/cart'
@@ -13,7 +14,7 @@ import { useProfileName } from '@/queries/profiles'
 interface OrderFinalizeComponentProps {
 	shippingData: CheckoutFormData | null
 	invoices: PaymentInvoiceData[]
-	totalInSats: number
+	totalInNanogrin: number
 	onNewOrder: () => void
 	onViewOrders?: () => void
 	deliveryRequirements: CheckoutDeliveryRequirements
@@ -22,7 +23,7 @@ interface OrderFinalizeComponentProps {
 export function OrderFinalizeComponent({
 	shippingData,
 	invoices,
-	totalInSats,
+	totalInNanogrin,
 	onNewOrder,
 	onViewOrders,
 	deliveryRequirements,
@@ -42,10 +43,6 @@ export function OrderFinalizeComponent({
 		!deliveryRequirements.hasPhysicalDelivery
 	const noAddressRequired = deliveryRequirements.isResolved && !deliveryRequirements.needsPhysicalAddress
 	const hasDigitalDelivery = deliveryRequirements.hasDigitalDelivery
-
-	const formatSats = (sats: number): string => {
-		return Math.round(sats).toLocaleString()
-	}
 
 	// Collect pickup addresses for display only; delivery requirements are resolved by checkout state.
 	useEffect(() => {
@@ -265,12 +262,12 @@ export function OrderFinalizeComponent({
 				<div className="space-y-2">
 					<div className="flex justify-between text-sm">
 						<span className="text-gray-600">Subtotal:</span>
-						<span className="font-medium">{formatSats(totalInSats)} sats</span>
+						<span className="font-medium">{formatGrinAmount(totalInNanogrin)}</span>
 					</div>
 					<div className="border-t pt-2 mt-3">
 						<div className="flex justify-between font-semibold text-lg">
 							<span>Total:</span>
-							<span>{formatSats(totalInSats)} sats</span>
+							<span>{formatGrinAmount(totalInNanogrin)}</span>
 						</div>
 					</div>
 				</div>
@@ -291,7 +288,7 @@ export function OrderFinalizeComponent({
 									{invoice.status === 'expired' && <span className="w-4 h-4 rounded-full bg-red-400"></span>}
 								</div>
 								<div className="text-right">
-									<span className="text-sm font-medium">{formatSats(invoice.amount)} sats</span>
+									<span className="text-sm font-medium">{formatGrinAmount(invoice.amount)}</span>
 									{isPostPayment && <div className="text-xs text-gray-500 capitalize">{invoice.status}</div>}
 								</div>
 							</div>

@@ -45,7 +45,7 @@ export interface UIState {
 
 const getSelectedCurrency = (): SupportedCurrency => {
 	const saved = typeof window !== 'undefined' ? localStorage.getItem('selectedCurrency') : null
-	return saved && CURRENCIES.includes(saved as SupportedCurrency) ? (saved as SupportedCurrency) : 'USD'
+	return saved && CURRENCIES.includes(saved as SupportedCurrency) ? (saved as SupportedCurrency) : 'GRIN'
 }
 
 const getShowNSFWContent = (): boolean => {

@@ -1,22 +1,30 @@
 export type PaymentInvoiceStatus = 'pending' | 'paid' | 'expired' | 'skipped' | 'failed'
 
-export type PaymentInvoiceType = 'merchant' | 'v4v'
+export type PaymentInvoiceType = 'merchant'
 
+/**
+ * A GRIN payment request shown at checkout.
+ * `id` is the opaque invoice number (also the Goblin pay-URI memo) bridging
+ * the anonymous order to the Grin payment.
+ */
 export interface PaymentInvoiceData {
 	id: string
 	orderId: string
-	bolt11?: string | null
+	/** Amount in integer nanogrin (1 GRIN = 10^9 nanogrin). */
 	amount: number
 	description: string
 	recipientName: string
 	status: PaymentInvoiceStatus
-	expiresAt?: number
 	createdAt: number
-	lightningAddress?: string | null
+	/** The seller's Goblin payment address (nprofile or slatepack address). */
+	grinAddress?: string | null
+	/** The goblin:pay deeplink / QR payload. */
+	payUri?: string | null
 	recipientPubkey: string
 	type: PaymentInvoiceType
-	isZap?: boolean
-	preimage?: string
+	/** Receiver-signed Grin payment proof once the order is paid. */
+	proof?: string
+	expiresAt?: number
 	persistedAt?: number
 	updatedAt?: number
 }

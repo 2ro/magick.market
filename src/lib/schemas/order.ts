@@ -110,11 +110,11 @@ export const OrderCreationSchema = z.object({
 // 2. Payment Request (Kind: 16, type: 2)
 // ===============================
 
-// Additional tags for payment request
+// Additional tags for payment request (GRIN is the sole payment rail)
 export const PaymentMethodTagSchema = z.tuple([
 	z.literal('payment'),
-	z.enum(['lightning', 'bitcoin', 'fiat', 'other']),
-	z.string(), // Method details (invoice, address, etc.)
+	z.enum(['grin']),
+	z.string(), // Method details (Goblin nprofile / slatepack address)
 	z.string().optional(), // Optional proof
 ])
 export const ExpirationTagSchema = z.tuple([z.literal('expiration'), z.string()])
@@ -288,9 +288,9 @@ export const GeneralCommunicationSchema = z.object({
 // Required tags for payment receipts
 export const PaymentProofTagSchema = z.tuple([
 	z.literal('payment'),
-	z.enum(['lightning', 'bitcoin', 'fiat', 'other']), // Payment medium
-	z.string(), // Medium reference (invoice, address, etc.)
-	z.string(), // Proof (preimage, txid, etc.)
+	z.enum(['grin']), // Payment medium (GRIN only)
+	z.string(), // Medium reference (invoice number)
+	z.string(), // Proof (receiver-signed Grin payment proof)
 ])
 
 // Complete Payment Receipt Schema

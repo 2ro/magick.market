@@ -98,7 +98,7 @@ export const DEFAULT_FORM_STATE: ProductFormState = {
 	price: '',
 	fiatPrice: '',
 	quantity: '',
-	currency: 'SATS',
+	currency: 'GRIN',
 	status: 'on-sale',
 	productType: 'single',
 	mainCategory: null,
@@ -137,15 +137,12 @@ const createResetState = (
 		editingProductId?: string | null
 	},
 ): ProductFormState => {
-	const selectedCurrency = uiStore.state.selectedCurrency
-
 	return {
 		...DEFAULT_FORM_STATE,
 		formSessionId: state.formSessionId + 1,
 		activeTab: options?.activeTab ?? DEFAULT_FORM_STATE.activeTab,
 		editingProductId: options?.editingProductId ?? null,
-		currency: selectedCurrency === 'BTC' ? 'SATS' : selectedCurrency,
-		currencyMode: ['BTC', 'SATS'].includes(selectedCurrency) ? 'sats' : 'fiat',
+		currency: 'GRIN',
 	}
 }
 
@@ -164,13 +161,10 @@ const debouncedSave = () => {
 }
 
 const getFreshSessionState = (state: ProductFormState, overrides: Partial<ProductFormState> = {}): ProductFormState => {
-	const selectedCurrency = uiStore.state.selectedCurrency
-
 	return {
 		...DEFAULT_FORM_STATE,
 		formSessionId: state.formSessionId + 1,
-		currency: selectedCurrency === 'BTC' ? 'SATS' : selectedCurrency,
-		currencyMode: ['BTC', 'SATS'].includes(selectedCurrency) ? 'sats' : 'fiat',
+		currency: 'GRIN',
 		...overrides,
 	}
 }
@@ -256,10 +250,9 @@ export const productFormActions = {
 			// Use preserved tab state if provided, otherwise default to 'name'
 			const activeTab = options?.preserveTabState?.activeTab ?? 'name'
 
-			// Determine if this is a fiat or sats price
-			const priceCurrency = priceTag?.[2] || 'SATS'
+			// GRIN is the only currency for listings
+			const priceCurrency = priceTag?.[2] || 'GRIN'
 			const priceValue = priceTag?.[1] || ''
-			const isFiatCurrency = priceCurrency !== 'SATS' && priceCurrency !== 'BTC'
 
 			productFormStore.setState((state) =>
 				getFreshSessionState(state, {
@@ -268,10 +261,7 @@ export const productFormActions = {
 					summary: summary,
 					description: description,
 					price: priceValue,
-					fiatPrice: isFiatCurrency ? priceValue : '', // Set fiatPrice if currency is fiat
 					currency: priceCurrency,
-					currencyMode: isFiatCurrency ? 'fiat' : 'sats',
-					bitcoinUnit: priceCurrency === 'BTC' ? 'BTC' : 'SATS',
 					quantity: stockTag?.[1] || '',
 					status: visibilityTag?.[1] || 'hidden',
 					productType: typeTag?.[1] === 'simple' ? 'single' : 'variable',
@@ -424,35 +414,9 @@ export const productFormActions = {
 	continuePublishing: async (signer: NDKSigner, ndk: NDK, queryClient?: QueryClient): Promise<boolean | string> => {
 		const state = productFormStore.state
 
-		// Apply currency conversion logic before publishing
-		let finalPrice = state.price
-		let finalCurrency = state.currency
-
-		// If we have a Bitcoin currency selected, always publish in SATS
-		if (state.currency === 'SATS' || state.currency === 'BTC') {
-			const bitcoinValue = parseFloat(state.price || '0')
-			if (state.bitcoinUnit === 'BTC') {
-				// Convert BTC to SATS for publishing
-				finalPrice = (bitcoinValue * 100000000).toString()
-			} else {
-				// Already in SATS
-				finalPrice = state.price || '0'
-			}
-			finalCurrency = 'SATS'
-		} else {
-			// Fiat currency selected - check currency mode
-			if (state.currencyMode === 'fiat') {
-				// Use fiat currency and fiat price
-				finalPrice = state.fiatPrice || state.price
-				finalCurrency = state.currency
-			} else {
-				// Use sats as currency (calculated on spot)
-				const bitcoinValue = parseFloat(state.price || '0')
-				const satsValue = state.bitcoinUnit === 'BTC' ? bitcoinValue * 100000000 : bitcoinValue
-				finalPrice = satsValue.toString()
-				finalCurrency = 'SATS'
-			}
-		}
+		// Listings are always priced in decimal GRIN (NIP-99 price tag: [price, <amount>, GRIN])
+		const finalPrice = state.price || '0'
+		const finalCurrency = 'GRIN'
 
 		// Convert state to ProductFormData format
 		const formData: ProductFormData = {

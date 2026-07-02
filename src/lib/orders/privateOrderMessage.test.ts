@@ -81,7 +81,7 @@ function privateOrderDetails(
 		orderId: 'order-123',
 		buyerPubkey,
 		sellerPubkey,
-		totalAmountSats: 2100,
+		totalAmountNanogrin: 2100,
 		shippingRef: `30406:${sellerPubkey}:standard`,
 		items: [{ productRef: `30402:${sellerPubkey}:product-1`, quantity: 2 }],
 		delivery: {

@@ -140,10 +140,18 @@ export const parseAddress = (addressString: string) => {
 export const extractPaymentMethods = (paymentRequest: NDKEvent) => {
 	const paymentTags = paymentRequest.tags.filter((tag) => tag[0] === 'payment')
 	return paymentTags.map((tag) => ({
-		type: tag[1] as 'lightning' | 'bitcoin' | 'other',
+		type: tag[1] as 'grin',
 		details: tag[2],
 		proof: tag[3] || undefined,
 	}))
+}
+
+/**
+ * Read the opaque invoice number from an order or payment-request event.
+ * Orders carry it as ['invoice', <number>]; payment requests as ['payment-request', <number>].
+ */
+export const getInvoiceNumber = (event: NDKEvent): string | undefined => {
+	return event.tags.find((tag) => tag[0] === 'payment-request')?.[1] || event.tags.find((tag) => tag[0] === 'invoice')?.[1]
 }
 
 /**
