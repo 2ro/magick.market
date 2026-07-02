@@ -120,27 +120,14 @@ export class EventHandler {
 				this.nip05Manager.setNDK(this.ndk)
 				await this.nip05Manager.loadExistingNip05Registry(this.eventSigner.getAppPubkey())
 
-				// Subscribe to zap receipts for all purchase managers (app relay)
-				this.subscribeToZapPurchases(this.ndk, 'App relay')
+				// magick.market is GRIN-only: no zap (Lightning) receipt processing.
 			} catch (e) {
 				console.warn('⚠️ App relay NDK setup failed, continuing anyway:', e)
 			}
 
-			// Also subscribe on dedicated zap relays; some LSPs do not publish receipts to the app relay.
-			const zapRelayUrls = Array.from(new Set([config.relayUrl, ...ZAP_RELAYS].filter(Boolean)))
-			console.log(`Connecting to zap relays: ${zapRelayUrls.join(', ')}`)
-			this.zapNdk = new NDK({ explicitRelayUrls: zapRelayUrls })
-			try {
-				await Promise.race([
-					this.zapNdk.connect(),
-					new Promise((_, reject) => setTimeout(() => reject(new Error('Zap relay connection timeout')), 15000)),
-				])
-				this.subscribeToZapPurchases(this.zapNdk, 'Zap relays')
-			} catch (error) {
-				console.warn('⚠️ Failed to connect zap relay NDK; zap purchase receipts may not be processed:', error)
-				// Subscribe anyway in case some relays connected
-				this.subscribeToZapPurchases(this.zapNdk, 'Zap relays (partial)')
-			}
+			// magick.market is GRIN-only: we do NOT connect to Lightning "zap"
+			// relays or subscribe to zap receipts. Payments are made in Grin via
+			// the Goblin wallet; there is nothing to listen for here.
 		}
 
 		this.isInitialized = true
