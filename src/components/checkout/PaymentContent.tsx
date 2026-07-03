@@ -235,7 +235,7 @@ export function PaymentContent({
 						<div className="text-sm text-gray-600">to {currentInvoice.recipientName}</div>
 					</div>
 
-					{/* Big QR with the goblin:pay URI */}
+					{/* Big QR with the canonical nostr: Goblin pay-URI */}
 					<div className="flex justify-center">
 						<QRCode value={currentInvoice.payUri!} size={260} level="M" />
 					</div>

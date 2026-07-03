@@ -11,10 +11,17 @@ import {
 	nanogrinToGrin,
 } from '@/lib/grin'
 
-// Parse the memo back out of a goblin:pay URI the way the Goblin wallet would.
-function memoOf(payUri: string): string | null {
-	const query = payUri.slice(payUri.indexOf('?') + 1)
-	return new URLSearchParams(query).get('memo')
+// Parse a Goblin pay-URI the way the Goblin wallet's payuri.rs does:
+//   nostr:<recipient>?amount=<decimal GRIN>&memo=<percent-encoded>
+// The recipient rides in the path (everything between `nostr:` and `?`); the
+// emitter percent-encodes with encodeURIComponent (space -> %20, never `+`), so
+// URLSearchParams decoding here agrees with the wallet's RFC-3986 decoder.
+function parseGoblinPayUri(uri: string): { recipient: string; amount: string | null; memo: string | null } {
+	const rest = uri.replace(/^nostr:/i, '')
+	const qIndex = rest.indexOf('?')
+	if (qIndex === -1) return { recipient: rest, amount: null, memo: null }
+	const params = new URLSearchParams(rest.slice(qIndex + 1))
+	return { recipient: rest.slice(0, qIndex), amount: params.get('amount'), memo: params.get('memo') }
 }
 
 describe('grin nanogrin conversions', () => {
@@ -51,36 +58,47 @@ describe('mintInvoiceNumber', () => {
 	})
 })
 
-describe('buildGoblinPayUri (the invoice-number bridge)', () => {
-	test('carries to / amount(nanogrin) / memo(invoice#)', () => {
+describe('buildGoblinPayUri (canonical Goblin wallet pay-URI, the invoice-number bridge)', () => {
+	test('emits nostr:<recipient>?amount=<decimal GRIN>&memo=<invoice#>', () => {
 		const invoice = mintInvoiceNumber()
 		const uri = buildGoblinPayUri({ to: 'nprofile1abcdef', amountNanogrin: 1_500_000_000, memo: invoice })
-		expect(uri.startsWith('goblin:pay?')).toBe(true)
-		const params = new URLSearchParams(uri.slice(uri.indexOf('?') + 1))
-		expect(params.get('to')).toBe('nprofile1abcdef')
-		expect(params.get('amount')).toBe('1500000000')
-		expect(params.get('memo')).toBe(invoice)
+		expect(uri.startsWith('nostr:')).toBe(true)
+		const { recipient, amount, memo } = parseGoblinPayUri(uri)
+		// Recipient rides in the path (the wallet feeds it to its resolver), NOT as a `to=` param.
+		expect(recipient).toBe('nprofile1abcdef')
+		expect(uri).not.toContain('to=')
+		// Decimal GRIN, NOT nanogrin: 1_500_000_000 nanogrin == 1.5 GRIN.
+		expect(amount).toBe('1.5')
+		expect(memo).toBe(invoice)
+	})
+
+	test('amount is decimal GRIN across the whole precision range', () => {
+		expect(parseGoblinPayUri(buildGoblinPayUri({ to: 'x', amountNanogrin: 1_000_000_000 })).amount).toBe('1')
+		expect(parseGoblinPayUri(buildGoblinPayUri({ to: 'x', amountNanogrin: 250_000_000 })).amount).toBe('0.25')
+		// Smallest Grin unit: 1 nanogrin == 0.000000001 GRIN.
+		expect(parseGoblinPayUri(buildGoblinPayUri({ to: 'x', amountNanogrin: 1 })).amount).toBe('0.000000001')
 	})
 
 	test('memo parsed from the URI equals the minted invoice number (round-trip)', () => {
 		const invoice = mintInvoiceNumber()
-		const uri = buildGoblinPayUri({ to: 'npub1seller', amountNanogrin: 42, memo: invoice })
-		expect(memoOf(uri)).toBe(invoice)
+		const uri = buildGoblinPayUri({ to: 'npub1seller', amountNanogrin: 1_000_000_000, memo: invoice })
+		expect(parseGoblinPayUri(uri).memo).toBe(invoice)
 	})
 
-	test('amount is rounded to an integer nanogrin and never negative', () => {
-		expect(memoOf(buildGoblinPayUri({ to: 'x', amountNanogrin: 10 }))).toBeNull()
-		const uri = buildGoblinPayUri({ to: 'x', amountNanogrin: 10.7 })
-		expect(new URLSearchParams(uri.slice(uri.indexOf('?') + 1)).get('amount')).toBe('11')
-		const neg = buildGoblinPayUri({ to: 'x', amountNanogrin: -5 })
-		expect(new URLSearchParams(neg.slice(neg.indexOf('?') + 1)).get('amount')).toBe('0')
+	test('omits memo when none is given, rounds to nanogrin, and clamps negatives to 0', () => {
+		expect(parseGoblinPayUri(buildGoblinPayUri({ to: 'x', amountNanogrin: 1_000_000_000 })).memo).toBeNull()
+		// 10.7 nanogrin rounds to 11 nanogrin == 0.000000011 GRIN.
+		expect(parseGoblinPayUri(buildGoblinPayUri({ to: 'x', amountNanogrin: 10.7 })).amount).toBe('0.000000011')
+		expect(parseGoblinPayUri(buildGoblinPayUri({ to: 'x', amountNanogrin: -5 })).amount).toBe('0')
 	})
 
-	test('URL-encodes the memo so it survives transport', () => {
-		const uri = buildGoblinPayUri({ to: 'x', amountNanogrin: 1, memo: 'MM AB+CD' })
-		// Raw string must be percent-encoded, but decode back to the original.
+	test('percent-encodes the memo (space -> %20, never +) to match the wallet decoder', () => {
+		const uri = buildGoblinPayUri({ to: 'x', amountNanogrin: 1_000_000_000, memo: 'MM AB+CD' })
+		// Space must be %20 and the literal + must be %2B — never a bare `+`, which
+		// the wallet's RFC-3986 decoder would keep literal instead of turning to space.
 		expect(uri).not.toContain('MM AB+CD')
-		expect(memoOf(uri)).toBe('MM AB+CD')
+		expect(uri).toContain('memo=MM%20AB%2BCD')
+		expect(parseGoblinPayUri(uri).memo).toBe('MM AB+CD')
 	})
 })
 

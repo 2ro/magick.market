@@ -2,7 +2,7 @@
 
 A GRIN-only, Nostr-native marketplace. Listings live on Nostr (NIP-99 / Gamma spec, kind 30402),
 the money is [Grin](https://grin.mw), and a buyer needs no account: an anonymous shopper pays a
-seller in Grin by opening a `goblin:pay` link or QR in their [Goblin](https://goblin.st) wallet.
+seller in Grin by opening a `nostr:` pay link or QR in their [Goblin](https://goblin.st) wallet.
 The seller, the only party who logs in, sees the order and fulfills it.
 
 Forked from [PlebeianApp market](https://github.com/PlebeianTech/plebeian-market) and stripped to a
@@ -13,10 +13,12 @@ single rail:
 - **Anonymous guest buyer** - checkout mints a fresh one-time key that signs the order events
   (kind 16, NIP-17 flavored) and is never registered as an account. The buyer gets a copyable order
   code (saved locally under "Your orders on this device") and can track the order at `/track`.
-- **Goblin payment handoff** - the payment step shows a QR / "Open in Goblin" deeplink of the form
-  `goblin:pay?to=<nprofile or slatepack address>&amount=<nanogrin>&memo=<invoice number>`. The
-  opaque invoice number bridges the Grin payment to the order: it rides in the pay-URI memo, on the
-  kind 16 order (`invoice` tag), and in kind 17 receipts (`payment-request` tag).
+- **Goblin payment handoff** - the payment step shows a QR / "Open in Goblin" deeplink in the Goblin
+  wallet's canonical pay-URI format,
+  `nostr:<nprofile or slatepack address>?amount=<decimal GRIN>&memo=<invoice number>` (the exact
+  shape the wallet's scanner parses; amount is decimal GRIN, converted from the app's internal
+  nanogrin). The opaque invoice number bridges the Grin payment to the order: it rides in the pay-URI
+  memo, on the kind 16 order (`invoice` tag), and in kind 17 receipts (`payment-request` tag).
 - **Dual confirmation** - an order flips to paid when either a seller-published kind 17 receipt for
   the invoice number arrives over Nostr, or the buyer imports the receiver-signed Grin payment proof
   from Goblin (published as a kind 17 receipt carrying the `grin_proof`). Whichever lands first wins.
