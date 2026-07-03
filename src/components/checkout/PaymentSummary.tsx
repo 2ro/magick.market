@@ -1,6 +1,6 @@
 import { formatGrinAmount } from '@/lib/grin'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Check, Clock, Zap, Users, CreditCard, SkipForward } from 'lucide-react'
+import { Check, Clock, Users, CreditCard, SkipForward } from 'lucide-react'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
 
 interface PaymentSummaryProps {

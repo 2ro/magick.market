@@ -12,6 +12,7 @@ import {
 	ProductVisibilityTagSchema,
 	ProductWeightTagSchema,
 } from '@/lib/schemas/productListing'
+import { GRIN_CURRENCY } from '@/lib/grin'
 import { ndkActions } from '@/lib/stores/ndk'
 import type { NDKFilter } from '@nostr-dev-kit/ndk'
 import { NDKEvent } from '@nostr-dev-kit/ndk'
@@ -145,8 +146,10 @@ export const fetchProducts = async (limit: number = 500, tag?: string, includeHi
 	const events = await ndkActions.fetchEventsWithTimeout(filter, { timeoutMs: 8000 })
 	const allEvents = Array.from(events).sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
 
-	// Filter out blacklisted products and authors, then filter out locally-deleted products
-	const filteredEvents = filterDeletedProducts(filterBlacklistedEvents(allEvents))
+	// Filter out blacklisted products and authors, then filter out locally-deleted products.
+	// magick.market is GRIN-only: also drop listings priced in anything else (e.g. a
+	// Lightning/Bitcoin marketplace sharing this relay) — this app can't check out with them.
+	const filteredEvents = filterDeletedProducts(filterBlacklistedEvents(allEvents)).filter(isGrinPricedProduct)
 
 	// Filter out hidden products unless explicitly included
 	if (includeHidden) {
@@ -187,8 +190,10 @@ export const fetchProductsPaginated = async (limit: number = 20, until?: number,
 	const events = await ndkActions.fetchEventsWithTimeout(filter, { timeoutMs: 8000 })
 	const allEvents = Array.from(events).sort((a, b) => b.created_at! - a.created_at!)
 
-	// Filter out blacklisted products and authors, then filter out locally-deleted products
-	const filteredEvents = filterDeletedProducts(filterBlacklistedEvents(allEvents))
+	// Filter out blacklisted products and authors, then filter out locally-deleted products.
+	// magick.market is GRIN-only: also drop listings priced in anything else (e.g. a
+	// Lightning/Bitcoin marketplace sharing this relay) — this app can't check out with them.
+	const filteredEvents = filterDeletedProducts(filterBlacklistedEvents(allEvents)).filter(isGrinPricedProduct)
 
 	// Filter out hidden products unless explicitly included
 	if (includeHidden) {
@@ -227,7 +232,9 @@ export const fetchProduct = async (id: string) => {
 
 	const events = await ndkActions.fetchEventsWithTimeout(filter, { timeoutMs: 8000 })
 	const event = Array.from(events)[0] ?? null
-	if (event) return event
+	// magick.market is GRIN-only: treat a non-GRIN listing as not found, same as
+	// the browse/search filters — there's no way to check out with it here.
+	if (event && isGrinPricedProduct(event)) return event
 
 	throw new Error('Product not found')
 }
@@ -525,6 +532,22 @@ export const getProductPrice = (event: NDKEvent | null): z.infer<typeof ProductP
 
 	// Return the tuple directly to match the schema
 	return priceTag as z.infer<typeof ProductPriceTagSchema>
+}
+
+/**
+ * Whether a product listing is priced in GRIN.
+ *
+ * magick.market is GRIN-only, but NIP-99 (kind 30402) listings are a shared
+ * Nostr convention — a Lightning/Bitcoin-only marketplace's listings could
+ * land on the same relay and would otherwise render here even though this
+ * app has no way to check out with them (no Lightning/BTC payment flow
+ * exists). This is the browse/search-time guard against that; a seller's own
+ * dashboard listing management is intentionally NOT filtered by this, so a
+ * seller can still see and fix a mis-tagged listing of their own.
+ */
+export const isGrinPricedProduct = (event: NDKEvent): boolean => {
+	const price = getProductPrice(event)
+	return price?.[2]?.toUpperCase() === GRIN_CURRENCY
 }
 
 /**
@@ -1015,6 +1038,9 @@ export const fetchProductsBySearch = async (query: string, limit: number = 20) =
 			.then((events) => filterBlacklistedEvents(Array.from(events)))
 			.then((events) => filterDeletedProducts(events)) // Filter out locally-deleted products
 			.then((events) => events.filter(isProductInStock)) // Filter out out-of-stock products
+			// GRIN-only: this search reaches external relays, where a Lightning/Bitcoin
+			// marketplace's listings could otherwise show up with no way to pay for them here.
+			.then((events) => events.filter(isGrinPricedProduct))
 			.catch((err) => {
 				console.error('Product search fetch failed:', err)
 				return []
@@ -1112,7 +1138,9 @@ export const fetchProductsBySearchWithSellers = async (
 		try {
 			const sellerProductPromises = sellerPubkeys.map((pubkey) => fetchProductsByPubkey(pubkey, false, 20))
 			const sellerProductArrays = await Promise.all(sellerProductPromises)
-			sellerProducts = sellerProductArrays.flat()
+			// GRIN-only: fetchProductsByPubkey is also used for a seller's own dashboard
+			// (intentionally unfiltered there), but this is a public search result — filter here.
+			sellerProducts = sellerProductArrays.flat().filter(isGrinPricedProduct)
 		} catch (err) {
 			console.error('Failed to fetch seller products:', err)
 		}
