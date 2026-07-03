@@ -5,11 +5,11 @@ import { UserCard } from '../UserCard'
 interface RecipientPreviewProps {
 	npub: string
 	percentage: number
-	canReceiveZaps: boolean | undefined
+	hasGrinAddress: boolean | undefined
 	isLoading: boolean
 }
 
-export function RecipientPreview({ npub, percentage, canReceiveZaps, isLoading }: RecipientPreviewProps) {
+export function RecipientPreview({ npub, percentage, hasGrinAddress, isLoading }: RecipientPreviewProps) {
 	if (!npub) return null
 
 	let pubkey: string = npub
@@ -37,19 +37,19 @@ export function RecipientPreview({ npub, percentage, canReceiveZaps, isLoading }
 				<div className="flex items-center gap-2">
 					<div className="h-6 w-6 rounded-full bg-gray-200 animate-pulse"></div>
 					<div className="flex-1 h-4 bg-gray-200 animate-pulse rounded"></div>
-					<div className="text-sm text-gray-500">Checking zap capability...</div>
+					<div className="text-sm text-gray-500">Checking Goblin GRIN address...</div>
 				</div>
 			</Card>
 		)
 	}
 
 	return (
-		<Card className={`p-3 border-dashed ${canReceiveZaps ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'} mt-2`}>
+		<Card className={`p-3 border-dashed ${hasGrinAddress ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'} mt-2`}>
 			<div className="flex items-center gap-2">
 				<UserCard pubkey={pubkey} size="xs" />
 				<div className="flex-grow"></div>
 				<div className="font-semibold">{percentage}%</div>
-				{canReceiveZaps === false && <div className="text-sm text-red-600">Cannot receive zaps</div>}
+				{hasGrinAddress === false && <div className="text-sm text-red-600">No Goblin GRIN address configured</div>}
 			</div>
 		</Card>
 	)

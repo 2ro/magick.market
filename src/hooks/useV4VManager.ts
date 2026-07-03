@@ -1,7 +1,7 @@
 import type { V4VDTO } from '@/lib/stores/cart'
 import { getDistinctColorsForRecipients } from '@/lib/utils'
 import { useConfigQuery } from '@/queries/config'
-import { useZapCapabilityByNpub } from '@/queries/profiles'
+import { useGrinCapabilityByNpub } from '@/queries/payment'
 import { usePublishV4VShares } from '@/queries/v4v'
 import { nip19 } from 'nostr-tools'
 import { useEffect, useState } from 'react'
@@ -26,7 +26,7 @@ export function useV4VManager({ userPubkey, initialShares = [], initialTotalPerc
 	const [isChecking, setIsChecking] = useState(false)
 	const [totalV4VPercentage, setTotalV4VPercentage] = useState(initialTotalPercentage)
 
-	const { data: canReceiveZaps, isLoading: isCheckingZap } = useZapCapabilityByNpub(newRecipientNpub || '')
+	const { data: hasGrinAddress, isLoading: isCheckingGrinAddress } = useGrinCapabilityByNpub(newRecipientNpub || '')
 
 	// Sync local shares when initialShares change (e.g., after refetch)
 	useEffect(() => {
@@ -120,8 +120,8 @@ export function useV4VManager({ userPubkey, initialShares = [], initialTotalPerc
 		setIsChecking(true)
 
 		try {
-			if (!canReceiveZaps) {
-				toast.error('This user cannot receive zaps')
+			if (!hasGrinAddress) {
+				toast.error('This user has not configured a Goblin GRIN payment address')
 				setIsChecking(false)
 				return
 			}
@@ -326,8 +326,8 @@ export function useV4VManager({ userPubkey, initialShares = [], initialTotalPerc
 		isChecking,
 		totalV4VPercentage,
 		setTotalV4VPercentage,
-		canReceiveZaps,
-		isCheckingZap,
+		hasGrinAddress,
+		isCheckingGrinAddress,
 		publishMutation,
 
 		// Computed values
