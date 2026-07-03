@@ -20,29 +20,25 @@ export const MAIN_RELAY_BY_STAGE: Record<Stage, string> = {
 }
 
 /**
- * Default public relays that are used in addition to the main relay
- * These are used for reading events from the broader Nostr network
+ * NIP-46 remote-signer transport relays offered in the login dropdown.
+ * These carry NostrConnect handshake events between the app and the user's
+ * remote signer — they are NOT content-federation relays. relay.nsec.app is
+ * the transport used by nsec.app remote signers; users can also enter a custom
+ * relay at runtime. Public content relays were intentionally removed:
+ * magick.market federates only with its own relay.
  */
 export const DEFAULT_NIP46_RELAYS = [
 	{ value: 'wss://relay.magick.market', label: 'relay.magick.market' },
 	{ value: 'wss://relay.nsec.app', label: 'relay.nsec.app' },
-	{ value: 'wss://relay.damus.io', label: 'relay.damus.io' },
-	{ value: 'wss://nos.lol', label: 'nos.lol' },
-	{ value: 'wss://relay.primal.net', label: 'relay.primal.net' },
 ]
 
 /**
- * Default public relays that are used in addition to the main relay
- * These are used for reading events from the broader Nostr network
+ * Additional content relays to federate with, beyond the app's own relay.
+ * Intentionally empty: magick.market federates ONLY with its own relay
+ * (config.appRelay, falling back to MAIN_RELAY_BY_STAGE). Add entries here to
+ * widen federation in the future.
  */
-export const DEFAULT_PUBLIC_RELAYS: string[] = [
-	'wss://sendit.nosflare.com',
-	'wss://nostr.mom',
-	'wss://nos.lol',
-	'wss://relay.nostr.net',
-	'wss://relay.damus.io',
-	'wss://relay.minibits.cash',
-]
+export const DEFAULT_PUBLIC_RELAYS: string[] = []
 
 // Keep for backward compatibility (deprecated - use DEFAULT_PUBLIC_RELAYS instead)
 export const defaultRelaysUrls: string[] = DEFAULT_PUBLIC_RELAYS
@@ -50,16 +46,9 @@ export const defaultRelaysUrls: string[] = DEFAULT_PUBLIC_RELAYS
 // Bug reports relay - always writable even in staging
 export const BUG_RELAY = 'wss://bugs.magick.market/'
 
-// Dedicated zap detection relays
-export const ZAP_RELAYS = [
-	'wss://relay.damus.io',
-	'wss://nos.lol',
-	'wss://relay.nostr.net',
-	'wss://relay.minibits.cash',
-	'wss://relay.coinos.io',
-	'wss://nwc.primal.net',
-	'wss://relay.primal.net',
-]
+// Dedicated zap detection relays. Intentionally empty: magick.market is
+// GRIN-only (no Lightning zap processing) and federates only with its own relay.
+export const ZAP_RELAYS: string[] = []
 
 // GRIN is the only currency on magick.market. 1 GRIN = 10^9 nanogrin (see src/lib/grin.ts).
 export const CURRENCIES = [

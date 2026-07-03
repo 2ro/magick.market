@@ -7,19 +7,15 @@ import { nip19 } from 'nostr-tools'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ndkActions } from '@/lib/stores/ndk'
+import { configStore } from '@/lib/stores/config'
 import { profileKeys } from '@/queries/queryKeyFactory'
 import { fetchProfileByIdentifier } from '@/queries/profiles'
 import { NDKEvent, NDKRelaySet } from '@nostr-dev-kit/ndk'
 import { UserCard } from '../UserCard'
 
-// Known relays that support NIP-50 search
-const PROFILE_SEARCH_RELAYS = [
-	'wss://relay.nostr.band',
-	'wss://search.nos.today',
-	'wss://nos.lol',
-	'wss://nostr.wine',
-	'wss://relay.primal.net',
-]
+// Extra NIP-50 search relays beyond the app's own relay. Intentionally empty:
+// magick.market federates only with its own relay. Add entries here to widen search.
+const PROFILE_SEARCH_RELAYS: string[] = []
 const DEBOUNCE_MS = 300
 const SEARCH_TIMEOUT_MS = 3000
 
@@ -63,8 +59,11 @@ export function ProfileSearch({ onSelect, placeholder = 'Search profiles or past
 			const ndk = ndkActions.getNDK()
 			if (!ndk) throw new Error('NDK not initialized')
 
-			// Create a relay set from the NIP-50 search relays
-			const relaySet = NDKRelaySet.fromRelayUrls(PROFILE_SEARCH_RELAYS, ndk)
+			// Search the app's own relay (plus any extra search relays configured above).
+			// This path requires at least one relay to connect, so always include the app relay.
+			const appRelay = configStore.state.config.appRelay
+			const searchRelays = Array.from(new Set([...(appRelay ? [appRelay] : []), ...PROFILE_SEARCH_RELAYS]))
+			const relaySet = NDKRelaySet.fromRelayUrls(searchRelays, ndk)
 
 			// Connect to the search relays if not already connected
 			const connectionResults = await Promise.allSettled(

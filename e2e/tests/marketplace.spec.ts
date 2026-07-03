@@ -1,6 +1,5 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from '../fixtures'
-import { LightningMock } from '../utils/lightning-mock'
 import { devUser2 } from '../../src/lib/fixtures'
 import { nip19 } from 'nostr-tools'
 
@@ -71,109 +70,6 @@ async function openCart(page: Page): Promise<void> {
 		.filter({ has: page.locator('.i-basket') })
 		.click()
 	await expect(page.getByRole('heading', { name: /your cart/i })).toBeVisible({ timeout: 5_000 })
-}
-
-// ---------------------------------------------------------------------------
-// Helper: select shipping for all sellers in the cart
-// ---------------------------------------------------------------------------
-
-async function selectShippingForAllSellers(page: Page): Promise<void> {
-	// Each seller group has its own ShippingSelector (Radix Select).
-	// Wait for shipping selectors to be visible.
-	const cartDialog = page.getByRole('dialog', { name: /your cart/i })
-	const shippingTriggers = cartDialog.getByText('Select shipping method')
-
-	// Wait for at least one shipping trigger to appear
-	await expect(shippingTriggers.first()).toBeVisible({ timeout: 10_000 })
-
-	// Count how many need selecting
-	const count = await shippingTriggers.count()
-
-	for (let i = 0; i < count; i++) {
-		// Click the first remaining unselected trigger
-		const trigger = cartDialog.getByText('Select shipping method').first()
-		await trigger.click()
-
-		// Select Digital Delivery (free, available for both sellers)
-		const option = page.getByRole('option', { name: /digital delivery/i })
-		await expect(option).toBeVisible({ timeout: 5_000 })
-		await option.click()
-
-		// Wait for the select to close before clicking the next one
-		await page.waitForTimeout(500)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Helper: navigate through checkout steps to the payment step
-// ---------------------------------------------------------------------------
-
-/**
- * After clicking Checkout in the cart, the checkout flow goes through:
- * 1. Shipping Address step (even for digital delivery)
- * 2. Order Summary step
- * 3. Payment step (invoices)
- *
- * This helper navigates through shipping and summary to reach payment.
- * For digital delivery, the shipping form requires no address fields but
- * we must wait for the async shipping-type detection to complete before
- * the form's submit button becomes enabled.
- */
-async function proceedToPaymentStep(page: Page): Promise<void> {
-	// Wait for checkout page to load (shipping step appears first)
-	await expect(page.getByText('Shipping Address', { exact: true }).or(page.getByText('Order Summary'))).toBeVisible({
-		timeout: 30_000,
-	})
-
-	// Step 1: Handle shipping step
-	if (
-		await page
-			.getByText('Shipping Address', { exact: true })
-			.isVisible()
-			.catch(() => false)
-	) {
-		// Wait for the async shipping-type check to complete.
-		// For digital delivery, the "Digital Delivery" notice appears once
-		// the form detects all items use digital shipping (noAddressRequired = true).
-		// This also enables the submit button by removing required field validators.
-		await expect(page.getByRole('heading', { name: 'Digital Delivery' })).toBeVisible({ timeout: 10_000 })
-
-		// Fill name to satisfy any validators — even though digital delivery makes
-		// name optional, TanStack Form may still hold stale validation state from
-		// initial render when noAddressRequired was briefly false.
-		const nameInput = page.getByRole('textbox', { name: /full name/i })
-		await nameInput.fill('E2E Test Buyer')
-
-		const digitalDeliveryContact = page.getByLabel(/digital delivery contact/i)
-		await digitalDeliveryContact.fill('buyer@example.com')
-
-		// Click the form submit button (has form="shipping-form" attribute)
-		const submitButton = page.locator('button[form="shipping-form"]')
-		await expect(submitButton).toBeEnabled({ timeout: 5_000 })
-		await submitButton.click()
-
-		// Wait for navigation away from shipping step
-		await expect(page.getByText('Shipping Address', { exact: true })).not.toBeVisible({ timeout: 10_000 })
-	}
-
-	// Step 2: Handle summary step
-	await expect(page.getByText('Order Summary').or(page.getByText('Invoices', { exact: true }))).toBeVisible({
-		timeout: 30_000,
-	})
-
-	if (
-		await page
-			.getByText('Order Summary')
-			.isVisible()
-			.catch(() => false)
-	) {
-		const continueButton = page.getByRole('button', { name: /continue to payment/i })
-		await expect(continueButton).toBeEnabled({ timeout: 5_000 })
-		await continueButton.click()
-	}
-
-	// Wait for the payment step
-	await expect(page.getByText('Invoices', { exact: true })).toBeVisible({ timeout: 30_000 })
 }
 
 // ---------------------------------------------------------------------------
@@ -297,72 +193,6 @@ test.describe('Multi-Seller Checkout with V4V', () => {
 		// Verify percentage displays (90% seller, 10% community)
 		await expect(cartDialog.getByText(/90\.00%/).first()).toBeVisible()
 		await expect(cartDialog.getByText(/10\.00%/).first()).toBeVisible()
-	})
-
-	test.skip('multi-seller checkout generates correct invoice count', async ({ newUserPage }) => {
-		test.setTimeout(120_000)
-
-		// Setup LightningMock BEFORE navigating (required by the mock)
-		const lnMock = await LightningMock.setup(newUserPage)
-
-		await addProductsFromBothSellers(newUserPage)
-		await openCart(newUserPage)
-		await selectShippingForAllSellers(newUserPage)
-
-		// Click checkout
-		const cartDialog = newUserPage.getByRole('dialog', { name: /your cart/i })
-		const checkoutButton = cartDialog.getByRole('button', { name: /^checkout$/i })
-		await expect(checkoutButton).toBeEnabled({ timeout: 5_000 })
-		await checkoutButton.click()
-
-		// Navigate through shipping → summary → payment
-		await proceedToPaymentStep(newUserPage)
-
-		// With 2 sellers × (1 merchant + 1 V4V) = 4 invoices.
-		// The sidebar should show "All Payments (4)"
-		await expect(newUserPage.getByText(/All Payments \(4\)/)).toBeVisible({ timeout: 15_000 })
-
-		// Should show both invoice types
-		await expect(newUserPage.getByText('Merchant Payment').first()).toBeVisible()
-		await expect(newUserPage.getByText('V4V Payment').first()).toBeVisible()
-	})
-
-	test('can complete multi-seller checkout with all invoices', async ({ newUserPage }) => {
-		test.setTimeout(120_000)
-
-		const lnMock = await LightningMock.setup(newUserPage)
-
-		await addProductsFromBothSellers(newUserPage)
-		await openCart(newUserPage)
-		await selectShippingForAllSellers(newUserPage)
-
-		// Checkout
-		const cartDialog = newUserPage.getByRole('dialog', { name: /your cart/i })
-		await cartDialog.getByRole('button', { name: /^checkout$/i }).click()
-
-		// Navigate through shipping → summary → payment
-		await proceedToPaymentStep(newUserPage)
-
-		// Pay all 4 invoices using WebLN
-		const webLnButton = newUserPage.getByRole('button', { name: 'Pay with WebLN' })
-
-		for (let i = 0; i < 4; i++) {
-			await expect(webLnButton).toBeVisible({ timeout: 30_000 })
-			await expect(webLnButton).toBeEnabled({ timeout: 10_000 })
-			await webLnButton.click()
-
-			if (i < 3) {
-				// Wait for progress indicator before clicking next
-				await expect(newUserPage.getByText(`${i + 1} of 4 completed`)).toBeVisible({ timeout: 15_000 })
-			}
-		}
-
-		// Should reach completion
-		await expect(newUserPage.getByText('All payments completed successfully!')).toBeVisible({ timeout: 20_000 })
-		await expect(newUserPage.getByRole('button', { name: 'View Your Purchases' })).toBeVisible()
-
-		// Verify mock recorded 4 payments
-		expect(lnMock.paidInvoices.length).toBe(4)
 	})
 })
 

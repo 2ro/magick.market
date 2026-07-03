@@ -83,7 +83,7 @@ jobs:
 
           echo "Probing currency server readiness..."
           for i in $(seq 1 20); do
-            if bun run scripts/fetch-btc-price.ts ws://localhost:10547 > /tmp/currency-probe.log 2>&1; then
+            if bun run scripts/probe-currency.ts ws://localhost:10547 > /tmp/currency-probe.log 2>&1; then
               echo "Currency server is ready"
               break
             fi

@@ -19,7 +19,7 @@ interface LoginDialogProps {
 }
 
 export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
-	const [activeTab, setActiveTab] = useState('extension')
+	const [activeTab, setActiveTab] = useState('private-key')
 	const [enableAutoLogin, setEnableAutoLogin] = useState(localStorage.getItem(NOSTR_AUTO_LOGIN) === 'true')
 	const [extensionError, setExtensionError] = useState<string | null>(null)
 	const { loginWithExtension } = useAuth()
@@ -77,14 +77,8 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
 					</div>
 				</div>
 				<div className="px-4 sm:px-6 pt-0 pb-6 w-full max-w-full overflow-hidden">
-					<Tabs defaultValue="extension" className="w-full min-w-0 max-w-full" value={activeTab}>
+					<Tabs defaultValue="private-key" className="w-full min-w-0 max-w-full" value={activeTab}>
 						<TabsList className="flex bg-transparent p-0 rounded-none w-full h-auto">
-							<TabsTrigger value="extension" data-testid="extension-tab" className={classNameTab} onClick={() => setActiveTab('extension')}>
-								Extension
-							</TabsTrigger>
-							<TabsTrigger value="connect" data-testid="connect-tab" className={classNameTab} onClick={() => setActiveTab('connect')}>
-								N-Connect
-							</TabsTrigger>
 							<TabsTrigger
 								value="private-key"
 								data-testid="private-key-tab"
@@ -92,6 +86,12 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
 								onClick={() => setActiveTab('private-key')}
 							>
 								Private Key
+							</TabsTrigger>
+							<TabsTrigger value="extension" data-testid="extension-tab" className={classNameTab} onClick={() => setActiveTab('extension')}>
+								Extension
+							</TabsTrigger>
+							<TabsTrigger value="connect" data-testid="connect-tab" className={classNameTab} onClick={() => setActiveTab('connect')}>
+								N-Connect
 							</TabsTrigger>
 						</TabsList>
 						<TabsContent value="private-key" className="w-full max-w-full overflow-hidden">

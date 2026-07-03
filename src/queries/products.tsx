@@ -970,13 +970,10 @@ export const useProductIsNSFW = (id: string, sellerPubkey?: string) => {
 
 // --- PRODUCT SEARCH (NIP-50) ---
 
-const PRODUCT_SEARCH_RELAYS = [
-	'wss://relay.nostr.band',
-	'wss://search.nos.today',
-	'wss://nos.lol',
-	'wss://nostr.wine',
-	'wss://relay.primal.net',
-]
+// Extra NIP-50 search relays beyond the app's own relay. Intentionally empty:
+// magick.market federates only with its own relay, so search runs against the
+// already-connected app relay (via the NDK pool). Add entries here to widen search.
+const PRODUCT_SEARCH_RELAYS: string[] = []
 
 /**
  * Search for product listing events (kind 30402) by free-text query.
