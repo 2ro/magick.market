@@ -113,7 +113,12 @@ interface CartState {
 		{
 			nanogrinTotal: number
 			currencyTotals: Record<string, number>
-			shares: { sellerAmount: number; communityAmount: number; sellerPercentage: number }
+			shares: {
+				sellerAmount: number
+				communityAmount: number
+				sellerPercentage: number
+				recipientAmounts: Array<{ pubkey: string; name: string; amountNanogrin: number }>
+			}
 			shippingNanogrin: number
 		}
 	>
@@ -1415,29 +1420,39 @@ export const cartActions = {
 	calculateShares: (
 		sellerPubkey: string,
 		totalSats: number,
-	): { sellerAmount: number; communityAmount: number; sellerPercentage: number } => {
+	): {
+		sellerAmount: number
+		communityAmount: number
+		sellerPercentage: number
+		/** Per-recipient cut of communityAmount (integer nanogrin, summing to communityAmount). */
+		recipientAmounts: Array<{ pubkey: string; name: string; amountNanogrin: number }>
+	} => {
 		const state = cartStore.state
 		const shares = state.v4vShares[sellerPubkey] || []
 
 		if (!shares || shares.length === 0) {
-			return { sellerAmount: Math.round(totalSats), communityAmount: 0, sellerPercentage: 100 }
+			return { sellerAmount: Math.round(totalSats), communityAmount: 0, sellerPercentage: 100, recipientAmounts: [] }
 		}
 
-		const communitySharePercentage = shares.reduce((total, share) => {
-			let percentage = Number(share.percentage)
+		// Normalize each share's percentage the same way the aggregate below does
+		// (tolerate 0.18 vs 18 storage), keeping only valid (0, 100] entries.
+		const validShares = shares
+			.map((share) => {
+				let percentage = Number(share.percentage)
+				if (percentage > 0 && percentage < 1) {
+					percentage = percentage * 100
+				}
+				return { ...share, percentage }
+			})
+			.filter((share) => {
+				if (isNaN(share.percentage) || share.percentage <= 0 || share.percentage > 100) {
+					console.warn(`Invalid share percentage for ${share.name}: ${share.percentage}`)
+					return false
+				}
+				return true
+			})
 
-			// Handle case where percentage might be stored as decimal (0.18) instead of whole number (18)
-			// If percentage is less than 1, assume it's in decimal format and convert to percentage
-			if (percentage > 0 && percentage < 1) {
-				percentage = percentage * 100
-			}
-
-			if (isNaN(percentage) || percentage <= 0 || percentage > 100) {
-				console.warn(`Invalid share percentage for ${share.name}: ${share.percentage}`)
-				return total
-			}
-			return total + percentage
-		}, 0)
+		const communitySharePercentage = validShares.reduce((total, share) => total + share.percentage, 0)
 
 		const normalizedCommunityPercentage = Math.min(communitySharePercentage, 100)
 		const sellerPercentage = Math.max(0, 100 - normalizedCommunityPercentage)
@@ -1445,7 +1460,19 @@ export const cartActions = {
 		const sellerAmount = Math.floor((totalSats * sellerPercentage) / 100)
 		const communityAmount = totalSats - sellerAmount
 
-		return { sellerAmount, communityAmount, sellerPercentage }
+		// Split communityAmount by each recipient's share of the (possibly >100,
+		// pre-clamp) percentage total, so amounts always sum to communityAmount
+		// regardless of whether the seller's configured shares add up to >100%.
+		const recipientAmounts =
+			communitySharePercentage > 0
+				? validShares.map((share) => ({
+						pubkey: share.pubkey,
+						name: share.name,
+						amountNanogrin: Math.floor((communityAmount * share.percentage) / communitySharePercentage),
+					}))
+				: []
+
+		return { sellerAmount, communityAmount, sellerPercentage, recipientAmounts }
 	},
 
 	updateSellerData: async () => {
@@ -1516,6 +1543,7 @@ export const cartActions = {
 					sellerAmount: shares.sellerAmount + shippingNanogrin,
 					communityAmount: shares.communityAmount, // V4V shares stay the same
 					sellerPercentage: shares.sellerPercentage, // Keep original percentage for display
+					recipientAmounts: shares.recipientAmounts, // V4V shares stay the same
 				}
 
 				const totalWithShipping = sellerTotal + shippingNanogrin

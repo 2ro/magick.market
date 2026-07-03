@@ -226,6 +226,22 @@ export const fetchUserPaymentDetails = async (userPubkey: string): Promise<Payme
 }
 
 /**
+ * Resolves a pubkey's own (non-product-scoped) Goblin payment address.
+ *
+ * Used for V4V/circular-economy recipients, who aren't sellers of a specific
+ * product — they publish a payment detail keyed by their own pubkey, not by
+ * a product or collection coordinate. Prefers a global (no `coordinates`)
+ * GRIN detail if the user has more than one.
+ */
+export const resolveV4VGrinAddress = async (recipientPubkey: string): Promise<string | null> => {
+	const details = await fetchUserPaymentDetails(recipientPubkey)
+	const grinDetails = details.filter((pd) => pd.paymentMethod === PAYMENT_DETAILS_METHOD.GRIN)
+	const detail = grinDetails.find((pd) => !pd.coordinates) || grinDetails[0]
+	if (!detail || !isValidGoblinPayAddress(detail.paymentDetail)) return null
+	return detail.paymentDetail.trim()
+}
+
+/**
  * React query hook for fetching all payment details for a user
  */
 export const useUserPaymentDetails = (userPubkey: string) => {
