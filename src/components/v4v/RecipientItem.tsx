@@ -3,10 +3,10 @@ import type { V4VDTO } from '@/lib/stores/cart'
 import { nip19 } from 'nostr-tools'
 import { Slider } from '@/components/ui/slider'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ChevronDown, Zap, Wallet } from 'lucide-react'
+import { ChevronDown, Coins } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { getHexColorFingerprintFromHexPubkey } from '@/lib/utils'
-import { useZapCapabilityInfo } from '@/queries/profiles'
+import { useGrinCapabilityByNpub } from '@/queries/payment'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Spinner } from '@/components/ui/spinner'
@@ -46,8 +46,8 @@ export function RecipientItem({ share, onRemove, onPercentageChange, color: prov
 		npub = nip19.npubEncode(pubkey)
 	}
 
-	// Fetch zap capability info
-	const { data: zapInfo, isLoading: isLoadingZapInfo } = useZapCapabilityInfo(npub)
+	// Fetch Goblin GRIN payment address capability
+	const { data: hasGrinAddress, isLoading: isLoadingGrinAddress } = useGrinCapabilityByNpub(npub)
 
 	const handleSliderChange = (value: number[]) => {
 		const newPercentage = value[0] / 100
@@ -67,48 +67,31 @@ export function RecipientItem({ share, onRemove, onPercentageChange, color: prov
 			<div className="flex items-center gap-2 p-3">
 				<UserCard pubkey={pubkey} size="xs" />
 
-				{/* Zap capability badges */}
+				{/* Goblin GRIN payment address badge */}
 				<div className="flex items-center gap-1">
-					{isLoadingZapInfo ? (
+					{isLoadingGrinAddress ? (
 						<Spinner className="h-4 w-4" />
-					) : zapInfo?.canReceiveZaps ? (
-						<>
-							{zapInfo.hasLightning && (
-								<Tooltip>
-									<TooltipTrigger>
-										<Badge variant="outline" className="h-6 px-1.5 gap-1 text-yellow-600 border-yellow-300 bg-yellow-50">
-											<Zap className="h-3 w-3" />
-											<span className="text-xs">LN</span>
-										</Badge>
-									</TooltipTrigger>
-									<TooltipContent>
-										<p>Lightning Zaps (NIP-57)</p>
-									</TooltipContent>
-								</Tooltip>
-							)}
-							{zapInfo.hasCashu && (
-								<Tooltip>
-									<TooltipTrigger>
-										<Badge variant="outline" className="h-6 px-1.5 gap-1 text-green-600 border-green-300 bg-green-50">
-											<Wallet className="h-3 w-3" />
-											<span className="text-xs">Cashu</span>
-										</Badge>
-									</TooltipTrigger>
-									<TooltipContent>
-										<p>Nutzaps (NIP-61)</p>
-									</TooltipContent>
-								</Tooltip>
-							)}
-						</>
+					) : hasGrinAddress ? (
+						<Tooltip>
+							<TooltipTrigger>
+								<Badge variant="outline" className="h-6 px-1.5 gap-1 text-yellow-600 border-yellow-300 bg-yellow-50">
+									<Coins className="h-3 w-3" />
+									<span className="text-xs">GRIN</span>
+								</Badge>
+							</TooltipTrigger>
+							<TooltipContent>
+								<p>Has a Goblin GRIN payment address configured</p>
+							</TooltipContent>
+						</Tooltip>
 					) : (
 						<Tooltip>
 							<TooltipTrigger>
 								<Badge variant="outline" className="h-6 px-1.5 text-muted-foreground border-muted">
-									<span className="text-xs">No zaps</span>
+									<span className="text-xs">No GRIN address</span>
 								</Badge>
 							</TooltipTrigger>
 							<TooltipContent>
-								<p>This user cannot receive zaps</p>
+								<p>This user has not configured a Goblin GRIN payment address</p>
 							</TooltipContent>
 						</Tooltip>
 					)}
