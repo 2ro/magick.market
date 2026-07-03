@@ -1,16 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { NDKEvent } from '@nostr-dev-kit/ndk'
 import { ndkActions } from '@/lib/stores/ndk'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { QRCode } from '@/components/ui/qr-code'
 import { toast } from 'sonner'
 import { useDashboardTitle } from '@/routes/_dashboard-layout'
 import { useConfigQuery } from '@/queries/config'
 import { useNip05Settings, getNip05ForPubkey, getExpiredNip05ForPubkey } from '@/queries/nip05'
 import { nip05Actions } from '@/lib/stores/nip05'
-import { NIP05_PRICING } from '@/server/Nip05Manager'
-import { AlertCircle, CheckCircle2, Clock, Copy, Zap, RefreshCw, AtSign } from 'lucide-react'
+import { NIP05_PRICING, NIP05_GRIN_RECIPIENT_NPUB, NIP05_GRIN_RECIPIENT_PUBKEY } from '@/server/Nip05Manager'
+import { buildGoblinPayUri, formatGrinAmount, mintInvoiceNumber, looksLikeGrinPaymentProof } from '@/lib/grin'
+import { AlertCircle, CheckCircle2, Clock, Copy, Coins, RefreshCw, AtSign, ExternalLink, Check } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -151,34 +155,144 @@ function NostrAddressComponent() {
 		toast.success('Nostr address copied to clipboard!')
 	}
 
-	// Payment state
+	// GRIN payment state for the purchase dialog
 	const [paymentState, setPaymentState] = useState<{
 		isOpen: boolean
-		invoice: string
-		amount: number
 		invoiceId: string
+		username: string
+		tierKey: string
+		amountNanogrin: number
+		payUri: string
+		submitting: boolean
+		proofDraft: string
+		showProofImport: boolean
 	}>({
 		isOpen: false,
-		invoice: '',
-		amount: 0,
 		invoiceId: '',
+		username: '',
+		tierKey: '',
+		amountNanogrin: 0,
+		payUri: '',
+		submitting: false,
+		proofDraft: '',
+		showProofImport: false,
 	})
 
-	const handleZap = async (tier: (typeof NIP05_PRICING)[string]) => {
-		if (!pubkey || !config?.appPublicKey) {
-			toast.error('App configuration missing')
+	const handlePurchase = (tierKey: string) => {
+		const tier = NIP05_PRICING[tierKey]
+		if (!pubkey) {
+			toast.error('Please connect your Nostr account')
 			return
 		}
-
+		if (!tier) return
 		if (!validationState.isValid || validationState.isAvailable === false) {
 			toast.error('Please choose a valid and available username')
 			return
 		}
 
-		// Lightning purchases were removed with the GRIN-only migration.
-		// Grin-paid name registration is a follow-up; purchases are paused until then.
-		void tier
-		toast.info('Address purchases are paused while magick.market moves to Grin payments.')
+		const invoiceId = mintInvoiceNumber()
+		const payUri = buildGoblinPayUri({ to: NIP05_GRIN_RECIPIENT_NPUB, amountNanogrin: tier.nanogrin, memo: invoiceId })
+
+		setPaymentState({
+			isOpen: true,
+			invoiceId,
+			username: username.toLowerCase(),
+			tierKey,
+			amountNanogrin: tier.nanogrin,
+			payUri,
+			submitting: false,
+			proofDraft: '',
+			showProofImport: false,
+		})
+	}
+
+	const closePaymentDialog = () => setPaymentState((s) => ({ ...s, isOpen: false }))
+
+	const handleOpenInGoblin = useCallback(() => {
+		if (!paymentState.payUri) return
+		window.location.href = paymentState.payUri
+	}, [paymentState.payUri])
+
+	const copyPaymentValue = useCallback(async (value: string) => {
+		try {
+			await navigator.clipboard.writeText(value)
+			toast.success('Copied to clipboard')
+		} catch {
+			toast.error('Could not copy to clipboard')
+		}
+	}, [])
+
+	/**
+	 * Submit a buyer-signed Grin payment receipt (kind 17) to the server for
+	 * verification and registration. See handleGrinPurchase in
+	 * src/server/Nip05Manager.ts for the server-side check.
+	 */
+	const submitClaim = useCallback(async (event: unknown) => {
+		try {
+			const res = await fetch('/api/nip05/claim', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ event }),
+			})
+			const data = await res.json()
+			if (!res.ok) {
+				toast.error(data?.error || 'Payment could not be verified')
+				return false
+			}
+			toast.success(`@${data.username} registered!`)
+			setPaymentState((s) => ({ ...s, isOpen: false }))
+			return true
+		} catch (error) {
+			console.error('Failed to submit NIP-05 payment claim:', error)
+			toast.error('Failed to verify payment')
+			return false
+		}
+	}, [])
+
+	/**
+	 * Buyer pastes the receiver-signed Grin payment proof Goblin shows after the
+	 * payment finalizes. We sign our own kind-17 receipt (proving we, the logged
+	 * in buyer, made this payment) and submit it for verification — the same
+	 * "proof-import" shape checkout uses (see src/publish/payment.tsx).
+	 */
+	const handleProofImport = async () => {
+		const proof = paymentState.proofDraft.trim()
+		if (!looksLikeGrinPaymentProof(proof)) {
+			toast.error('That does not look like a Grin payment proof. Copy it from Goblin after the payment finalizes.')
+			return
+		}
+
+		const ndk = ndkActions.getNDK()
+		const signer = ndkActions.getSigner()
+		if (!ndk || !signer) {
+			toast.error('No signer available')
+			return
+		}
+
+		setPaymentState((s) => ({ ...s, submitting: true }))
+		try {
+			const tier = NIP05_PRICING[paymentState.tierKey]
+			const event = new NDKEvent(ndk)
+			event.kind = 17
+			event.content = `NIP-05 Address: ${paymentState.username} (${tier?.label ?? ''})`
+			event.tags = [
+				['p', NIP05_GRIN_RECIPIENT_PUBKEY],
+				['subject', 'nip05-receipt'],
+				['nip05', paymentState.username],
+				['payment-request', paymentState.invoiceId],
+				['payment', 'grin', paymentState.invoiceId, proof],
+				['amount', paymentState.amountNanogrin.toString()],
+			]
+			event.created_at = Math.floor(Date.now() / 1000)
+			await event.sign(signer)
+			await ndkActions.publishEvent(event)
+			await submitClaim(event.rawEvent())
+		} catch (error) {
+			console.error('Failed to publish NIP-05 payment receipt:', error)
+			toast.error('Failed to publish payment proof')
+		} finally {
+			setPaymentState((s) => ({ ...s, submitting: false }))
+		}
 	}
 
 	if (!pubkey) {
@@ -338,10 +452,10 @@ function NostrAddressComponent() {
 												type="button"
 												disabled={!validationState.isValid || validationState.isAvailable === false}
 												className={`w-full flex items-center gap-4 p-4 border rounded-lg transition-all hover:border-yellow-500 hover:bg-yellow-500/5 disabled:opacity-50 disabled:cursor-not-allowed`}
-												onClick={() => handleZap(tier)}
+												onClick={() => handlePurchase(key)}
 											>
 												<div className="flex items-center justify-center w-10 h-10 rounded-full bg-yellow-500/10">
-													<Zap className="h-5 w-5 text-yellow-500" />
+													<Coins className="h-5 w-5 text-yellow-500" />
 												</div>
 												<div className="flex-1 text-left">
 													<p className="font-semibold">{tier.label}</p>
@@ -350,8 +464,7 @@ function NostrAddressComponent() {
 													</p>
 												</div>
 												<div className="text-right">
-													<p className="font-bold text-lg text-yellow-500">{tier.sats.toLocaleString()}</p>
-													<p className="text-xs text-muted-foreground">sats</p>
+													<p className="font-bold text-lg text-yellow-500">{formatGrinAmount(tier.nanogrin)}</p>
 												</div>
 											</button>
 										))}
@@ -362,6 +475,82 @@ function NostrAddressComponent() {
 					</>
 				)}
 			</div>
+
+			{/* Grin payment dialog */}
+			<Dialog open={paymentState.isOpen} onOpenChange={(open) => !open && closePaymentDialog()}>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>Pay with Goblin</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-5">
+						<div className="text-center space-y-1">
+							<div className="text-3xl font-bold">{formatGrinAmount(paymentState.amountNanogrin)}</div>
+							<div className="text-sm text-gray-600">
+								{paymentState.username}@{domain} — {NIP05_PRICING[paymentState.tierKey]?.label}
+							</div>
+						</div>
+
+						<div className="flex justify-center">
+							<QRCode value={paymentState.payUri} size={220} level="M" />
+						</div>
+
+						<div className="flex justify-center">
+							<Button onClick={handleOpenInGoblin} size="lg" className="btn-black px-8">
+								<ExternalLink className="w-4 h-4 mr-2" />
+								Open in Goblin
+							</Button>
+						</div>
+
+						<button
+							type="button"
+							onClick={() => copyPaymentValue(paymentState.payUri)}
+							className="w-full flex items-center justify-between gap-2 rounded-lg border bg-gray-50 px-3 py-2 text-left hover:bg-gray-100"
+						>
+							<div className="min-w-0">
+								<div className="text-xs text-gray-500">Payment link</div>
+								<div className="text-sm font-mono truncate">{paymentState.payUri}</div>
+							</div>
+							<Copy className="w-4 h-4 shrink-0 text-gray-500" />
+						</button>
+
+						<p className="text-xs text-gray-500 text-center">
+							Scan or open the link in your Goblin wallet. Grin payments are interactive — after it finalizes, Goblin shows you a
+							receiver-signed payment proof.
+						</p>
+
+						<div className="border-t pt-4 space-y-3">
+							{!paymentState.showProofImport ? (
+								<Button variant="outline" className="w-full" onClick={() => setPaymentState((s) => ({ ...s, showProofImport: true }))}>
+									<Check className="w-4 h-4 mr-2" />I paid — import proof from Goblin
+								</Button>
+							) : (
+								<div className="space-y-2">
+									<label className="text-sm font-medium">Paste the payment proof from Goblin</label>
+									<Textarea
+										value={paymentState.proofDraft}
+										onChange={(e) => setPaymentState((s) => ({ ...s, proofDraft: e.target.value }))}
+										placeholder="Paste the Grin payment proof here"
+										rows={4}
+										className="font-mono text-xs"
+									/>
+									<div className="flex gap-2">
+										<Button
+											onClick={handleProofImport}
+											disabled={!paymentState.proofDraft.trim() || paymentState.submitting}
+											className="flex-1 btn-black"
+										>
+											{paymentState.submitting ? 'Verifying…' : 'Submit proof'}
+										</Button>
+										<Button variant="ghost" onClick={() => setPaymentState((s) => ({ ...s, showProofImport: false }))}>
+											Cancel
+										</Button>
+									</div>
+								</div>
+							)}
+						</div>
+					</div>
+				</DialogContent>
+			</Dialog>
 		</div>
 	)
 }
