@@ -1,6 +1,6 @@
 export type PaymentInvoiceStatus = 'pending' | 'paid' | 'expired' | 'skipped' | 'failed'
 
-export type PaymentInvoiceType = 'merchant'
+export type PaymentInvoiceType = 'merchant' | 'v4v'
 
 /**
  * A GRIN payment request shown at checkout.
