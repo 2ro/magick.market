@@ -13,7 +13,7 @@ export function Footer() {
 				<div className="text-right flex justify-between items-center gap-6">
 					<a
 						className="border-none hover:bg-secondary p-1 inline-flex justify-center items-center"
-						href="https://njump.me/npub1market6g3zl4mxwx5ugw56hfg0f7dy7jnnw8t380788mvdyrnwuqgep7hd"
+						href="https://njump.me/npub12tuz8sva4r832xh2axwt0myf33ygpnc9huvzhxe8y6jkvq2f3l2s9ye4k7"
 						target="_blank"
 						rel="noopener noreferrer"
 					>
