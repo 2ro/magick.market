@@ -21,7 +21,7 @@ export function Footer() {
 					</a>
 					<a
 						className="border-none hover:bg-secondary p-1 inline-flex justify-center items-center"
-						href="https://t.me/MagickMarket"
+						href="https://t.me/goblinfamily"
 						target="_blank"
 						rel="noopener noreferrer"
 					>
