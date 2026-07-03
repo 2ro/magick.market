@@ -65,23 +65,34 @@ export interface GoblinPayUriParams {
 }
 
 /**
- * Build the Goblin pay deeplink / QR payload.
+ * Build the Goblin pay deeplink / QR payload in the Goblin wallet's CANONICAL
+ * pay-URI format — the exact shape its scanner/deeplink parser (payuri.rs)
+ * accepts:
  *
- * Format: goblin:pay?to=<recipient>&amount=<nanogrin>&memo=<invoice#>
- * - `to`: nprofile/npub (Grin-over-Nostr) or a bare slatepack address
- * - `amount`: integer nanogrin (1 GRIN = 10^9 nanogrin)
- * - `memo`: URL-encoded opaque invoice number (optional)
+ *   nostr:<recipient>?amount=<decimal GRIN>&memo=<percent-encoded>
  *
- * The Goblin wallet side accepts this via its deeplink / QR scan entry path
- * and carries `memo` into the payment message so the seller can correlate the
- * payment with the order.
+ * - `<recipient>`: the nprofile/npub (Grin-over-Nostr) or Grin slatepack
+ *   address, carried verbatim in the URI path. The wallet strips the `nostr:`
+ *   scheme and feeds the remainder straight to its recipient resolver.
+ * - `amount`: DECIMAL GRIN (e.g. "1.5", "0.25", "0.000000001"), converted here
+ *   from the app's internal integer nanogrin. The wallet validates it with
+ *   Grin's own `amount_from_hr_string`, so it MUST be a plain decimal-GRIN
+ *   string, never nanogrin.
+ * - `memo`: the opaque invoice number, RFC-3986 percent-encoded (space -> %20,
+ *   never `+`) to match the wallet's percent-decoder.
+ *
+ * The wallet carries `memo` into the payment message so the seller can
+ * correlate the payment with the order.
  */
 export function buildGoblinPayUri({ to, amountNanogrin, memo }: GoblinPayUriParams): string {
-	const params = new URLSearchParams()
-	params.set('to', to)
-	params.set('amount', String(Math.max(0, Math.round(amountNanogrin))))
-	if (memo) params.set('memo', memo)
-	return `goblin:pay?${params.toString()}`
+	// The wallet parses amounts as decimal GRIN (via Grin's amount_from_hr_string),
+	// so convert from our internal nanogrin and clamp away negatives / non-finite.
+	const amountGrin = formatGrin(Math.max(0, Math.round(amountNanogrin)))
+	let query = `amount=${amountGrin}`
+	// encodeURIComponent gives RFC-3986 percent-encoding (space -> %20, not `+`)
+	// so the memo round-trips through the wallet's percent-decoder exactly.
+	if (memo) query += `&memo=${encodeURIComponent(memo)}`
+	return `nostr:${to}?${query}`
 }
 
 /**

@@ -18,7 +18,7 @@ export interface PaymentInvoiceData {
 	createdAt: number
 	/** The seller's Goblin payment address (nprofile or slatepack address). */
 	grinAddress?: string | null
-	/** The goblin:pay deeplink / QR payload. */
+	/** The Goblin pay deeplink / QR payload: nostr:<recipient>?amount=<decimal GRIN>&memo=<invoice#> */
 	payUri?: string | null
 	recipientPubkey: string
 	type: PaymentInvoiceType

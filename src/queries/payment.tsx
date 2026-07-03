@@ -761,7 +761,7 @@ export interface GeneratedInvoice {
 	amount: number
 	/** The seller's Goblin payment address (nprofile or slatepack address). */
 	grinAddress: string | null
-	/** The Goblin pay deeplink / QR payload: goblin:pay?to=...&amount=...&memo=... */
+	/** The Goblin pay deeplink / QR payload: nostr:<recipient>?amount=<decimal GRIN>&memo=<invoice#> */
 	payUri: string | null
 	status: 'pending' | 'paid' | 'expired' | 'failed'
 }
@@ -781,8 +781,8 @@ export interface GenerateInvoiceParams {
  *
  * Unlike Lightning there is no network round trip: the "invoice" is the
  * seller's Goblin payment address plus the amount and the opaque invoice
- * number, encoded as a `goblin:pay` URI the buyer opens or scans in their
- * Goblin wallet. Priority order for the address:
+ * number, encoded as a canonical `nostr:` pay-URI the buyer opens or scans in
+ * their Goblin wallet. Priority order for the address:
  * 1. Product-specific payment details
  * 2. Collection-specific payment details
  * 3. Global payment details
