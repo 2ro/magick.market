@@ -21,7 +21,7 @@ test.beforeEach(async () => {
 		title: 'View Test Product ' + Date.now(),
 		description: 'A product for viewing tests.',
 		price: '100',
-		currency: 'USD',
+		currency: 'GRIN',
 		status: 'active',
 		category: 'electronics',
 		stock: '10',
