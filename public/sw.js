@@ -1,7 +1,14 @@
 // Service Worker for Magick Market
-// Focused on update detection with minimal caching
-
-const CACHE_NAME = 'magick-v1'
+// Focused on update detection with minimal caching.
+//
+// SW_VERSION is stamped by build.ts on every build (the `__SW_VERSION__` token is
+// replaced with a unique build id). This guarantees the deployed sw.js changes
+// bytes each deploy, so browsers detect the update and re-run install → activate:
+// skipWaiting + clients.claim take over promptly and old caches are purged, forcing
+// existing clients off any previously-cached (pre-filtering) bundle. Without a
+// changing version the file is byte-identical every deploy and no update fires.
+const SW_VERSION = '__SW_VERSION__'
+const CACHE_NAME = `magick-${SW_VERSION}`
 
 // Assets to cache (static files only)
 const STATIC_ASSETS = ['/images/logo.svg', '/images/Magick_Logo_OpenGraph.png']

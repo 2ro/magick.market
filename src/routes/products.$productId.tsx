@@ -43,6 +43,7 @@ import {
 	productQueryOptions,
 	productsByPubkeyQueryOptions,
 	getProductLocation,
+	ProductUnavailableError,
 } from '@/queries/products'
 import { createShippingReference, getShippingInfo, useShippingOptionsByPubkey } from '@/queries/shipping'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -266,12 +267,16 @@ function RouteComponent() {
 
 	const productQuery = useQuery({
 		...productQueryOptions(productId),
-		// Relays can be slow to connect/propagate; keep retrying for a while instead of erroring the whole route.
-		retry: (failureCount) => failureCount < 120,
+		// Relays can be slow to connect/propagate; keep retrying transient misses for a
+		// while instead of erroring the whole route. But a ProductUnavailableError is
+		// permanent (non-GRIN / out-of-scope listing) — never retry it, so the route
+		// shows "Product not found" immediately instead of spinning forever.
+		retry: (failureCount, error) => !(error instanceof ProductUnavailableError) && failureCount < 120,
 		retryDelay: (attemptIndex) => Math.min(500 + attemptIndex * 750, 5000),
 	})
 
 	const product = productQuery.data ?? null
+	const isUnavailable = productQuery.error instanceof ProductUnavailableError
 
 	// Derive all product fields from the loaded product event (avoids conditional hook calls / racey dependent queries)
 	const title = getProductTitle(product) || 'Untitled Product'
@@ -396,6 +401,20 @@ function RouteComponent() {
 	// Use the hook to inject dynamic CSS for the background image
 	const heroClassName = `hero-bg-${productId.replace(/[^a-zA-Z0-9]/g, '')}`
 	useHeroBackground(backgroundImageUrl, heroClassName)
+
+	// Permanently not viewable here (non-GRIN / Bitcoin-tagged / out of admin scope):
+	// render "Product not found" immediately — never spin, since retrying can't help.
+	if (!product && isUnavailable) {
+		return (
+			<div className="flex flex-col justify-center items-center gap-4 px-4 h-[50vh] text-center" data-testid="product-not-found">
+				<h1 className="font-bold text-2xl">Product not found</h1>
+				<p className="text-gray-600">This listing isn’t available in this market.</p>
+				<Link to="/products" className="inline-flex">
+					<Button variant="secondary">Back to products</Button>
+				</Link>
+			</div>
+		)
+	}
 
 	// Keep this route resilient during relay warmup: don't error-boundary the whole page for transient misses.
 	if (!product && (productQuery.isLoading || productQuery.isFetching)) {

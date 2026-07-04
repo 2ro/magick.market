@@ -72,6 +72,7 @@ export const configKeys = {
 	featuredProducts: (appPubkey: string) => [...configKeys.all, 'featuredProducts', appPubkey] as const,
 	featuredCollections: (appPubkey: string) => [...configKeys.all, 'featuredCollections', appPubkey] as const,
 	featuredUsers: (appPubkey: string) => [...configKeys.all, 'featuredUsers', appPubkey] as const,
+	merchantAllowlist: (appPubkey: string) => [...configKeys.all, 'merchantAllowlist', appPubkey] as const,
 } as const
 
 export const appSettingsKeys = {

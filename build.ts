@@ -189,8 +189,19 @@ if (existsSync(publicDir)) {
 			if (await file.exists()) {
 				const stats = await file.size
 				if (stats > 0 || entry.endsWith('.json') || entry.endsWith('.js')) {
-					await Bun.write(destPath, file)
-					console.log(`📦 Copied: ${entry}`)
+					// Stamp the service worker with a unique per-build version so its bytes
+					// change every deploy — that's what makes browsers detect the update and
+					// re-run skipWaiting/clients.claim, evicting any stale cached bundle from
+					// clients that visited before a code change (e.g. the market scoping fix).
+					if (entry === 'sw.js') {
+						const swSource = await file.text()
+						const stamped = swSource.replace(/__SW_VERSION__/g, `${Date.now()}`)
+						await Bun.write(destPath, stamped)
+						console.log(`📦 Copied: ${entry} (version-stamped)`)
+					} else {
+						await Bun.write(destPath, file)
+						console.log(`📦 Copied: ${entry}`)
+					}
 				}
 			}
 		}

@@ -11,6 +11,10 @@
  *     (kind 30000, d-tag `market_merchants`) naming the merchants whose stalls
  *     make up the market. When present, the default catalog shows ONLY those
  *     merchants. It is NOT the relay firehose and NOT the viewer's follow list.
+ *     CLOSED BY DEFAULT: when the operator has published no such list, the market
+ *     scopes to the operator's OWN pubkey (from app settings/config) — a fresh
+ *     instance shows only the operator's own stall, never the relay firehose.
+ *     Adding merchants via the dashboard opens it up.
  *
  *  2. GRIN-only — Bitcoin never meshes in. Any listing carrying a
  *     Lightning/zap/eCash payment-rail tag is always dropped; in the
@@ -66,6 +70,35 @@ export const filterGrinOnly = <T extends NDKEvent>(events: T[], enforceCurrency:
 
 // --- ADMIN MERCHANT ALLOWLIST -------------------------------------------------
 
+/**
+ * Resolve the effective merchant allowlist from the operator's published p-tag
+ * list and the operator's own pubkey. CLOSED BY DEFAULT: an empty/absent list
+ * falls back to `[ownerPubkey]`, so a fresh instance scopes to the operator's own
+ * stall rather than the relay firehose. Returns [] only when no operator pubkey is
+ * configured at all (the sole unscoped fallback). Pure — safe to unit-test.
+ */
+export const resolveAllowlist = (listed: string[], ownerPubkey: string | undefined): string[] => {
+	if (!ownerPubkey) return []
+	const unique = Array.from(new Set(listed))
+	return unique.length > 0 ? unique : [ownerPubkey]
+}
+
+/**
+ * Narrow a browse filter to the allowlist's authors, or leave it unscoped when the
+ * allowlist is empty (no operator pubkey configured). Pure — safe to unit-test.
+ */
+export const buildScopedFilter = (filter: NDKFilter, allowlist: string[]): { filter: NDKFilter; scoped: boolean } => {
+	if (allowlist.length === 0) return { filter, scoped: false }
+	return { filter: { ...filter, authors: allowlist }, scoped: true }
+}
+
+/**
+ * Keep only pubkeys on the allowlist; an empty allowlist is a passthrough (unscoped).
+ * Used to scope pubkey lists (community merchants, search-by-seller). Pure.
+ */
+export const filterPubkeysToAllowlist = (pubkeys: string[], allowlist: string[]): string[] =>
+	allowlist.length === 0 ? pubkeys : pubkeys.filter((pk) => allowlist.includes(pk))
+
 let cachedAllowlist: { pubkeys: string[]; fetchedAt: number } | null = null
 const ALLOWLIST_TTL_MS = 60_000
 
@@ -75,9 +108,17 @@ export const clearMerchantAllowlistCache = (): void => {
 }
 
 /**
- * The operator-curated set of merchant pubkeys, or [] when the operator has not
- * configured one (fresh / self-hosted / dev instance). Cached briefly so the
- * browse queries don't refetch the list on every page.
+ * The operator-curated set of merchant pubkeys.
+ *
+ * CLOSED BY DEFAULT: when the operator has published no `market_merchants` list
+ * (or published an empty one), this returns `[appPubkey]` — the operator's own
+ * pubkey — so a fresh / self-hosted instance scopes the market to the operator's
+ * own stall instead of leaking the connected relay's firehose. Publishing a list
+ * via the dashboard replaces this with the named merchants.
+ *
+ * Returns [] only when no operator pubkey is configured at all (no app settings),
+ * in which case the market cannot be scoped to anyone and falls back to unscoped.
+ * Cached briefly so the browse queries don't refetch the list on every page.
  */
 export const getMerchantAllowlist = async (): Promise<string[]> => {
 	const appPubkey = configStore.state.config.appPublicKey
@@ -90,7 +131,9 @@ export const getMerchantAllowlist = async (): Promise<string[]> => {
 		authors: [appPubkey],
 		'#d': [MERCHANT_ALLOWLIST_DTAG],
 	})
-	const pubkeys = event ? Array.from(new Set(event.tags.filter((t) => t[0] === 'p' && t[1]).map((t) => t[1]))) : []
+	const listed = event ? event.tags.filter((t) => t[0] === 'p' && t[1]).map((t) => t[1]) : []
+	// Closed by default: with no configured allowlist, scope to the operator's own pubkey.
+	const pubkeys = resolveAllowlist(listed, appPubkey)
 	cachedAllowlist = { pubkeys, fetchedAt: Date.now() }
 	return pubkeys
 }
@@ -98,16 +141,15 @@ export const getMerchantAllowlist = async (): Promise<string[]> => {
 /**
  * Scope a browse filter to the admin merchant allowlist.
  *
- * Returns the filter narrowed to allowlisted merchants (`authors`) when the
- * operator has configured one, plus `scoped` telling the caller to also enforce
- * GRIN currency on the results. When no allowlist is configured the filter is
- * returned unchanged and `scoped` is false, so a fresh/self-hosted instance
- * still shows the connected relay's content rather than an empty market.
+ * Returns the filter narrowed to allowlisted merchants (`authors`), plus `scoped`
+ * telling the caller to also enforce GRIN currency on the results. Because the
+ * allowlist is CLOSED BY DEFAULT (see `getMerchantAllowlist`), this scopes to the
+ * operator's own pubkey on a fresh instance rather than leaking the relay
+ * firehose. The filter is only ever returned unchanged (and `scoped` false) when
+ * no operator pubkey is configured at all — the sole unscoped fallback.
  */
 export const applyMerchantScope = async (filter: NDKFilter): Promise<{ filter: NDKFilter; scoped: boolean }> => {
-	const allowlist = await getMerchantAllowlist()
-	if (allowlist.length === 0) return { filter, scoped: false }
-	return { filter: { ...filter, authors: allowlist }, scoped: true }
+	return buildScopedFilter(filter, await getMerchantAllowlist())
 }
 
 /** Keep only events authored by an allowlisted merchant (used to post-filter search). */
