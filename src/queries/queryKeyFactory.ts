@@ -115,6 +115,7 @@ export const paymentDetailsKeys = {
 	updatePaymentDetail: () => [...paymentDetailsKeys.all, 'update'] as const,
 	deletePaymentDetail: () => [...paymentDetailsKeys.all, 'delete'] as const,
 	paymentReceipt: (orderId: string, invoiceId: string) => [...paymentDetailsKeys.all, 'receipt', orderId, invoiceId],
+	grinCapability: (npub: string) => [...paymentDetailsKeys.all, 'grinCapability', npub] as const,
 } as const
 
 export const walletDetailsKeys = {

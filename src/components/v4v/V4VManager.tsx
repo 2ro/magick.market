@@ -47,8 +47,8 @@ export function V4VManager({
 		localShares,
 		isChecking,
 		totalV4VPercentage,
-		canReceiveZaps,
-		isCheckingZap,
+		hasGrinAddress,
+		isCheckingGrinAddress,
 		publishMutation,
 
 		// Computed values
@@ -180,8 +180,8 @@ export function V4VManager({
 								<RecipientPreview
 									npub={newRecipientNpub}
 									percentage={newRecipientShare}
-									canReceiveZaps={canReceiveZaps}
-									isLoading={isCheckingZap}
+									hasGrinAddress={hasGrinAddress}
+									isLoading={isCheckingGrinAddress}
 								/>
 							)}
 						</div>
@@ -197,7 +197,7 @@ export function V4VManager({
 							<Button
 								className="flex-grow sm:flex-grow-0"
 								onClick={handleAddRecipient}
-								disabled={isChecking || isCheckingZap || !newRecipientNpub || !canReceiveZaps || totalV4VPercentage === 0}
+								disabled={isChecking || isCheckingGrinAddress || !newRecipientNpub || !hasGrinAddress || totalV4VPercentage === 0}
 								data-testid="add-v4v-recipient-button"
 							>
 								Add

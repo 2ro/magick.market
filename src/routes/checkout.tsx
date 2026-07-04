@@ -22,7 +22,8 @@ import { publishOrderWithDependencies, type CreatedOrderInfo } from '@/publish/o
 import { publishPaymentReceipt } from '@/publish/payment'
 import { getShippingEvent, getShippingService } from '@/queries/shipping'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
-import { useGenerateInvoiceMutation } from '@/queries/payment'
+import { useGenerateInvoiceMutation, resolveV4VGrinAddress } from '@/queries/payment'
+import { buildGoblinPayUri } from '@/lib/grin'
 import type { NDKSigner } from '@nostr-dev-kit/ndk'
 import { useAutoAnimate } from '@formkit/auto-animate/react'
 import { useForm } from '@tanstack/react-form'
@@ -304,11 +305,21 @@ function RouteComponent() {
 							price: Math.floor(order.amountNanogrin / Math.max(1, sellerProducts.length)),
 						}))
 
+						// Circular economy (V4V): the seller's own configured shares split
+						// this order's total between the seller and their chosen recipients.
+						// sellerData is populated during cart totals (cartActions.updateSellerData),
+						// keyed by seller pubkey with product-only totals — apply the same
+						// sellerAmount/recipientAmounts split to the order's full amount
+						// (which already includes shipping, added entirely to the seller side).
+						const shares = sellerData[order.sellerPubkey]?.shares
+						const sellerAmount = shares ? shares.sellerAmount : order.amountNanogrin
+						const recipientAmounts = shares?.recipientAmounts ?? []
+
 						// The invoice number minted at order creation is the payment id
 						// AND the Goblin pay-URI memo - the bridge between order and payment.
 						const generated = await generateInvoice({
 							sellerPubkey: order.sellerPubkey,
-							amountNanogrin: order.amountNanogrin,
+							amountNanogrin: sellerAmount,
 							description: `Payment for ${sellerProducts.length} item${sellerProducts.length === 1 ? '' : 's'}`,
 							invoiceId: order.invoiceNumber,
 							items: sellerItems,
@@ -320,13 +331,52 @@ function RouteComponent() {
 							recipientPubkey: generated.sellerPubkey,
 							recipientName: generated.sellerName,
 							amount: generated.amount,
-							description: `Payment for ${sellerProducts.length} item${sellerProducts.length === 1 ? '' : 's'}`,
+							description: 'Merchant Payment',
 							grinAddress: generated.grinAddress,
 							payUri: generated.payUri,
 							status: generated.status === 'failed' ? 'failed' : 'pending',
 							type: 'merchant',
 							createdAt: Date.now(),
 						})
+
+						for (const recipient of recipientAmounts) {
+							if (recipient.amountNanogrin <= 0) continue
+
+							const grinAddress = await resolveV4VGrinAddress(recipient.pubkey)
+							const invoiceId = `${order.invoiceNumber}-v4v-${recipient.pubkey.slice(0, 8)}`
+
+							if (!grinAddress) {
+								console.warn(`V4V recipient ${recipient.pubkey} has no Goblin payment address configured, skipping their share`)
+								newInvoices.push({
+									id: invoiceId,
+									orderId: order.orderId,
+									recipientPubkey: recipient.pubkey,
+									recipientName: recipient.name || recipient.pubkey.slice(0, 12),
+									amount: recipient.amountNanogrin,
+									description: 'V4V Community Payment',
+									grinAddress: null,
+									payUri: null,
+									status: 'failed',
+									type: 'v4v',
+									createdAt: Date.now(),
+								})
+								continue
+							}
+
+							newInvoices.push({
+								id: invoiceId,
+								orderId: order.orderId,
+								recipientPubkey: recipient.pubkey,
+								recipientName: recipient.name || recipient.pubkey.slice(0, 12),
+								amount: recipient.amountNanogrin,
+								description: 'V4V Community Payment',
+								grinAddress,
+								payUri: buildGoblinPayUri({ to: grinAddress, amountNanogrin: recipient.amountNanogrin, memo: invoiceId }),
+								status: 'pending',
+								type: 'v4v',
+								createdAt: Date.now(),
+							})
+						}
 					}
 
 					console.log(`Prepared ${newInvoices.length} Grin payment request(s)`)

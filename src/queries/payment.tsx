@@ -226,6 +226,53 @@ export const fetchUserPaymentDetails = async (userPubkey: string): Promise<Payme
 }
 
 /**
+ * Resolves a pubkey's own (non-product-scoped) Goblin payment address.
+ *
+ * Used for V4V/circular-economy recipients, who aren't sellers of a specific
+ * product — they publish a payment detail keyed by their own pubkey, not by
+ * a product or collection coordinate. Prefers a global (no `coordinates`)
+ * GRIN detail if the user has more than one.
+ */
+export const resolveV4VGrinAddress = async (recipientPubkey: string): Promise<string | null> => {
+	const details = await fetchUserPaymentDetails(recipientPubkey)
+	const grinDetails = details.filter((pd) => pd.paymentMethod === PAYMENT_DETAILS_METHOD.GRIN)
+	const detail = grinDetails.find((pd) => !pd.coordinates) || grinDetails[0]
+	if (!detail || !isValidGoblinPayAddress(detail.paymentDetail)) return null
+	return detail.paymentDetail.trim()
+}
+
+/**
+ * Whether an npub has a usable Goblin GRIN payment address configured — the
+ * GRIN-only equivalent of a Lightning "can this pubkey receive zaps?" check.
+ * Used to gate adding V4V/circular-economy recipients: a recipient with
+ * Lightning zap capability but no GRIN address still can't actually be paid
+ * by this marketplace, and vice versa.
+ */
+export const checkGrinCapabilityByNpub = async (npub: string): Promise<boolean> => {
+	if (!npub || !npub.startsWith('npub')) return false
+	try {
+		const { data } = nip19.decode(npub)
+		if (typeof data !== 'string') return false
+		const address = await resolveV4VGrinAddress(data)
+		return !!address
+	} catch (error) {
+		console.error('Error checking Grin capability by npub:', error)
+		return false
+	}
+}
+
+export const grinCapabilityQueryOptions = (npub: string) =>
+	({
+		queryKey: paymentDetailsKeys.grinCapability(npub),
+		queryFn: () => checkGrinCapabilityByNpub(npub),
+		enabled: !!npub && npub.startsWith('npub'),
+	}) as const
+
+export const useGrinCapabilityByNpub = (npub: string) => {
+	return useQuery(grinCapabilityQueryOptions(npub))
+}
+
+/**
  * React query hook for fetching all payment details for a user
  */
 export const useUserPaymentDetails = (userPubkey: string) => {

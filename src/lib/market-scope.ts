@@ -38,16 +38,28 @@ const BITCOIN_RAIL_TAGS = new Set(['zap', 'lightning', 'lnurl', 'bolt11', 'lud06
 /** True if the event carries any Bitcoin/Lightning/eCash payment-rail tag. */
 export const hasBitcoinRail = (event: NDKEvent): boolean => event.tags.some((t) => BITCOIN_RAIL_TAGS.has(t[0]))
 
-/** True if the listing has no price or is priced in GRIN. */
+/**
+ * True if the event satisfies the GRIN price rule.
+ *
+ * Product listings (kind 30402) must be explicitly priced in GRIN — a listing
+ * with no price tag or a non-GRIN currency is rejected, because this app has no
+ * way to check out with it (same semantics as `isGrinPricedProduct` in
+ * queries/products.tsx). Non-product events (e.g. kind 30405 collections) carry
+ * no price of their own and are currency-neutral.
+ */
 export const isGrinPriced = (event: NDKEvent): boolean => {
 	const currency = event.tags.find((t) => t[0] === 'price')?.[2]
-	return !currency || currency.toUpperCase() === GRIN_CURRENCY
+	if (currency) return currency.toUpperCase() === GRIN_CURRENCY
+	return event.kind !== 30402
 }
 
 /**
  * Filter a batch of market events for the GRIN-only invariant.
  *  - Always drops anything carrying a Bitcoin/Lightning/eCash payment-rail tag.
- *  - When `enforceCurrency` (the admin-scoped market), also drops non-GRIN prices.
+ *  - When `enforceCurrency`, also drops products not priced in GRIN. All public
+ *    browse/search/detail surfaces enforce this; the one exception is the
+ *    seller's own dashboard (fetchProductsByPubkey), so a seller can still see
+ *    and fix a mis-tagged listing of their own.
  */
 export const filterGrinOnly = <T extends NDKEvent>(events: T[], enforceCurrency: boolean): T[] =>
 	events.filter((e) => !hasBitcoinRail(e) && (!enforceCurrency || isGrinPriced(e)))

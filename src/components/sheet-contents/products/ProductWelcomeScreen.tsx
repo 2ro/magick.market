@@ -11,7 +11,7 @@ export function ProductWelcomeScreen({ onGetStarted }: { onGetStarted: () => voi
 				</div>
 
 				<h1 className="text-2xl font-heading text-balance text-center">WELCOME TO</h1>
-				<h1 className="text-2xl font-heading text-balance text-center">PLEBEIAN MARKET</h1>
+				<h1 className="text-2xl font-heading text-balance text-center">MAGICK MARKET</h1>
 				<h2 className="text-xl font-mono text-balance text-center text-gray-600">
 					Start selling your products
 					<br />

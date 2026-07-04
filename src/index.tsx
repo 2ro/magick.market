@@ -253,11 +253,33 @@ export const server = serve({
 				})
 			},
 		},
-		// magick.market is GRIN-only: Lightning zap purchases (paid vanity URLs /
-		// nip05 names) are disabled. The marketplace is paid in Grin via the Goblin
-		// wallet; names are not sold for Lightning.
+		// magick.market is GRIN-only: Lightning zap purchases (paid vanity URLs)
+		// are disabled. NIP-05 names are paid in Grin via /api/nip05/claim below.
 		'/api/zapPurchase': {
 			POST: async () => jsonError('Lightning purchases are disabled; magick.market is GRIN-only', 501),
+		},
+		// Verifies a buyer-signed Grin payment receipt (kind 17) and registers the
+		// NIP-05 username it pays for. See Nip05ManagerImpl.handleGrinPurchase for
+		// the verification/registration logic; this route only unwraps the body.
+		'/api/nip05/claim': {
+			POST: async (req) => {
+				let body: { event?: unknown }
+				try {
+					body = await req.json()
+				} catch {
+					return jsonError('Invalid JSON body', 400)
+				}
+				const event = body?.event
+				if (!event || typeof event !== 'object') {
+					return jsonError('Missing event', 400)
+				}
+				const nip05Manager = getEventHandler().getNip05Manager()
+				const result = await nip05Manager.handleGrinPurchase(event as Parameters<typeof nip05Manager.handleGrinPurchase>[0])
+				if (!result.ok) {
+					return jsonError(result.error, result.status)
+				}
+				return Response.json({ username: result.username, validUntil: result.validUntil })
+			},
 		},
 		'/images/:file': ({ params }) => serveStatic(`images/${params.file}`),
 		'/.well-known/nostr.json': {
