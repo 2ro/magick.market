@@ -84,7 +84,6 @@ Utility functions for creating payment details with different scopes.
 
 - `APP_PUBKEY` - Application public key for encryption
 - `RELAYS` - Comma-separated list of relay URLs
-- `WALLETED_USER_LUD16` - Lightning address for seeded users (e.g., `user@getalby.com`)
 
 ### Optional
 
@@ -99,7 +98,6 @@ Creates users with single global wallet:
 
 ```bash
 APP_PUBKEY=your_app_pubkey \
-WALLETED_USER_LUD16=test@getalby.com \
 RELAYS=wss://relay.example.com \
 npm run seed
 ```
@@ -110,7 +108,6 @@ Creates first user with multiple payment wallets:
 
 ```bash
 APP_PUBKEY=your_app_pubkey \
-WALLETED_USER_LUD16=test@getalby.com \
 RELAYS=wss://relay.example.com \
 SEED_MULTI_WALLETS=true \
 npm run seed

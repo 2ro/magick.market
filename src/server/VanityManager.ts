@@ -1,6 +1,6 @@
 import type { NostrEvent } from '@nostr-dev-kit/ndk'
 import { verifyEvent, type Event } from 'nostr-tools/pure'
-import { ZapPurchaseManager, type ZapPurchaseEntry } from './ZapPurchaseManager'
+import { RegistryManager, type RegistryEntry } from './RegistryManager'
 import type { EventSigner } from './EventSigner'
 import { NIP05_GRIN_RECIPIENT_NPUB, NIP05_GRIN_RECIPIENT_PUBKEY } from './Nip05Manager'
 import { grinToNanogrin, nanogrinToGrin } from '@/lib/grin'
@@ -86,39 +86,27 @@ export function matchVanityPricingTier(amountNanogrin: number): number | null {
 export const VANITY_GRIN_RECIPIENT_NPUB = NIP05_GRIN_RECIPIENT_NPUB
 export const VANITY_GRIN_RECIPIENT_PUBKEY = NIP05_GRIN_RECIPIENT_PUBKEY
 
-export interface VanityEntry extends ZapPurchaseEntry {
+export interface VanityEntry extends RegistryEntry {
 	vanityName: string
 }
 
-export class VanityManagerImpl extends ZapPurchaseManager<VanityEntry> {
+export class VanityManagerImpl extends RegistryManager<VanityEntry> {
 	private pubkeyToVanity: Map<string, string> = new Map() // Reverse lookup
 
-	// Dedup set for processed Grin payment-claim events, mirroring the base
-	// class's zap-receipt dedup (see ZapPurchaseManager.processedReceipts).
+	// Dedup set for processed Grin payment-claim events.
 	private processedGrinClaims: Set<string> = new Set()
 
 	constructor(eventSigner: EventSigner) {
 		super(
 			{
-				zapLabel: 'vanity-register',
 				registryEventKind: 30000,
 				registryDTag: 'vanity-urls',
-				// magick.market is GRIN-only: the base class's sats/zap-request
-				// pricing and invoice flow (generateInvoice/handleZapReceipt) are
-				// unused here. Grin purchases are verified in handleGrinPurchase
-				// below, against VANITY_PRICING (nanogrin) instead.
-				pricing: {},
 			},
 			eventSigner,
 		)
 	}
 
-	// --- ZapPurchaseManager abstract implementations ---
-
-	protected extractRegistryKey(zapRequest: NostrEvent): string | null {
-		const tag = zapRequest.tags.find((t) => t[0] === 'vanity')
-		return tag?.[1]?.toLowerCase() ?? null
-	}
+	// --- RegistryManager abstract implementations ---
 
 	protected validateRegistration(key: string, pubkey: string): string | null {
 		if (!this.isValidVanityName(key)) {
@@ -156,10 +144,6 @@ export class VanityManagerImpl extends ZapPurchaseManager<VanityEntry> {
 	}
 
 	// --- Optional hooks ---
-
-	protected getInvoiceComment(registryKey: string): string {
-		return `Vanity URL: ${registryKey}`
-	}
 
 	protected onEntryRegistered(key: string, entry: VanityEntry): void {
 		this.pubkeyToVanity.set(entry.pubkey, key)

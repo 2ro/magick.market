@@ -44,8 +44,6 @@ function ProfileComponent() {
 		displayName: '',
 		about: '',
 		nip05: '',
-		lud16: '',
-		lud06: '',
 		website: '',
 	})
 
@@ -75,8 +73,6 @@ function ProfileComponent() {
 				displayName: fetchedProfile.displayName || (fetchedProfile as any).display_name || '',
 				about: fetchedProfile.about || '',
 				nip05: fetchedProfile.nip05 || '',
-				lud16: fetchedProfile.lud16 || '',
-				lud06: fetchedProfile.lud06 || '',
 				website: fetchedProfile.website || '',
 			})
 		}
@@ -127,8 +123,6 @@ function ProfileComponent() {
 			formData.displayName !== originalDisplayName ||
 			formData.about !== (originalProfile.about || '') ||
 			formData.nip05 !== (originalProfile.nip05 || '') ||
-			formData.lud16 !== (originalProfile.lud16 || '') ||
-			formData.lud06 !== (originalProfile.lud06 || '') ||
 			formData.website !== (originalProfile.website || '')
 
 		// Check image changes
@@ -275,64 +269,6 @@ function ProfileComponent() {
 									value={formData.nip05}
 									onChange={(e) => setFormData((prev) => ({ ...prev, nip05: e.target.value }))}
 									placeholder="you@example.com"
-								/>
-							</div>
-
-							<div className="space-y-2">
-								<Label htmlFor="lud16">
-									Lightning Address (LUD16) <span className="text-muted-foreground font-normal">(optional)</span>
-									<div className="text-xs text-muted-foreground mt-1 font-normal">
-										Recommended wallets: (
-										<a href="https://coinos.io" target="_blank" rel="noopener noreferrer" className="underline hover:text-pink-500">
-											CoinOS
-										</a>
-										,{' '}
-										<a href="https://primal.net" target="_blank" rel="noopener noreferrer" className="underline hover:text-pink-500">
-											Primal
-										</a>
-										,{' '}
-										<a href="https://lnbits.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-pink-500">
-											LNBits
-										</a>
-										,{' '}
-										<a href="https://minibits.cash" target="_blank" rel="noopener noreferrer" className="underline hover:text-pink-500">
-											Minibits
-										</a>
-										,{' '}
-										<a
-											href="https://app.mutinywallet.com/setup"
-											target="_blank"
-											rel="noopener noreferrer"
-											className="underline hover:text-pink-500"
-										>
-											Mutiny
-										</a>
-										,{' '}
-										<a href="https://getalby.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-pink-500">
-											Alby
-										</a>
-										)
-									</div>
-								</Label>
-								<Input
-									id="lud16"
-									name="lud16"
-									value={formData.lud16}
-									onChange={(e) => setFormData((prev) => ({ ...prev, lud16: e.target.value }))}
-									placeholder="you@walletprovider.com"
-								/>
-							</div>
-
-							<div className="space-y-2">
-								<Label htmlFor="lud06">
-									LNURL (LUD06) <span className="text-muted-foreground font-normal">(optional)</span>
-								</Label>
-								<Input
-									id="lud06"
-									name="lud06"
-									value={formData.lud06}
-									onChange={(e) => setFormData((prev) => ({ ...prev, lud06: e.target.value }))}
-									placeholder="LNURL..."
 								/>
 							</div>
 

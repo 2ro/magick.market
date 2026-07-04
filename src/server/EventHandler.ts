@@ -10,8 +10,7 @@ import { EventValidator } from './EventValidator'
 import { EventSigner } from './EventSigner'
 import { NDKService } from './NDKService'
 import NDK from '@nostr-dev-kit/ndk'
-import { ZAP_RELAYS } from '../lib/constants'
-import type { ZapPurchaseManager, ZapPurchaseEntry } from './ZapPurchaseManager'
+import type { RegistryManager, RegistryEntry } from './RegistryManager'
 
 export class EventHandler {
 	private static instance: EventHandler
@@ -28,11 +27,9 @@ export class EventHandler {
 	private eventSigner: EventSigner
 	private ndkService: NDKService
 	private ndk: NDK | null = null
-	private zapNdk: NDK | null = null
-	private handledZapReceiptIds: Set<string> = new Set()
 
-	// Registered zap purchase managers (vanity URLs, nip05)
-	private purchaseManagers: ZapPurchaseManager<ZapPurchaseEntry>[] = []
+	// Registered GRIN name registries (vanity URLs, nip05)
+	private nameManagers: RegistryManager<RegistryEntry>[] = []
 
 	private constructor() {
 		// Initialize with empty managers - components requiring private key will be set up during initialize()
@@ -71,8 +68,8 @@ export class EventHandler {
 		this.vanityManager = new VanityManagerImpl(this.eventSigner)
 		this.nip05Manager = new Nip05ManagerImpl(this.eventSigner)
 
-		// Register all zap purchase managers
-		this.purchaseManagers = [this.vanityManager, this.nip05Manager]
+		// Register all GRIN name registries
+		this.nameManagers = [this.vanityManager, this.nip05Manager]
 
 		// Initialize NDK service and load existing data with timeout
 		try {
@@ -132,47 +129,6 @@ export class EventHandler {
 
 		this.isInitialized = true
 		console.log('EventHandler initialized successfully')
-	}
-
-	/**
-	 * Subscribe to zap receipts for all registered purchase managers.
-	 * Each manager self-filters by its own label tag, so a single subscription
-	 * routes receipts to vanity URLs, badges, NIP-05.
-	 */
-	private subscribeToZapPurchases(ndk: NDK, label: string): void {
-		const appPubkey = this.eventSigner.getAppPubkey()
-
-		// Subscribe to zap receipts where app pubkey is the recipient
-		const sub = ndk.subscribe(
-			{
-				kinds: [9735],
-				'#p': [appPubkey],
-			},
-			{ closeOnEose: false },
-		)
-
-		sub.on('event', async (event) => {
-			try {
-				if (event.id) {
-					if (this.handledZapReceiptIds.has(event.id)) return
-					this.handledZapReceiptIds.add(event.id)
-					if (this.handledZapReceiptIds.size > 2000) {
-						// Simple bound to avoid unbounded growth
-						this.handledZapReceiptIds.clear()
-						this.handledZapReceiptIds.add(event.id)
-					}
-				}
-				// Route to all purchase managers; each filters by its own label
-				const raw = event.rawEvent()
-				for (const manager of this.purchaseManagers) {
-					await manager.handleZapReceipt(raw)
-				}
-			} catch (error) {
-				console.error('Error handling zap purchase receipt:', error)
-			}
-		})
-
-		console.log(`Subscribed to zap purchase receipts (${label})`)
 	}
 
 	public handleEvent(event: NostrEvent): NostrEvent | null {
@@ -236,8 +192,8 @@ export class EventHandler {
 			await this.blacklistManager.handleBlacklistEvent(event)
 		}
 
-		// Route registry events to matching purchase managers
-		for (const manager of this.purchaseManagers) {
+		// Route registry events to matching name registries
+		for (const manager of this.nameManagers) {
 			if (
 				event.kind === manager.config.registryEventKind &&
 				event.tags.some((tag) => tag[0] === 'd' && tag[1] === manager.config.registryDTag)
@@ -294,15 +250,7 @@ export class EventHandler {
 	}
 
 	/**
-	 * Get a registered purchase manager by its zap label.
-	 * Used by invoice route handlers to delegate to the correct manager.
-	 */
-	public getPurchaseManager(zapLabel: string): ZapPurchaseManager<ZapPurchaseEntry> | undefined {
-		return this.purchaseManagers.find((m) => m.config.zapLabel === zapLabel)
-	}
-
-	/**
-	 * Get the vanity URL purchase manager.
+	 * Get the vanity URL registry manager.
 	 */
 	public getVanityManager(): VanityManagerImpl {
 		return this.vanityManager

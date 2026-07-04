@@ -1,15 +1,11 @@
 import { serve } from 'bun'
 import { Relay } from 'nostr-tools'
 import { getPublicKey, verifyEvent, type Event } from 'nostr-tools/pure'
-import NDK from '@nostr-dev-kit/ndk'
-import { bech32 } from '@scure/base'
 import index from './index.html'
 import { fetchAppSettings } from './lib/appSettings'
 import { AppSettingsSchema } from './lib/schemas/app'
 import { resolveCvmServerPubkey } from './lib/cvm-identity'
 import { getEventHandler } from './server'
-import { ZapInvoiceError } from './server/ZapPurchaseManager'
-import type { ZapPurchaseInvoiceRequestBody } from './server/ZapPurchaseManager'
 import { join } from 'path'
 import { file } from 'bun'
 import { computeConfigFlags } from './lib/configFlags'
@@ -24,106 +20,14 @@ let appSettings: Awaited<ReturnType<typeof fetchAppSettings>> = null
 let APP_PUBLIC_KEY: string
 let CVM_SERVER_PUBKEY: string
 
-let invoiceNdk: NDK | null = null
-let invoiceNdkConnectPromise: Promise<void> | null = null
-let cachedAppLightningIdentifier: { value: string; fetchedAtMs: number } | null = null
-
 function jsonError(message: string, status = 400) {
 	return Response.json({ error: message }, { status })
-}
-
-function getAppPublicKeyOrThrow(): string {
-	if (APP_PUBLIC_KEY) return APP_PUBLIC_KEY
-	if (!APP_PRIVATE_KEY) throw new Error('Missing APP_PRIVATE_KEY')
-
-	const privateKeyBytes = new Uint8Array(Buffer.from(APP_PRIVATE_KEY, 'hex'))
-	APP_PUBLIC_KEY = getPublicKey(privateKeyBytes)
-	return APP_PUBLIC_KEY
 }
 
 function getCvmServerPublicKey(): string {
 	if (CVM_SERVER_PUBKEY) return CVM_SERVER_PUBKEY
 	CVM_SERVER_PUBKEY = resolveCvmServerPubkey()
 	return CVM_SERVER_PUBKEY
-}
-
-function decodeLnurlBech32(lnurl: string): string | null {
-	try {
-		const decoded = bech32.decode(lnurl.toLowerCase(), 1500)
-		const bytes = bech32.fromWords(decoded.words)
-		return new TextDecoder().decode(Uint8Array.from(bytes))
-	} catch {
-		return null
-	}
-}
-
-function toLnurlpEndpoint(lightningIdentifier: string): string {
-	const trimmed = lightningIdentifier.trim()
-
-	// LUD16: name@domain
-	if (trimmed.includes('@')) {
-		const [name, domain] = trimmed.split('@')
-		if (!name || !domain) throw new Error('Invalid Lightning Address format')
-		return `https://${domain}/.well-known/lnurlp/${name}`
-	}
-
-	// LUD06: bech32 lnurl
-	if (trimmed.toLowerCase().startsWith('lnurl')) {
-		const decoded = decodeLnurlBech32(trimmed)
-		if (!decoded) throw new Error('Invalid LNURL (lud06)')
-		return decoded
-	}
-
-	// Some profiles put the LNURL-pay endpoint directly in lud06
-	if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
-		return trimmed
-	}
-
-	throw new Error('Unsupported Lightning identifier (expected lud16 or lud06)')
-}
-
-async function ensureInvoiceNdkConnected(): Promise<NDK> {
-	if (!RELAY_URL) {
-		throw new Error('Missing APP_RELAY_URL')
-	}
-	if (!invoiceNdk) {
-		invoiceNdk = new NDK({ explicitRelayUrls: [RELAY_URL] })
-	}
-	if (!invoiceNdkConnectPromise) {
-		invoiceNdkConnectPromise = invoiceNdk.connect().catch((error) => {
-			invoiceNdkConnectPromise = null
-			throw error
-		})
-	}
-	await invoiceNdkConnectPromise
-	return invoiceNdk
-}
-
-async function getAppLightningIdentifier(): Promise<string> {
-	const envValue =
-		process.env.APP_LIGHTNING_ADDRESS || process.env.APP_LUD16 || process.env.APP_LN_ADDRESS || process.env.APP_LIGHTNING_IDENTIFIER
-	if (envValue && envValue.trim()) return envValue.trim()
-
-	if (!APP_PUBLIC_KEY) {
-		throw new Error('App public key not initialized')
-	}
-
-	const now = Date.now()
-	if (cachedAppLightningIdentifier && now - cachedAppLightningIdentifier.fetchedAtMs < 5 * 60 * 1000) {
-		return cachedAppLightningIdentifier.value
-	}
-
-	const ndk = await ensureInvoiceNdkConnected()
-	const user = ndk.getUser({ pubkey: getAppPublicKeyOrThrow() })
-	await user.fetchProfile()
-
-	const identifier = user.profile?.lud16 || user.profile?.lud06
-	if (!identifier) {
-		throw new Error('App does not have a Lightning Address configured (missing lud16/lud06 on app profile)')
-	}
-
-	cachedAppLightningIdentifier = { value: identifier, fetchedAtMs: now }
-	return identifier
 }
 
 // Retry the boot-time app-settings fetch so a slow or briefly-unreachable relay
@@ -281,11 +185,8 @@ export const server = serve({
 				})
 			},
 		},
-		// magick.market is GRIN-only: Lightning zap purchases are disabled.
-		// NIP-05 names and vanity URLs are paid in Grin via the claim routes below.
-		'/api/zapPurchase': {
-			POST: async () => jsonError('Lightning purchases are disabled; magick.market is GRIN-only', 501),
-		},
+		// magick.market is GRIN-only: NIP-05 names and vanity URLs are paid in
+		// Grin via the claim routes below.
 		// Verifies a buyer-signed Grin payment receipt (kind 17) and registers the
 		// NIP-05 username it pays for. See Nip05ManagerImpl.handleGrinPurchase for
 		// the verification/registration logic; this route only unwraps the body.

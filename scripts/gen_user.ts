@@ -2,8 +2,6 @@ import { faker } from '@faker-js/faker'
 import type { NDKUserProfile } from '@nostr-dev-kit/ndk'
 import NDK, { type NDKPrivateKeySigner } from '@nostr-dev-kit/ndk'
 
-const WALLETED_USER_LUD16 = 'magickuser@coinos.io'
-
 /**
  * Generates random user profile data, optionally with user index for consistent profiles
  * @param userIndex Optional user index to create a more consistent profile across runs
@@ -32,8 +30,6 @@ export function generateUserProfileData(userIndex?: number): NDKUserProfile {
 		about: faker.lorem.paragraph(3),
 		nip05: `${baseUsername}@example.com`,
 		website: `https://${baseUsername}.com`,
-		lud06: faker.finance.bitcoinAddress(),
-		lud16: WALLETED_USER_LUD16,
 	}
 }
 
