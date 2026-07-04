@@ -5,7 +5,6 @@ export interface InvoiceData {
 	sellerPubkey: string
 	amountNanogrin: number
 	status: 'pending' | 'paid' | 'expired' | 'failed'
-	bolt11?: string
 	createdAt: number
 	expiresAt?: number
 	type: 'merchant' | 'v4v'
@@ -28,7 +27,6 @@ export function createInvoiceData(
 	sellerPubkey: string,
 	amountNanogrin: number,
 	type: 'merchant' | 'v4v' = 'merchant',
-	bolt11?: string,
 ): InvoiceData {
 	const now = Math.floor(Date.now() / 1000)
 
@@ -38,9 +36,8 @@ export function createInvoiceData(
 		sellerPubkey,
 		amountNanogrin,
 		status: 'pending',
-		bolt11,
 		createdAt: now,
-		expiresAt: bolt11 ? now + 3600 : undefined, // 1 hour expiry for invoices
+		expiresAt: undefined,
 		type,
 	}
 }

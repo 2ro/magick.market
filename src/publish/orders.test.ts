@@ -150,7 +150,7 @@ mock.module('@/queries/shipping', () => ({
 mock.module('@/queries/profiles', () => ({
 	fetchProfileByIdentifier: mock(async () => ({
 		profile: {
-			lud16: 'seller@example.com',
+			name: 'seller',
 		},
 	})),
 }))

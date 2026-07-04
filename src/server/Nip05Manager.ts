@@ -1,7 +1,7 @@
 import type { NostrEvent } from '@nostr-dev-kit/ndk'
 import { verifyEvent, type Event } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
-import { ZapPurchaseManager, type ZapPurchaseEntry } from './ZapPurchaseManager'
+import { RegistryManager, type RegistryEntry } from './RegistryManager'
 import type { EventSigner } from './EventSigner'
 import { grinToNanogrin, nanogrinToGrin } from '@/lib/grin'
 
@@ -70,39 +70,27 @@ if (decodedRecipient.type !== 'npub') {
 }
 export const NIP05_GRIN_RECIPIENT_PUBKEY: string = decodedRecipient.data
 
-export interface Nip05Entry extends ZapPurchaseEntry {
+export interface Nip05Entry extends RegistryEntry {
 	username: string
 }
 
-export class Nip05ManagerImpl extends ZapPurchaseManager<Nip05Entry> {
+export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 	private pubkeyToUsername: Map<string, string> = new Map() // Reverse lookup
 
-	// Dedup set for processed Grin payment-claim events, mirroring the base
-	// class's zap-receipt dedup (see ZapPurchaseManager.processedReceipts).
+	// Dedup set for processed Grin payment-claim events.
 	private processedGrinClaims: Set<string> = new Set()
 
 	constructor(eventSigner: EventSigner) {
 		super(
 			{
-				zapLabel: 'nip05-register',
 				registryEventKind: 30000,
 				registryDTag: 'nip05-names',
-				// magick.market is GRIN-only: the base class's sats/zap-request
-				// pricing and invoice flow (generateInvoice/handleZapReceipt) are
-				// unused here. Grin purchases are verified in handleGrinPurchase
-				// below, against NIP05_PRICING (nanogrin) instead.
-				pricing: {},
 			},
 			eventSigner,
 		)
 	}
 
-	// --- ZapPurchaseManager abstract implementations ---
-
-	protected extractRegistryKey(zapRequest: NostrEvent): string | null {
-		const tag = zapRequest.tags.find((t) => t[0] === 'nip05')
-		return tag?.[1]?.toLowerCase() ?? null
-	}
+	// --- RegistryManager abstract implementations ---
 
 	protected validateRegistration(key: string, pubkey: string): string | null {
 		if (!this.isValidUsername(key)) {
@@ -137,10 +125,6 @@ export class Nip05ManagerImpl extends ZapPurchaseManager<Nip05Entry> {
 
 	protected createEntry(key: string, pubkey: string, validUntil: number): Nip05Entry {
 		return { username: key, pubkey, validUntil }
-	}
-
-	protected getInvoiceComment(registryKey: string): string {
-		return `NIP-05 Address: ${registryKey}`
 	}
 
 	protected onEntryRegistered(key: string, entry: Nip05Entry): void {

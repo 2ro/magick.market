@@ -1,5 +1,5 @@
 // seed.ts
-import { devUser1, devUser2, devUser3, devUser4, devUser5, WALLETED_USER_LUD16, XPUB } from '@/lib/fixtures'
+import { devUser1, devUser2, devUser3, devUser4, devUser5, XPUB } from '@/lib/fixtures'
 import { CURRENCIES, PRODUCT_CATEGORIES } from '@/lib/constants'
 import { ORDER_STATUS, SHIPPING_STATUS } from '@/lib/schemas/order'
 import { SHIPPING_KIND } from '@/lib/schemas/shippingOption'
@@ -23,7 +23,7 @@ import {
 	generateOrderStatusData,
 	generateShippingUpdateData,
 } from './gen_orders'
-import { createPaymentDetailEvent, generateLightningPaymentDetail, generateOnChainPaymentDetail } from './gen_payment_details'
+import { createPaymentDetailEvent, generateOnChainPaymentDetail } from './gen_payment_details'
 import { createProductEvent, generateProductData } from './gen_products'
 import { createNip15ProductEvent, generateNip15ProductData } from './gen_nip15_products'
 import { createReviewEvent, generateReviewData } from './gen_review'
@@ -111,7 +111,6 @@ async function seedData() {
 		about: 'The Magick Market - A decentralized marketplace built on Nostr. Trade freely with Bitcoin.',
 		nip05: 'magick@magick.market',
 		website: 'https://magick.market',
-		lud16: 'magickuser@coinos.io',
 	}
 	await createUserProfileEvent(appSigner, ndk, appProfile)
 
@@ -133,16 +132,8 @@ async function seedData() {
 		const userProfile = generateUserProfileData(i)
 		await createUserProfileEvent(signer, ndk, userProfile)
 
-		// Create payment details for each user (one Lightning, one On-chain)
+		// Create payment details for each user (On-chain)
 		console.log(`Creating payment details for user ${pubkey.substring(0, 8)}...`)
-
-		// Create Lightning Network payment detail (global scope)
-		const lightningPaymentDetail = generateLightningPaymentDetail({
-			lightningAddress: WALLETED_USER_LUD16,
-			scope: 'global',
-			scopeName: 'Global Wallet',
-		})
-		await createPaymentDetailEvent(signer, ndk, lightningPaymentDetail, APP_PUBKEY!)
 
 		// Create On-chain payment detail (using the same XPUB for all users, global scope)
 		const onChainPaymentDetail = generateOnChainPaymentDetail({
@@ -271,7 +262,6 @@ async function seedData() {
 				signer,
 				ndk,
 				APP_PUBKEY,
-				WALLETED_USER_LUD16,
 				productCoordinates,
 				[], // No collections in basic seed
 			)

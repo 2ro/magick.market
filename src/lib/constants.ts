@@ -46,10 +46,6 @@ export const defaultRelaysUrls: string[] = DEFAULT_PUBLIC_RELAYS
 // Bug reports relay - always writable even in staging
 export const BUG_RELAY = 'wss://bugs.magick.market/'
 
-// Dedicated zap detection relays. Intentionally empty: magick.market is
-// GRIN-only (no Lightning zap processing) and federates only with its own relay.
-export const ZAP_RELAYS: string[] = []
-
 // GRIN is the only currency on magick.market. 1 GRIN = 10^9 nanogrin (see src/lib/grin.ts).
 export const CURRENCIES = [
 	'GRIN', // Grin
