@@ -429,7 +429,7 @@ export function ShippingTab() {
 				title: template.name,
 				description: template.description,
 				price: '0',
-				currency: 'USD',
+				currency: 'GRIN',
 				countries: [], // Empty = worldwide
 				service: template.service,
 			}
@@ -469,7 +469,7 @@ export function ShippingTab() {
 				title: 'Local Pickup',
 				description: 'Customer picks up the item at your location',
 				price: '0',
-				currency: 'USD',
+				currency: 'GRIN',
 				countries: [],
 				service: 'pickup',
 				pickupAddress: pickupAddress,
