@@ -90,6 +90,12 @@ jobs:
             cd "$APP_DIR"
             bun install --frozen-lockfile
 
+            # Build the NIP-49 unlock worker asset (public/nip49.worker.js).
+            # The systemd unit runs `bun src/index.tsx` directly, not the `start`
+            # script, so the worker must be built here or off-thread login decrypt
+            # falls back to the main-thread path.
+            bun run build:worker
+
             systemctl restart magick-market
 
             # Verify the unit is up and the app answers.
