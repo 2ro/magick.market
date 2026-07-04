@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures'
 import { queryRelayEvents, filterByTag, getTagValue } from '../utils/relay-query'
-import { seedProduct } from '../scenarios'
+import { seedProduct, resetV4VForUser } from '../scenarios'
 import { RELAY_URL, TEST_APP_PUBLIC_KEY } from '../test-config'
 import { devUser1, devUser2 } from '../../src/lib/fixtures'
 import { finalizeEvent } from 'nostr-tools/pure'
@@ -42,8 +42,14 @@ test.use({ scenario: 'merchant' })
  *  - devUser1's Goblin payment address (a GRIN payment detail) so the payment
  *    leg resolves a goblin:pay URI. It reuses the scenario's worldwide-standard
  *    shipping option.
+ *
+ * It also RESETS devUser1's V4V shares: the merchant scenario seeds a 10%
+ * community share, which the checkout split (PR #7) turns into a second
+ * payment leg to the app — out of scope here. This test covers the M3/M4/M5
+ * guest seam with a single seller payment; the split has its own coverage.
  */
 async function seedGrinFixtures() {
+	await resetV4VForUser(devUser1.sk)
 	const relay = await Relay.connect(RELAY_URL)
 	try {
 		await seedProduct(relay, devUser1.sk, {
