@@ -120,6 +120,10 @@ function Index() {
 								Start Selling
 							</span>
 						</Button>
+
+						<Link to="/imported" className="mt-3 text-white/80 text-sm underline hover:text-white transition-colors">
+							Import a store
+						</Link>
 					</div>
 				</div>
 			</div>
