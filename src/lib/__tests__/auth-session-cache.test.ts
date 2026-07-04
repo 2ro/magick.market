@@ -1,7 +1,11 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { encrypt } from 'nostr-tools/nip49'
 import { hexToBytes } from 'nostr-tools/utils'
 import { decryptAsync } from '@/lib/crypto/nip49Async'
+import { authActions, authStore, NOSTR_AUTO_LOGIN, NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY, NOSTR_SESSION_PRIVATE_KEY } from '@/lib/stores/auth'
+import { ndkActions } from '@/lib/stores/ndk'
+import { cartActions } from '@/lib/stores/cart'
+import { TERMS_ACCEPTED_KEY } from '@/components/dialogs/TermsConditionsDialog'
 
 class MemoryStorage {
 	private s = new Map<string, string>()
@@ -23,26 +27,40 @@ class MemoryStorage {
 const PRIVATE_KEY_HEX = 'a'.repeat(64)
 const PASSWORD = 'hunter2-correct-horse'
 
-// Stub the heavy Nostr/NDK graph so we can exercise the auth store in isolation.
+// Stub the NDK / cart touchpoints with spies on the REAL modules rather than
+// mock.module: bun's mock.module replaces the module registry entry for the
+// whole test run, which (on some bun versions, e.g. the 1.3.4 CI runs on)
+// leaks into later test files — a cart stub here broke v4v-shares.test.ts in
+// CI. spyOn only mutates the live object and is restored in afterAll.
+const spies = [
+	spyOn(ndkActions, 'getNDK').mockReturnValue({} as never),
+	spyOn(ndkActions, 'setSigner').mockImplementation((async () => {}) as never),
+	spyOn(cartActions, 'reconcileRemoteCartForUser').mockImplementation((async () => {}) as never),
+	spyOn(cartActions, 'clear').mockImplementation((() => {}) as never),
+]
+
 const loginCalls: string[] = []
-mock.module('@/lib/stores/ndk', () => ({
-	ndkActions: { getNDK: () => ({}), setSigner: () => {}, removeSigner: () => {} },
-}))
-mock.module('@/lib/stores/cart', () => ({
-	cartActions: { reconcileRemoteCartForUser: () => {}, clear: () => {} },
-}))
-mock.module('@/queries/products', () => ({ fetchProductsByPubkey: async () => [] }))
-mock.module('@/lib/stores/ui', () => ({ uiActions: { openDialog: () => {} } }))
-mock.module('@/components/dialogs/TermsConditionsDialog', () => ({
-	hasAcceptedTerms: () => true,
-	TERMS_ACCEPTED_KEY: 'terms',
-}))
+const originalLogin = authActions.loginWithPrivateKey
+const trackLogins = () => {
+	authActions.loginWithPrivateKey = async (pk: string) => {
+		loginCalls.push(pk)
+		return originalLogin.call(authActions, pk)
+	}
+}
+
+afterAll(() => {
+	for (const spy of spies) spy.mockRestore()
+	authActions.loginWithPrivateKey = originalLogin
+})
 
 describe('auth session key cache', () => {
 	beforeEach(() => {
 		;(globalThis as any).localStorage = new MemoryStorage()
 		;(globalThis as any).sessionStorage = new MemoryStorage()
+		// Pre-accept terms so checkAndShowTermsDialog is a no-op.
+		localStorage.setItem(TERMS_ACCEPTED_KEY, 'true')
 		loginCalls.length = 0
+		authActions.loginWithPrivateKey = originalLogin
 	})
 
 	test('decryptAsync round-trips a NIP-49 ncryptsec produced by the app', async () => {
@@ -56,66 +74,47 @@ describe('auth session key cache', () => {
 	})
 
 	test('decryptAndLogin caches the unlocked key in sessionStorage (not localStorage)', async () => {
-		const auth = await import('@/lib/stores/auth')
 		const ncryptsec = encrypt(hexToBytes(PRIVATE_KEY_HEX), PASSWORD, 16, 1)
-		localStorage.setItem(auth.NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY, `pubkey:${ncryptsec}`)
+		localStorage.setItem(NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY, `pubkey:${ncryptsec}`)
+		trackLogins()
 
-		// Spy on loginWithPrivateKey to record how it's invoked.
-		const original = auth.authActions.loginWithPrivateKey
-		auth.authActions.loginWithPrivateKey = async (pk: string) => {
-			loginCalls.push(pk)
-			return original.call(auth.authActions, pk)
-		}
-
-		await auth.authActions.decryptAndLogin(PASSWORD)
+		await authActions.decryptAndLogin(PASSWORD)
 
 		expect(loginCalls).toEqual([PRIVATE_KEY_HEX])
-		expect(sessionStorage.getItem(auth.NOSTR_SESSION_PRIVATE_KEY)).toBe(PRIVATE_KEY_HEX)
+		expect(sessionStorage.getItem(NOSTR_SESSION_PRIVATE_KEY)).toBe(PRIVATE_KEY_HEX)
 		// The plaintext key must NEVER touch localStorage.
-		expect(localStorage.getItem(auth.NOSTR_SESSION_PRIVATE_KEY)).toBeNull()
-
-		auth.authActions.loginWithPrivateKey = original
+		expect(localStorage.getItem(NOSTR_SESSION_PRIVATE_KEY)).toBeNull()
 	})
 
 	test('refresh reuses the cached key without re-deriving or re-prompting', async () => {
-		const auth = await import('@/lib/stores/auth')
 		const ncryptsec = encrypt(hexToBytes(PRIVATE_KEY_HEX), PASSWORD, 16, 1)
-		localStorage.setItem(auth.NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY, `pubkey:${ncryptsec}`)
-		localStorage.setItem(auth.NOSTR_AUTO_LOGIN, 'true')
+		localStorage.setItem(NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY, `pubkey:${ncryptsec}`)
+		localStorage.setItem(NOSTR_AUTO_LOGIN, 'true')
 		// Simulate a prior in-session unlock.
-		sessionStorage.setItem(auth.NOSTR_SESSION_PRIVATE_KEY, PRIVATE_KEY_HEX)
+		sessionStorage.setItem(NOSTR_SESSION_PRIVATE_KEY, PRIVATE_KEY_HEX)
+		trackLogins()
 
-		const original = auth.authActions.loginWithPrivateKey
-		auth.authActions.loginWithPrivateKey = async (pk: string) => {
-			loginCalls.push(pk)
-			return original.call(auth.authActions, pk)
-		}
-
-		await auth.authActions.getAuthFromLocalStorageAndLogin()
+		await authActions.getAuthFromLocalStorageAndLogin()
 
 		// Logged in straight from cache, and no password dialog was requested.
 		expect(loginCalls).toEqual([PRIVATE_KEY_HEX])
-		expect(auth.authStore.state.needsDecryptionPassword).toBe(false)
-
-		auth.authActions.loginWithPrivateKey = original
+		expect(authStore.state.needsDecryptionPassword).toBe(false)
 	})
 
 	test('without a cached key, refresh asks for the passphrase', async () => {
-		const auth = await import('@/lib/stores/auth')
 		const ncryptsec = encrypt(hexToBytes(PRIVATE_KEY_HEX), PASSWORD, 16, 1)
-		localStorage.setItem(auth.NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY, `pubkey:${ncryptsec}`)
-		localStorage.setItem(auth.NOSTR_AUTO_LOGIN, 'true')
+		localStorage.setItem(NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY, `pubkey:${ncryptsec}`)
+		localStorage.setItem(NOSTR_AUTO_LOGIN, 'true')
 		// No session key present (cold start / new tab).
 
-		await auth.authActions.getAuthFromLocalStorageAndLogin()
+		await authActions.getAuthFromLocalStorageAndLogin()
 
-		expect(auth.authStore.state.needsDecryptionPassword).toBe(true)
+		expect(authStore.state.needsDecryptionPassword).toBe(true)
 	})
 
 	test('logout clears the cached session key', async () => {
-		const auth = await import('@/lib/stores/auth')
-		sessionStorage.setItem(auth.NOSTR_SESSION_PRIVATE_KEY, PRIVATE_KEY_HEX)
-		auth.authActions.logout()
-		expect(sessionStorage.getItem(auth.NOSTR_SESSION_PRIVATE_KEY)).toBeNull()
+		sessionStorage.setItem(NOSTR_SESSION_PRIVATE_KEY, PRIVATE_KEY_HEX)
+		authActions.logout()
+		expect(sessionStorage.getItem(NOSTR_SESSION_PRIVATE_KEY)).toBeNull()
 	})
 })
