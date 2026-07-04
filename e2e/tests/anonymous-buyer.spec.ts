@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures'
 import { queryRelayEvents, filterByTag, getTagValue } from '../utils/relay-query'
-import { seedProduct } from '../scenarios'
+import { seedProduct, resetV4VForUser } from '../scenarios'
 import { RELAY_URL, TEST_APP_PUBLIC_KEY } from '../test-config'
 import { devUser1, devUser2 } from '../../src/lib/fixtures'
 import { finalizeEvent } from 'nostr-tools/pure'
@@ -42,8 +42,14 @@ test.use({ scenario: 'merchant' })
  *  - devUser1's Goblin payment address (a GRIN payment detail) so the payment
  *    leg resolves a goblin:pay URI. It reuses the scenario's worldwide-standard
  *    shipping option.
+ *
+ * It also RESETS devUser1's V4V shares: the merchant scenario seeds a 10%
+ * community share, which the checkout split (PR #7) turns into a second
+ * payment leg to the app — out of scope here. This test covers the M3/M4/M5
+ * guest seam with a single seller payment; the split has its own coverage.
  */
 async function seedGrinFixtures() {
+	await resetV4VForUser(devUser1.sk)
 	const relay = await Relay.connect(RELAY_URL)
 	try {
 		await seedProduct(relay, devUser1.sk, {
@@ -150,22 +156,26 @@ test.describe('Anonymous guest buyer (M3)', () => {
 		expect(guestOrder.invoiceNumber).toMatch(/^MM-[0-9A-F]{24}$/)
 		const invoiceNumber: string = guestOrder.invoiceNumber
 
-		// --- 5. Payment screen shows the goblin:pay URI with memo = invoice# ---
+		// --- 5. Payment screen shows the canonical nostr: pay URI with memo = invoice# ---
+		// The Goblin wallet's pay URI is `nostr:<recipient>?amount=<GRIN>&memo=<invoice#>`;
+		// the recipient (nprofile) rides in the path, not a `to` query param.
 		await expect(page.getByText('Pay with Goblin')).toBeVisible({ timeout: 20_000 })
 		// The load-bearing bridge: the pay URI's memo is exactly the invoice#.
-		await expect(page.getByText(new RegExp(`goblin:pay\\?.*memo=${invoiceNumber}`)).first()).toBeVisible({ timeout: 20_000 })
+		await expect(page.getByText(new RegExp(`nostr:nprofile1\\w+\\?.*memo=${invoiceNumber}`)).first()).toBeVisible({ timeout: 20_000 })
 		// textContent (not innerText) returns the full URI even though it is
 		// visually truncated in the copy row.
 		const payUri = (
 			(await page
-				.getByText(/goblin:pay\?/)
+				.getByText(/nostr:nprofile1\w+\?/)
 				.first()
 				.textContent()) || ''
 		).trim()
-		const payParams = new URLSearchParams(payUri.slice(payUri.indexOf('?') + 1))
+		const uriBody = payUri.slice(payUri.indexOf('nostr:') + 'nostr:'.length)
+		const recipient = uriBody.slice(0, uriBody.indexOf('?'))
+		const payParams = new URLSearchParams(uriBody.slice(uriBody.indexOf('?') + 1))
 		expect(payParams.get('memo')).toBe(invoiceNumber)
 		expect(Number(payParams.get('amount'))).toBeGreaterThan(0)
-		expect(payParams.get('to')).toMatch(/^nprofile1/)
+		expect(recipient).toMatch(/^nprofile1/)
 
 		// --- 6. The kind-16 order on the relay carries the invoice# ------------
 		const orderEvents = await queryRelayEvents({ kinds: [16], '#p': [devUser1.pk], since: testStartTime })

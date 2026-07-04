@@ -55,7 +55,7 @@ export function generateProductData(
 		tags: [
 			['d', productId],
 			['title', faker.commerce.productName()],
-			['price', price, 'sats'],
+			['price', price, 'GRIN'],
 			['type', 'simple', 'physical'],
 			['visibility', visibility],
 			['stock', faker.number.int({ min: 1, max: 100 }).toString()],

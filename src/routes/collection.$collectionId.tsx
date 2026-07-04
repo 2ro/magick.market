@@ -96,8 +96,8 @@ function RouteComponent() {
 	const currentImages = getCollectionImages(collection)
 	const { data: products, isLoading: productsLoading } = useProductsByCollection(collection)
 	// Use the market image for homepage background
-	// const marketBackgroundImageUrl = '/images/market-background.jpg'
-	const marketBackgroundImageUrl = currentImages.length > 0 ? currentImages[0][1] : '/images/market-background.jpg'
+	// const marketBackgroundImageUrl = '/images/market-background.png'
+	const marketBackgroundImageUrl = currentImages.length > 0 ? currentImages[0][1] : '/images/market-background.png'
 	const marketHeroClassName = 'hero-bg-market'
 	// Get background image from current collection (only if not homepage slide)
 	useHeroBackground(marketBackgroundImageUrl, marketHeroClassName)

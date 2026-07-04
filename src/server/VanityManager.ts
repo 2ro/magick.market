@@ -1,6 +1,9 @@
 import type { NostrEvent } from '@nostr-dev-kit/ndk'
-import { ZapPurchaseManager, type PricingTier, type ZapPurchaseEntry } from './ZapPurchaseManager'
+import { verifyEvent, type Event } from 'nostr-tools/pure'
+import { ZapPurchaseManager, type ZapPurchaseEntry } from './ZapPurchaseManager'
 import type { EventSigner } from './EventSigner'
+import { NIP05_GRIN_RECIPIENT_NPUB, NIP05_GRIN_RECIPIENT_PUBKEY } from './Nip05Manager'
+import { grinToNanogrin, nanogrinToGrin } from '@/lib/grin'
 
 // Reserved vanity names that cannot be registered
 const RESERVED_NAMES = new Set([
@@ -43,16 +46,45 @@ const RESERVED_NAMES = new Set([
 	'sitemap',
 ])
 
-// Pricing tiers: amount in sats -> validity in days (or seconds for dev)
-export const VANITY_PRICING: Record<string, PricingTier> = {
+export interface VanityGrinTier {
+	/** Price in integer nanogrin. */
+	nanogrin: number
+	days: number
+	seconds?: number
+	label: string
+}
+
+// Pricing tiers: amount in GRIN -> validity in days (or seconds for dev).
+// Same amounts as NIP05_PRICING: both are platform name fees (the old sats
+// pricing was identical between the two as well).
+export const VANITY_PRICING: Record<string, VanityGrinTier> = {
 	...(process.env.NODE_ENV === 'development'
 		? {
-				dev: { sats: 10, days: 0, seconds: 90, label: '90 Seconds (Dev)' },
+				dev: { nanogrin: grinToNanogrin(1), days: 0, seconds: 90, label: '90 Seconds (Dev)' },
 			}
 		: {}),
-	'6mo': { sats: 10000, days: 180, label: '6 Months' },
-	'1yr': { sats: 18000, days: 365, label: '1 Year' },
+	'6mo': { nanogrin: grinToNanogrin(500), days: 180, label: '6 Months' },
+	'1yr': { nanogrin: grinToNanogrin(800), days: 365, label: '1 Year' },
 }
+
+/**
+ * Match a Grin payment amount to the best (highest) qualifying pricing tier.
+ * Returns validity in seconds, or null if no tier matches.
+ */
+export function matchVanityPricingTier(amountNanogrin: number): number | null {
+	const entries = Object.entries(VANITY_PRICING).sort(([, a], [, b]) => b.nanogrin - a.nanogrin)
+	for (const [, tier] of entries) {
+		if (amountNanogrin >= tier.nanogrin) {
+			return tier.seconds !== undefined ? tier.seconds : tier.days * 24 * 60 * 60
+		}
+	}
+	return null
+}
+
+// Vanity URLs are a platform fee paid to the same instance-owner identity as
+// NIP-05 names (see Nip05Manager for the canonical constants).
+export const VANITY_GRIN_RECIPIENT_NPUB = NIP05_GRIN_RECIPIENT_NPUB
+export const VANITY_GRIN_RECIPIENT_PUBKEY = NIP05_GRIN_RECIPIENT_PUBKEY
 
 export interface VanityEntry extends ZapPurchaseEntry {
 	vanityName: string
@@ -61,13 +93,21 @@ export interface VanityEntry extends ZapPurchaseEntry {
 export class VanityManagerImpl extends ZapPurchaseManager<VanityEntry> {
 	private pubkeyToVanity: Map<string, string> = new Map() // Reverse lookup
 
+	// Dedup set for processed Grin payment-claim events, mirroring the base
+	// class's zap-receipt dedup (see ZapPurchaseManager.processedReceipts).
+	private processedGrinClaims: Set<string> = new Set()
+
 	constructor(eventSigner: EventSigner) {
 		super(
 			{
 				zapLabel: 'vanity-register',
 				registryEventKind: 30000,
 				registryDTag: 'vanity-urls',
-				pricing: VANITY_PRICING,
+				// magick.market is GRIN-only: the base class's sats/zap-request
+				// pricing and invoice flow (generateInvoice/handleZapReceipt) are
+				// unused here. Grin purchases are verified in handleGrinPurchase
+				// below, against VANITY_PRICING (nanogrin) instead.
+				pricing: {},
 			},
 			eventSigner,
 		)
@@ -177,6 +217,73 @@ export class VanityManagerImpl extends ZapPurchaseManager<VanityEntry> {
 	 */
 	public async loadExistingVanityRegistry(appPubkey: string): Promise<void> {
 		return this.loadExistingRegistry(appPubkey)
+	}
+
+	/**
+	 * Verify a buyer-signed Grin payment receipt (kind 17) and register the
+	 * vanity URL it pays for. Same shape and trust model as
+	 * Nip05ManagerImpl.handleGrinPurchase: the receipt is signed by the buyer's
+	 * own logged-in Nostr key, so `event.pubkey` is the verified registrant.
+	 */
+	public async handleGrinPurchase(
+		event: Event,
+	): Promise<{ ok: true; vanityName: string; validUntil: number } | { ok: false; error: string; status: number }> {
+		if (event?.kind !== 17) {
+			return { ok: false, error: 'Not a payment receipt (kind 17)', status: 400 }
+		}
+		if (!event.id || this.processedGrinClaims.has(event.id)) {
+			return { ok: false, error: 'Receipt already processed', status: 409 }
+		}
+		if (!verifyEvent(event)) {
+			return { ok: false, error: 'Invalid event signature', status: 400 }
+		}
+
+		const recipientTag = event.tags.find((t) => t[0] === 'p')?.[1]
+		if (recipientTag !== VANITY_GRIN_RECIPIENT_PUBKEY) {
+			return { ok: false, error: 'Receipt is not addressed to the vanity URL payment recipient', status: 400 }
+		}
+
+		const vanityName = event.tags.find((t) => t[0] === 'vanity')?.[1]?.toLowerCase()
+		if (!vanityName) {
+			return { ok: false, error: 'Receipt missing vanity tag', status: 400 }
+		}
+
+		const amountTag = event.tags.find((t) => t[0] === 'amount')?.[1]
+		const amountNanogrin = amountTag ? parseInt(amountTag, 10) : NaN
+		if (!Number.isFinite(amountNanogrin) || amountNanogrin <= 0) {
+			return { ok: false, error: 'Receipt missing a valid amount tag', status: 400 }
+		}
+
+		const requesterPubkey = event.pubkey
+		const validationError = this.validateRegistration(vanityName, requesterPubkey)
+		if (validationError) {
+			return { ok: false, error: validationError, status: 400 }
+		}
+
+		const validitySeconds = matchVanityPricingTier(amountNanogrin)
+		if (validitySeconds === null) {
+			return { ok: false, error: `Insufficient payment: ${nanogrinToGrin(amountNanogrin)} GRIN`, status: 400 }
+		}
+
+		this.processedGrinClaims.add(event.id)
+		if (this.processedGrinClaims.size > 2000) {
+			this.processedGrinClaims.clear()
+			this.processedGrinClaims.add(event.id)
+		}
+
+		const now = Math.floor(Date.now() / 1000)
+		let validUntil = now + validitySeconds
+		const existing = this.registry.get(vanityName)
+		if (existing && existing.pubkey === requesterPubkey && existing.validUntil > now) {
+			validUntil = existing.validUntil + validitySeconds
+		}
+
+		const entry = this.createEntry(vanityName, requesterPubkey, validUntil)
+		this.registry.set(vanityName, entry)
+		this.onEntryRegistered?.(vanityName, entry)
+		await this.publishRegistry()
+
+		return { ok: true, vanityName, validUntil }
 	}
 
 	private isValidVanityName(name: string): boolean {

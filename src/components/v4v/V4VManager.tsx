@@ -83,7 +83,7 @@ export function V4VManager({
 		<div className={`space-y-6 ${className}`}>
 			<Alert className="bg-blue-100 border-blue-200 text-blue-800">
 				<AlertDescription>
-					PM (Beta) Is Powered By Your Generosity. Your Contribution Is The Only Thing That Enables Us To Continue Creating Free And Open
+					MM (Beta) Is Powered By Your Generosity. Your Contribution Is The Only Thing That Enables Us To Continue Creating Free And Open
 					Source Solutions 🙏
 				</AlertDescription>
 			</Alert>

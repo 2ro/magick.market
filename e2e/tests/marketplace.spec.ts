@@ -118,47 +118,46 @@ test.describe('Multi-Merchant Cart', () => {
 		await openCart(newUserPage)
 
 		// Cart should show items grouped by seller.
-		// Each seller group has a UserWithAvatar component.
 		// Verify both product names appear in the cart.
 		const cartDialog = newUserPage.getByRole('dialog', { name: /your cart/i })
 		await expect(cartDialog.getByText('Bitcoin Hardware Wallet')).toBeVisible()
 		await expect(cartDialog.getByText('Lightning Node Setup Guide')).toBeVisible()
 
-		// There should be seller group containers (border + shadow cards)
-		// with separate shipping selectors for each seller
-		const shippingTriggers = cartDialog.getByText('Select shipping method')
-		await expect(shippingTriggers).toHaveCount(2, { timeout: 10_000 })
+		// Shipping selection is deferred to checkout: each item shows the
+		// "Select shipping at checkout" placeholder instead of an inline picker.
+		const shippingPlaceholders = cartDialog.getByText('Select shipping at checkout', { exact: true })
+		await expect(shippingPlaceholders).toHaveCount(2, { timeout: 10_000 })
 	})
 
-	test('cart requires shipping per seller before checkout', async ({ newUserPage }) => {
+	test('checkout requires shipping per seller before continuing', async ({ newUserPage }) => {
 		await addProductsFromBothSellers(newUserPage)
 		await openCart(newUserPage)
 
 		const cartDialog = newUserPage.getByRole('dialog', { name: /your cart/i })
 
-		// Warning should show that shipping is missing
-		await expect(newUserPage.getByText(/please select shipping options for/i)).toBeVisible({ timeout: 10_000 })
+		// Cart no longer gates on shipping — proceed straight to checkout,
+		// where the shipping step enforces a method per item/seller.
+		await cartDialog.getByRole('button', { name: /^checkout$/i }).click()
 
-		// Checkout button should be disabled
-		const checkoutButton = cartDialog.getByRole('button', { name: /^checkout$/i })
-		await expect(checkoutButton).toBeDisabled()
+		// The shipping step shows the missing-shipping notice and disables Continue
+		await expect(newUserPage.getByText(/please select shipping options for all items/i)).toBeVisible({ timeout: 15_000 })
+		const continueButton = newUserPage.getByRole('button', { name: /continue to review/i })
+		await expect(continueButton).toBeDisabled()
 
-		// Select shipping for first seller only
-		const firstTrigger = cartDialog.getByText('Select shipping method').first()
-		await firstTrigger.click()
+		// Select shipping for the first seller only
+		await newUserPage.getByText('Select shipping method').first().click()
 		await newUserPage.getByRole('option', { name: /digital delivery/i }).click()
 		await newUserPage.waitForTimeout(500)
 
-		// Checkout should still be disabled (second seller missing)
-		await expect(checkoutButton).toBeDisabled()
+		// Still gated (second seller missing)
+		await expect(continueButton).toBeDisabled()
 
-		// Select shipping for second seller
-		const secondTrigger = cartDialog.getByText('Select shipping method').first()
-		await secondTrigger.click()
+		// Select shipping for the second seller
+		await newUserPage.getByText('Select shipping method').first().click()
 		await newUserPage.getByRole('option', { name: /digital delivery/i }).click()
 
-		// Now checkout should be enabled
-		await expect(checkoutButton).toBeEnabled({ timeout: 5_000 })
+		// Notice clears once every item has a shipping method
+		await expect(newUserPage.getByText(/please select shipping options for all items/i)).not.toBeVisible({ timeout: 10_000 })
 	})
 })
 
@@ -232,7 +231,7 @@ test.describe('V4V Dashboard Management', () => {
 		const searchInput = merchantPage.getByPlaceholder('Search profiles or paste npub...')
 		await expect(searchInput).toBeVisible({ timeout: 5_000 })
 
-		// Paste devUser2's npub (has seeded profile with lud16, so canReceiveZaps = true)
+		// Paste devUser2's npub (has a seeded GRIN payment detail, so the GRIN-capability gate passes)
 		const devUser2Npub = nip19.npubEncode(devUser2.pk)
 		await searchInput.fill(devUser2Npub)
 

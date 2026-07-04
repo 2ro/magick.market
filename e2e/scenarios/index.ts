@@ -1,8 +1,9 @@
 import { finalizeEvent, type EventTemplate, type VerifiedEvent } from 'nostr-tools/pure'
 import { Relay, useWebSocketImplementation } from 'nostr-tools/relay'
+import { nip19 } from 'nostr-tools'
 import { hexToBytes } from '@noble/hashes/utils.js'
 import WebSocket from 'ws'
-import { devUser1, devUser2, WALLETED_USER_LUD16 } from '../../src/lib/fixtures'
+import { devUser1, devUser2 } from '../../src/lib/fixtures'
 import { RELAY_URL, TEST_APP_PRIVATE_KEY, TEST_APP_PUBLIC_KEY } from '../test-config'
 import { isAddressableKind } from 'nostr-tools/kinds'
 
@@ -99,7 +100,7 @@ async function seedMerchant(relay: Relay) {
 	await seedShippingOption(relay, devUser1.sk, {
 		title: 'Worldwide Standard',
 		price: '5000',
-		currency: 'sats',
+		currency: 'GRIN',
 		service: 'standard',
 		countries: ['US', 'CA', 'GB', 'DE'],
 	})
@@ -107,7 +108,7 @@ async function seedMerchant(relay: Relay) {
 	await seedShippingOption(relay, devUser1.sk, {
 		title: 'Digital Delivery',
 		price: '0',
-		currency: 'sats',
+		currency: 'GRIN',
 		service: 'digital',
 		countries: [],
 	})
@@ -115,7 +116,7 @@ async function seedMerchant(relay: Relay) {
 	await seedShippingOption(relay, devUser1.sk, {
 		title: 'Local Pickup - Bitcoin Store',
 		price: '0',
-		currency: 'sats',
+		currency: 'GRIN',
 		service: 'pickup',
 		countries: [],
 		pickupAddress: {
@@ -128,8 +129,8 @@ async function seedMerchant(relay: Relay) {
 	})
 
 	await seedPaymentDetail(relay, devUser1.sk, TEST_APP_PUBLIC_KEY, {
-		method: 'LIGHTNING_NETWORK',
-		detail: WALLETED_USER_LUD16,
+		method: 'grin',
+		detail: nip19.nprofileEncode({ pubkey: devUser1.pk, relays: [RELAY_URL] }),
 	})
 
 	// Seed V4V shares with 10% going to the app (community share)
@@ -141,7 +142,7 @@ async function seedMerchant(relay: Relay) {
 		title: 'Bitcoin Hardware Wallet',
 		description: 'Secure cold storage for your sats. Keep your bitcoin safe with this hardware wallet.',
 		price: '50000',
-		currency: 'SATS',
+		currency: 'GRIN',
 		status: 'on-sale',
 		category: 'Bitcoin',
 		stock: '10',
@@ -152,7 +153,7 @@ async function seedMerchant(relay: Relay) {
 		title: 'Nostr T-Shirt',
 		description: 'Show your love for the Nostr protocol with this comfortable cotton t-shirt.',
 		price: '15000',
-		currency: 'SATS',
+		currency: 'GRIN',
 		status: 'on-sale',
 		category: 'Clothing',
 		stock: '10',
@@ -164,7 +165,7 @@ async function seedMerchant(relay: Relay) {
 		title: 'Bitcoin E-Book',
 		description: 'A comprehensive guide to Bitcoin. Digital delivery - no shipping required.',
 		price: '5000',
-		currency: 'SATS',
+		currency: 'GRIN',
 		status: 'on-sale',
 		category: 'Bitcoin',
 		stock: '100',
@@ -176,7 +177,7 @@ async function seedMerchant(relay: Relay) {
 		title: 'Bitcoin Conference Ticket',
 		description: 'Attend the local Bitcoin meetup. Pick up your ticket at the Bitcoin Store.',
 		price: '10000',
-		currency: 'SATS',
+		currency: 'GRIN',
 		status: 'on-sale',
 		category: 'Bitcoin',
 		stock: '50',
@@ -190,7 +191,7 @@ async function seedMarketplace(relay: Relay) {
 	await seedShippingOption(relay, devUser2.sk, {
 		title: 'Express Shipping',
 		price: '10000',
-		currency: 'sats',
+		currency: 'GRIN',
 		service: 'express',
 		countries: ['US'],
 	})
@@ -198,14 +199,14 @@ async function seedMarketplace(relay: Relay) {
 	await seedShippingOption(relay, devUser2.sk, {
 		title: 'Digital Delivery',
 		price: '0',
-		currency: 'sats',
+		currency: 'GRIN',
 		service: 'digital',
 		countries: [],
 	})
 
 	await seedPaymentDetail(relay, devUser2.sk, TEST_APP_PUBLIC_KEY, {
-		method: 'LIGHTNING_NETWORK',
-		detail: WALLETED_USER_LUD16,
+		method: 'grin',
+		detail: nip19.nprofileEncode({ pubkey: devUser2.pk, relays: [RELAY_URL] }),
 	})
 
 	// Seed V4V shares for second merchant (10% to app, matching devUser1)
@@ -215,7 +216,7 @@ async function seedMarketplace(relay: Relay) {
 		title: 'Lightning Node Setup Guide',
 		description: 'Comprehensive guide to setting up your own Lightning Network node.',
 		price: '25000',
-		currency: 'SATS',
+		currency: 'GRIN',
 		status: 'on-sale',
 		category: 'Bitcoin',
 		stock: '10',
@@ -233,7 +234,6 @@ async function seedUserProfile(relay: Relay, user: { sk: string; pk: string }, n
 			name,
 			display_name: displayName,
 			about: `Test user ${name}`,
-			lud16: WALLETED_USER_LUD16,
 		}),
 		tags: [],
 	})

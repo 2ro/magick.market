@@ -346,6 +346,9 @@ function RouteComponent() {
 							const invoiceId = `${order.invoiceNumber}-v4v-${recipient.pubkey.slice(0, 8)}`
 
 							if (!grinAddress) {
+								// Skip this leg outright (visible as "Skipped" in the payment list)
+								// rather than blocking the whole checkout: the recipient simply has
+								// no Goblin payment address to receive their share.
 								console.warn(`V4V recipient ${recipient.pubkey} has no Goblin payment address configured, skipping their share`)
 								newInvoices.push({
 									id: invoiceId,
@@ -353,10 +356,10 @@ function RouteComponent() {
 									recipientPubkey: recipient.pubkey,
 									recipientName: recipient.name || recipient.pubkey.slice(0, 12),
 									amount: recipient.amountNanogrin,
-									description: 'V4V Community Payment',
+									description: 'V4V Community Payment — skipped (recipient has no Goblin payment address)',
 									grinAddress: null,
 									payUri: null,
-									status: 'failed',
+									status: 'skipped',
 									type: 'v4v',
 									createdAt: Date.now(),
 								})

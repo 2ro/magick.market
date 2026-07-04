@@ -87,7 +87,7 @@ function Index() {
 	}
 
 	// Use the market image for homepage background
-	const marketBackgroundImageUrl = '/images/market-background.jpg'
+	const marketBackgroundImageUrl = '/images/market-background.png'
 	const marketHeroClassName = 'hero-bg-market'
 	useHeroBackground(marketBackgroundImageUrl, marketHeroClassName)
 
@@ -120,6 +120,10 @@ function Index() {
 								Start Selling
 							</span>
 						</Button>
+
+						<Link to="/imported" className="mt-3 text-white/80 text-sm underline hover:text-white transition-colors">
+							Import a store
+						</Link>
 					</div>
 				</div>
 			</div>

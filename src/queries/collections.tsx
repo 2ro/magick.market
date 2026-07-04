@@ -6,6 +6,7 @@ import { queryOptions, useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import { collectionKeys, collectionsKeys } from './queryKeyFactory'
 import { filterBlacklistedEvents } from '@/lib/utils/blacklistFilters'
+import { applyMerchantScope, filterGrinOnly } from '@/lib/market-scope'
 import { FEATURED_ITEMS_CONFIG } from '@/lib/schemas/featured'
 import { naddrFromAddress } from '@/lib/nostr/naddr'
 import {
@@ -98,17 +99,20 @@ export const fetchCollections = async () => {
 		return []
 	}
 
-	const filter: NDKFilter = {
+	const baseFilter: NDKFilter = {
 		kinds: [30405 as NDKKind], // Product listings in Nostr
 		limit: 50,
 	}
+
+	// Scope the default market's collections to the operator's merchant allowlist.
+	const { filter, scoped } = await applyMerchantScope(baseFilter)
 
 	// Use timeout helper to prevent hanging if relays don't respond
 	const events = await ndkActions.fetchEventsWithTimeout(filter, { timeoutMs: 10000 })
 	const allEvents = Array.from(events)
 
-	// Filter out blacklisted collections and authors, then filter out locally-deleted collections
-	const filteredEvents = filterDeletedCollections(filterBlacklistedEvents(allEvents))
+	// Filter out blacklisted/deleted collections, then enforce the GRIN-only invariant.
+	const filteredEvents = filterGrinOnly(filterDeletedCollections(filterBlacklistedEvents(allEvents)), scoped)
 
 	// Filter out system collections (featured products list)
 	return filteredEvents.filter((event) => {

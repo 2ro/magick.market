@@ -170,7 +170,7 @@ function ProductsRoute() {
 	const backgroundImageUrl = !isHomepageSlide && currentImages.length > 0 ? currentImages[0][1] : ''
 
 	// Use the market image for homepage background instead of random product
-	const marketBackgroundImageUrl = '/images/market-background.jpg'
+	const marketBackgroundImageUrl = '/images/market-background.png'
 
 	// Use the hook to inject dynamic CSS for the background image
 	const heroClassName = currentProductId ? `hero-bg-products-${currentProductId.replace(/[^a-zA-Z0-9]/g, '')}` : 'hero-bg-products-default'
