@@ -6,14 +6,47 @@ import { fetchProductsByPubkey } from '@/queries/products'
 import { hasAcceptedTerms, TERMS_ACCEPTED_KEY } from '@/components/dialogs/TermsConditionsDialog'
 import { uiActions } from './ui'
 import { getPublicKey, nip19 } from 'nostr-tools'
-import { decrypt, encrypt } from 'nostr-tools/nip49'
+import { encrypt } from 'nostr-tools/nip49'
 import { hexToBytes } from 'nostr-tools/utils'
+import { decryptInWorker } from '@/lib/crypto/nip49Async'
 
 export const NOSTR_CONNECT_KEY = 'nostr_connect_url'
 export const NOSTR_LOCAL_SIGNER_KEY = 'nostr_local_signer_key'
 export const NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY = 'nostr_local_encrypted_signer_key'
 export const NOSTR_AUTO_LOGIN = 'nostr_auto_login'
 export const NOSTR_USER_PUBKEY = 'nostr_user_pubkey'
+// Decrypted private key cached for the lifetime of the browser session (tab).
+// Lives in sessionStorage so a page refresh reuses it instead of re-running the
+// expensive NIP-49 scrypt derivation, while a new tab / cold start still
+// requires the passphrase. Never written to localStorage.
+export const NOSTR_SESSION_PRIVATE_KEY = 'nostr_session_private_key'
+
+const cacheSessionPrivateKey = (privateKeyHex: string) => {
+	if (typeof sessionStorage === 'undefined') return
+	try {
+		sessionStorage.setItem(NOSTR_SESSION_PRIVATE_KEY, privateKeyHex)
+	} catch {
+		// sessionStorage unavailable (private mode / quota) — fall back to re-derivation on refresh.
+	}
+}
+
+const getSessionPrivateKey = (): string | null => {
+	if (typeof sessionStorage === 'undefined') return null
+	try {
+		return sessionStorage.getItem(NOSTR_SESSION_PRIVATE_KEY)
+	} catch {
+		return null
+	}
+}
+
+const clearSessionPrivateKey = () => {
+	if (typeof sessionStorage === 'undefined') return
+	try {
+		sessionStorage.removeItem(NOSTR_SESSION_PRIVATE_KEY)
+	} catch {
+		// ignore
+	}
+}
 
 interface AuthState {
 	user: NDKUser | null
@@ -69,6 +102,14 @@ export const authActions = {
 			const privateKey = localStorage.getItem(NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY)
 
 			if (privateKey) {
+				// Fast path: reuse the key unlocked earlier this session so a refresh
+				// doesn't re-prompt or re-run scrypt. Cleared when the tab closes.
+				const sessionKey = getSessionPrivateKey()
+				if (sessionKey) {
+					await authActions.loginWithPrivateKey(sessionKey)
+					authActions.checkAndShowTermsDialog()
+					return
+				}
 				authStore.setState((state) => ({ ...state, needsDecryptionPassword: true }))
 				return
 			}
@@ -94,8 +135,9 @@ export const authActions = {
 			// Extract the ncryptsec part (format: "pubkey:ncryptsec...")
 			const [, encryptedKey] = encryptedPrivateKey.split(':')
 
-			// Use nostr-tools decrypt function
-			const decryptedBytes = decrypt(encryptedKey, password)
+			// Decrypt off the hot path: scryptAsync yields to the event loop so the
+			// KDF no longer freezes the UI while the "Unlocking…" state is shown.
+			const decryptedBytes = await decryptInWorker(encryptedKey, password)
 
 			// Convert Uint8Array to hex string
 			const privateKeyHex = Array.from(decryptedBytes)
@@ -104,6 +146,8 @@ export const authActions = {
 
 			// Login with the decrypted key
 			await authActions.loginWithPrivateKey(privateKeyHex)
+			// Cache for the session so a refresh skips the expensive derivation.
+			cacheSessionPrivateKey(privateKeyHex)
 			authStore.setState((state) => ({ ...state, needsDecryptionPassword: false }))
 			authActions.checkAndShowTermsDialog()
 		} catch (error) {
@@ -275,6 +319,7 @@ export const authActions = {
 		localStorage.removeItem(NOSTR_CONNECT_KEY)
 		localStorage.removeItem(NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY)
 		localStorage.removeItem(NOSTR_AUTO_LOGIN)
+		clearSessionPrivateKey()
 		// Clear cart when user logs out
 		cartActions.clear({ publishRemote: false, reason: 'logout' })
 		authStore.setState(() => initialState)
@@ -335,6 +380,8 @@ export const authActions = {
 
 			// Continue with login using the unencrypted key (it will be wiped after)
 			await authActions.loginWithPrivateKey(privateKey)
+			// Cache for the session so a refresh skips the expensive derivation.
+			cacheSessionPrivateKey(privateKey)
 		} catch (error) {
 			console.error('Migration failed:', error)
 			throw error

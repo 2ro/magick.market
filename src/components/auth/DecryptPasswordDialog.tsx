@@ -72,7 +72,14 @@ export function DecryptPasswordDialog() {
 					</div>
 
 					<Button onClick={handleSubmit} disabled={isLoading || isLoggingOut} className="w-full" data-testid="decrypt-login-button">
-						{isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Decrypt & Login'}
+						{isLoading ? (
+							<span className="flex items-center justify-center gap-2">
+								<Loader2 className="h-4 w-4 animate-spin" />
+								Unlocking…
+							</span>
+						) : (
+							'Decrypt & Login'
+						)}
 					</Button>
 
 					<div className="relative flex items-center py-2">

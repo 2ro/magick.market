@@ -320,6 +320,8 @@ export const server = serve({
 		},
 		'/manifest.json': () => serveStatic('manifest.json'),
 		'/sw.js': () => serveStatic('sw.js'),
+		// Off-main-thread NIP-49 key-decryption worker (built by `build:worker` into public/).
+		'/nip49.worker.js': () => serveStatic('nip49.worker.js'),
 		'/favicon.ico': () => serveStatic('favicon.ico'),
 		'/*': index,
 	},
