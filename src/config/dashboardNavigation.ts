@@ -40,10 +40,6 @@ export const dashboardNavigation: NavSection[] = [
 				path: '/dashboard/products/collections',
 			},
 			{
-				title: '🔄 Migration Tool',
-				path: '/dashboard/products/migration-tool',
-			},
-			{
 				title: '📫 Shipping Options',
 				path: '/dashboard/products/shipping-options',
 			},

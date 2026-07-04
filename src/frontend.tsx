@@ -149,6 +149,33 @@ function App() {
 		loadConfig()
 	}, [])
 
+	// If the server was still initializing when config first loaded (e.g. right
+	// after a restart, while it reconnects to the relay), keep polling so the
+	// client recovers on its own instead of sitting on a stale /setup view.
+	useEffect(() => {
+		if (!configLoaded) return
+		let active = true
+		const poll = async () => {
+			if (!active || !configStore.state.config?.initializing) return
+			try {
+				const res = await fetch('/api/config')
+				if (res.ok) {
+					const cfg = await res.json()
+					configActions.setConfig(cfg)
+					queryClient.setQueryData(configKeys.all, cfg)
+					if (!cfg.initializing) return
+				}
+			} catch {
+				// transient error; keep polling
+			}
+			if (active) setTimeout(poll, 2000)
+		}
+		void poll()
+		return () => {
+			active = false
+		}
+	}, [configLoaded])
+
 	if (error) {
 		return (
 			<div className="flex justify-center items-center h-screen flex-col gap-2">

@@ -11,6 +11,7 @@ interface Config {
 	cvmServerPubkey?: string
 	needsSetup: boolean
 	serverReady: boolean
+	initializing?: boolean
 }
 
 let cachedConfig: Config | null = null

@@ -12,6 +12,7 @@ import { ZapInvoiceError } from './server/ZapPurchaseManager'
 import type { ZapPurchaseInvoiceRequestBody } from './server/ZapPurchaseManager'
 import { join } from 'path'
 import { file } from 'bun'
+import { computeConfigFlags } from './lib/configFlags'
 
 import.meta.hot.accept()
 
@@ -125,6 +126,19 @@ async function getAppLightningIdentifier(): Promise<string> {
 	return identifier
 }
 
+// Retry the boot-time app-settings fetch so a slow or briefly-unreachable relay
+// at startup does not strand the instance in setup mode. ~10 attempts x 3s
+// comfortably covers a transient relay hiccup; a genuinely un-set-up instance
+// simply exhausts them and correctly reports needsSetup.
+const APP_SETTINGS_MAX_ATTEMPTS = 10
+const APP_SETTINGS_RETRY_MS = 3000
+
+// False until the boot-time settings resolution has finished (loaded or given
+// up). While false the server reports `initializing` and NOT `needsSetup`, so a
+// client that loads during the boot window waits instead of being bounced to
+// /setup and stuck there.
+let appSettingsResolved = false
+
 async function initializeAppSettings() {
 	if (!RELAY_URL || !APP_PRIVATE_KEY) {
 		console.error('Missing required environment variables: APP_RELAY_URL, APP_PRIVATE_KEY')
@@ -134,16 +148,31 @@ async function initializeAppSettings() {
 	try {
 		const privateKeyBytes = new Uint8Array(Buffer.from(APP_PRIVATE_KEY, 'hex'))
 		APP_PUBLIC_KEY = getPublicKey(privateKeyBytes)
-		appSettings = await fetchAppSettings(RELAY_URL as string, APP_PUBLIC_KEY)
-		if (appSettings) {
-			console.log('App settings loaded successfully')
-		} else {
-			console.log('No app settings found - setup required')
-		}
 	} catch (error) {
-		console.error('Failed to initialize app settings:', error)
+		console.error('Failed to derive app public key:', error)
 		process.exit(1)
 	}
+
+	for (let attempt = 1; attempt <= APP_SETTINGS_MAX_ATTEMPTS; attempt++) {
+		try {
+			const settings = await fetchAppSettings(RELAY_URL as string, APP_PUBLIC_KEY)
+			if (settings) {
+				appSettings = settings
+				console.log(`App settings loaded successfully (attempt ${attempt})`)
+				appSettingsResolved = true
+				return
+			}
+			console.log(`No app settings found yet (attempt ${attempt}/${APP_SETTINGS_MAX_ATTEMPTS})`)
+		} catch (error) {
+			console.error(`App settings fetch failed (attempt ${attempt}/${APP_SETTINGS_MAX_ATTEMPTS}):`, error)
+		}
+		if (attempt < APP_SETTINGS_MAX_ATTEMPTS) {
+			await new Promise((resolve) => setTimeout(resolve, APP_SETTINGS_RETRY_MS))
+		}
+	}
+
+	console.log('No app settings after retries - setup required')
+	appSettingsResolved = true
 }
 ;(async () => await initializeAppSettings())()
 
@@ -248,8 +277,7 @@ export const server = serve({
 					appSettings: appSettings,
 					appPublicKey: APP_PUBLIC_KEY,
 					cvmServerPubkey: getCvmServerPublicKey(),
-					needsSetup: !appSettings,
-					serverReady: eventHandlerReady,
+					...computeConfigFlags({ appSettings, appSettingsResolved, eventHandlerReady }),
 				})
 			},
 		},
