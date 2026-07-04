@@ -5,6 +5,7 @@ import { ORDER_STATUS, SHIPPING_STATUS } from '@/lib/schemas/order'
 import { SHIPPING_KIND } from '@/lib/schemas/shippingOption'
 import { ndkActions } from '@/lib/stores/ndk'
 import { createFeaturedCollectionsEvent, createFeaturedProductsEvent, createFeaturedUsersEvent } from '@/publish/featured'
+import { createMarketMerchantsEvent } from '@/publish/marketMerchants'
 import { hexToBytes } from '@noble/hashes/utils.js'
 import { NDKPrivateKeySigner, NDKEvent } from '@nostr-dev-kit/ndk'
 import { getPublicKey } from 'nostr-tools/pure'
@@ -658,6 +659,16 @@ async function seedData() {
 			const featuredUsersEvent = createFeaturedUsersEvent({ featuredUsers: featuredUserPubkeys }, appSigner, ndk)
 			await featuredUsersEvent.sign(appSigner)
 			await featuredUsersEvent.publish()
+		}
+
+		// Publish the admin merchant allowlist (market scope). Seed EVERY merchant
+		// so all seeded GRIN listings stay visible while the admin-scoped browse
+		// path is genuinely exercised. See src/lib/market-scope.ts.
+		if (userPubkeys.length > 0) {
+			console.log(`Publishing ${userPubkeys.length} market merchants (allowlist)...`)
+			const marketMerchantsEvent = createMarketMerchantsEvent({ merchants: userPubkeys }, appSigner, ndk)
+			await marketMerchantsEvent.sign(appSigner)
+			await marketMerchantsEvent.publish()
 		}
 
 		// Publish featured collections

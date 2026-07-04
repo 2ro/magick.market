@@ -97,6 +97,11 @@ export const dashboardNavigation: NavSection[] = [
 				adminOnly: true,
 			},
 			{
+				title: '🏪 Market Merchants',
+				path: '/dashboard/app-settings/market-merchants',
+				adminOnly: true,
+			},
+			{
 				title: '🚫 Blacklists',
 				path: '/dashboard/app-settings/blacklists',
 				adminOnly: true,
