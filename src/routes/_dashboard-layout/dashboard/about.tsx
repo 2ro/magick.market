@@ -118,7 +118,7 @@ function useGitHubContributors() {
 	return useQuery({
 		queryKey: ['github-contributors'],
 		queryFn: async (): Promise<GitHubContributor[]> => {
-			const response = await fetch('https://api.github.com/repos/MagickApp/market/contributors')
+			const response = await fetch('https://api.github.com/repos/2ro/magick.market/contributors')
 			if (!response.ok) throw new Error('Failed to fetch contributors')
 			return response.json()
 		},
@@ -257,7 +257,7 @@ function AboutComponent() {
 								full ownership and control of your data.
 							</p>
 							<a
-								href="https://github.com/MagickApp/market"
+								href="https://github.com/2ro/magick.market"
 								target="_blank"
 								rel="noopener noreferrer"
 								className="flex items-center gap-3 p-3 border rounded-md bg-muted/50 hover:bg-muted transition-colors"
@@ -265,7 +265,7 @@ function AboutComponent() {
 								<SiGithub className="w-5 h-5 text-muted-foreground flex-shrink-0" />
 								<div>
 									<p className="text-sm font-medium text-muted-foreground">Repository</p>
-									<p className="font-medium text-blue-600">MagickApp/market</p>
+									<p className="font-medium text-blue-600">2ro/magick.market</p>
 								</div>
 								<ExternalLink className="w-4 h-4 text-muted-foreground ml-auto" />
 							</a>

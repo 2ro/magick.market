@@ -29,7 +29,7 @@ export function Footer() {
 					</a>
 					<a
 						className="border-none hover:bg-secondary p-1 inline-flex justify-center items-center"
-						href="https://github.com/MagickApp/market"
+						href="https://github.com/2ro/magick.market"
 						target="_blank"
 						rel="noopener noreferrer"
 					>
