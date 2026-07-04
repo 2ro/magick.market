@@ -3644,8 +3644,9 @@ export const CITIES_BY_COUNTRY: Record<string, string[]> = {
 	],
 }
 
+// magick.market is a GRIN-only market — 'Bitcoin' is intentionally not a browse
+// category here (it was inherited from upstream Plebeian Market's taxonomy).
 export const PRODUCT_CATEGORIES = [
-	'Bitcoin',
 	'Art',
 	'Clothing',
 	'Food & Drink',

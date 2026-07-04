@@ -51,8 +51,9 @@ test.describe('V4V Product Creation Flow', () => {
 		await newUserPage.getByTestId('product-next-button').click()
 
 		// --- Category Tab ---
+		// (magick.market is GRIN-only; 'Bitcoin' was removed from PRODUCT_CATEGORIES.)
 		await newUserPage.getByTestId('product-main-category-select').click()
-		await newUserPage.getByTestId('main-category-bitcoin').click()
+		await newUserPage.getByTestId('main-category-art').click()
 		await newUserPage.getByTestId('product-next-button').click()
 
 		// --- Images Tab ---
