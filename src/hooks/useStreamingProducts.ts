@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { ndkActions, ndkStore } from '@/lib/stores/ndk'
 import { filterBlacklistedEvents } from '@/lib/utils/blacklistFilters'
 import { isProductInStock } from '@/queries/products'
+import { filterGrinOnly, getMerchantAllowlist } from '@/lib/market-scope'
 import type { NDKEvent, NDKFilter, NDKSubscription } from '@nostr-dev-kit/ndk'
 import { useStore } from '@tanstack/react-store'
 
@@ -68,6 +69,11 @@ export function useStreamingProducts({
 			// Filter pre-order products (if hidePreorder is true)
 			if (hidePreorder && visibility === 'pre-order') return
 
+			// GRIN-only invariant: drop Bitcoin/Lightning-tagged and non-GRIN-priced
+			// listings that stream in from the relay (this browse surface has no way to
+			// check out with them), same as the non-streaming fetchProducts path.
+			if (filterGrinOnly([event], true).length === 0) return
+
 			// Filter out-of-stock products (unless showOutOfStock is true)
 			if (!showOutOfStock && !isProductInStock(event)) return
 
@@ -103,38 +109,50 @@ export function useStreamingProducts({
 		seenIds.current.clear()
 		setIsStreaming(true)
 
-		const filter: NDKFilter = {
-			kinds: [30402],
-			limit,
-			...(tag && { '#t': [tag] }),
-		}
-
-		const subscription = ndk.subscribe(filter, {
-			closeOnEose: true,
-		})
-
-		subscriptionRef.current = subscription
-
-		subscription.on('event', (event: NDKEvent) => {
-			addProduct(event)
-		})
-
-		subscription.on('eose', () => {
-			setIsStreaming(false)
-		})
-
-		subscription.on('close', () => {
-			setIsStreaming(false)
-		})
+		let cancelled = false
 
 		// Timeout fallback - stop streaming after 10s even if no EOSE
 		const timeout = setTimeout(() => {
 			setIsStreaming(false)
 		}, 10000)
 
+		// Scope the stream to the operator's merchant allowlist (closed by default) so
+		// this browse surface never leaks the connected relay's firehose of foreign
+		// (e.g. upstream Plebeian / Bitcoin) stalls — same scope as fetchProducts.
+		void (async () => {
+			const allowlist = await getMerchantAllowlist()
+			if (cancelled) return
+
+			const filter: NDKFilter = {
+				kinds: [30402],
+				limit,
+				...(allowlist.length > 0 && { authors: allowlist }),
+				...(tag && { '#t': [tag] }),
+			}
+
+			const subscription = ndk.subscribe(filter, {
+				closeOnEose: true,
+			})
+
+			subscriptionRef.current = subscription
+
+			subscription.on('event', (event: NDKEvent) => {
+				addProduct(event)
+			})
+
+			subscription.on('eose', () => {
+				setIsStreaming(false)
+			})
+
+			subscription.on('close', () => {
+				setIsStreaming(false)
+			})
+		})()
+
 		return () => {
+			cancelled = true
 			clearTimeout(timeout)
-			subscription.stop()
+			subscriptionRef.current?.stop()
 			subscriptionRef.current = null
 		}
 	}, [isConnected, tag, limit, addProduct, showOutOfStock, hidePreorder, country])

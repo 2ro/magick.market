@@ -21,7 +21,7 @@ import {
 	useProductTitle,
 } from '../queries/products'
 import { useConfigQuery } from '@/queries/config'
-import { useFeaturedProducts } from '@/queries/featured'
+import { useFeaturedProducts, useMerchantAllowlist } from '@/queries/featured'
 import { SelectableBadge } from '@/components/shared/SelectableBadge'
 
 // Hook to inject dynamic CSS for background image
@@ -92,7 +92,12 @@ function ProductsRoute() {
 	// Fetch featured products for slides
 	const { data: config, isLoading: isLoadingConfig } = useConfigQuery()
 	const { data: featuredProductsData, isLoading: isLoadingFeatured } = useFeaturedProducts(config?.appPublicKey || '')
-	const featuredProductEvents = useFeaturedProductEvents(featuredProductsData?.featuredProducts)
+	const allFeaturedProductEvents = useFeaturedProductEvents(featuredProductsData?.featuredProducts)
+	// Keep operator-chosen featured products inside the admin market scope: drop any
+	// whose author is not on the merchant allowlist (closed by default).
+	const { data: allowlist = [] } = useMerchantAllowlist(config?.appPublicKey || '')
+	const featuredProductEvents =
+		allowlist.length > 0 ? allFeaturedProductEvents.filter((p) => allowlist.includes(p.pubkey)) : allFeaturedProductEvents
 	const isFeaturedLoading = isLoadingConfig || isLoadingFeatured
 
 	// Use featured products for slides, fallback to recent products only after featured data has loaded

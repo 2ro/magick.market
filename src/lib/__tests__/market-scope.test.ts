@@ -1,6 +1,14 @@
 import { describe, test, expect } from 'bun:test'
 import type { NDKEvent } from '@nostr-dev-kit/ndk'
-import { hasBitcoinRail, isGrinPriced, filterGrinOnly, filterToAllowlist } from '@/lib/market-scope'
+import {
+	hasBitcoinRail,
+	isGrinPriced,
+	filterGrinOnly,
+	filterToAllowlist,
+	resolveAllowlist,
+	buildScopedFilter,
+	filterPubkeysToAllowlist,
+} from '@/lib/market-scope'
 
 // Minimal stand-in for an NDKEvent — the scope filters only read `kind`/`tags`/`pubkey`.
 const ev = (tags: string[][], kind = 30402, pubkey = 'a'.repeat(64)): NDKEvent => ({ kind, tags, pubkey }) as unknown as NDKEvent
@@ -84,5 +92,75 @@ describe('filterToAllowlist', () => {
 	})
 	test('keeps only allowlisted authors', () => {
 		expect(filterToAllowlist([a, b], ['a'.repeat(64)])).toEqual([a])
+	})
+})
+
+const owner = 'o'.repeat(64)
+const m1 = '1'.repeat(64)
+const m2 = '2'.repeat(64)
+
+describe('resolveAllowlist — closed by default', () => {
+	test('no published list scopes to the operator OWN pubkey (never the firehose)', () => {
+		expect(resolveAllowlist([], owner)).toEqual([owner])
+	})
+	test('a published list scopes to exactly the listed merchants', () => {
+		expect(resolveAllowlist([m1, m2], owner)).toEqual([m1, m2])
+	})
+	test('dedupes the listed merchants', () => {
+		expect(resolveAllowlist([m1, m1, m2], owner)).toEqual([m1, m2])
+	})
+	test('no operator pubkey configured at all → [] (the sole unscoped fallback)', () => {
+		expect(resolveAllowlist([], undefined)).toEqual([])
+		expect(resolveAllowlist([m1], undefined)).toEqual([])
+	})
+})
+
+describe('buildScopedFilter', () => {
+	test('closed-default allowlist narrows the browse filter to the operator only', () => {
+		const { filter, scoped } = buildScopedFilter({ kinds: [30402] }, resolveAllowlist([], owner))
+		expect(scoped).toBe(true)
+		expect(filter.authors).toEqual([owner])
+	})
+	test('configured allowlist narrows to exactly the listed merchants', () => {
+		const { filter, scoped } = buildScopedFilter({ kinds: [30402] }, [m1, m2])
+		expect(scoped).toBe(true)
+		expect(filter.authors).toEqual([m1, m2])
+	})
+	test('empty allowlist (no operator configured) leaves the filter unscoped', () => {
+		const base = { kinds: [30402] }
+		const { filter, scoped } = buildScopedFilter(base, [])
+		expect(scoped).toBe(false)
+		expect(filter.authors).toBeUndefined()
+	})
+})
+
+describe('filterPubkeysToAllowlist — community merchants / search-by-seller', () => {
+	test('community merchants list respects the allowlist (drops non-listed authors)', () => {
+		expect(filterPubkeysToAllowlist([owner, m1, m2], [owner, m1])).toEqual([owner, m1])
+	})
+	test('closed-default: only the operator survives when nothing is published', () => {
+		expect(filterPubkeysToAllowlist([owner, m1, m2], resolveAllowlist([], owner))).toEqual([owner])
+	})
+	test('empty allowlist is a passthrough', () => {
+		expect(filterPubkeysToAllowlist([owner, m1], [])).toEqual([owner, m1])
+	})
+})
+
+describe('/imported is unaffected by the allowlist', () => {
+	// The /imported surface gates ONLY on filterGrinOnly (see routes/imported.tsx and
+	// fetchProductsByPubkey), never on the merchant allowlist — importing a source is
+	// the deliberate way to view a non-allowlisted merchant. A foreign-authored GRIN
+	// product still passes filterGrinOnly regardless of any allowlist.
+	const foreign = ev(
+		[
+			['d', 'x'],
+			['title', 'Foreign GRIN item'],
+			['price', '2', 'GRIN'],
+		],
+		30402,
+		'f'.repeat(64),
+	)
+	test('a non-allowlisted GRIN listing is kept by the imported-sources gate', () => {
+		expect(filterGrinOnly([foreign], true)).toEqual([foreign])
 	})
 })

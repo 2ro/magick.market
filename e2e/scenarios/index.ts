@@ -92,6 +92,25 @@ async function seedBase(relay: Relay) {
 		],
 	})
 	console.log('    Published admin list with devUser1')
+
+	// Publish the admin merchant allowlist (kind 30000, d-tag `market_merchants`).
+	// The market is CLOSED BY DEFAULT: without this list the browse surfaces scope
+	// to the operator's own pubkey only, so the seeded merchant stalls (devUser1,
+	// devUser2) would not appear. List every seeded merchant so /products, /community
+	// and search show their stalls under the admin-scoped market.
+	await publish(relay, TEST_APP_PRIVATE_KEY, {
+		kind: 30000,
+		created_at: Math.floor(Date.now() / 1000),
+		content: '',
+		tags: [
+			['d', 'market_merchants'],
+			['title', 'Market Merchants'],
+			['p', TEST_APP_PUBLIC_KEY],
+			['p', devUser1.pk],
+			['p', devUser2.pk],
+		],
+	})
+	console.log('    Published market merchants allowlist (devUser1, devUser2)')
 }
 
 async function seedMerchant(relay: Relay) {

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { collectionByATagQueryOptions } from '@/queries/collections'
 import { useConfigQuery } from '@/queries/config'
-import { useFeaturedCollections, useFeaturedProducts, useFeaturedUsers } from '@/queries/featured'
+import { useFeaturedCollections, useFeaturedProducts, useFeaturedUsers, useMerchantAllowlist } from '@/queries/featured'
 import { productByATagQueryOptions } from '@/queries/products'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -77,11 +77,17 @@ export function FeaturedSections({ className, maxItemsPerSection = 5 }: Featured
 	const { data: featuredProducts } = useFeaturedProducts(config?.appPublicKey || '')
 	const { data: featuredCollections } = useFeaturedCollections(config?.appPublicKey || '')
 	const { data: featuredUsers } = useFeaturedUsers(config?.appPublicKey || '')
+	// Keep operator-chosen featured items inside the admin market scope: drop any
+	// whose author is not on the merchant allowlist (closed by default). Coords are
+	// `kind:pubkey:dtag`; users are bare pubkeys.
+	const { data: allowlist = [] } = useMerchantAllowlist(config?.appPublicKey || '')
+	const inScopeCoord = (coords: string) => allowlist.length === 0 || allowlist.includes(coords.split(':')[1])
+	const inScopePubkey = (pubkey: string) => allowlist.length === 0 || allowlist.includes(pubkey)
 
 	// Limit items per section
-	const displayProducts = featuredProducts?.featuredProducts?.slice(0, maxItemsPerSection) || []
-	const displayCollections = featuredCollections?.featuredCollections?.slice(0, maxItemsPerSection) || []
-	const displayUsers = featuredUsers?.featuredUsers?.slice(0, maxItemsPerSection) || []
+	const displayProducts = (featuredProducts?.featuredProducts?.filter(inScopeCoord) || []).slice(0, maxItemsPerSection)
+	const displayCollections = (featuredCollections?.featuredCollections?.filter(inScopeCoord) || []).slice(0, maxItemsPerSection)
+	const displayUsers = (featuredUsers?.featuredUsers?.filter(inScopePubkey) || []).slice(0, maxItemsPerSection)
 
 	// Track section index for alternating backgrounds
 	let sectionIndex = 0

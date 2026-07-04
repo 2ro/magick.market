@@ -22,8 +22,10 @@ import { productKeys } from './queryKeyFactory'
 import { getCoordsFromATag, getATagFromCoords } from '@/lib/utils/coords.ts'
 import { discoverNip50Relays } from '@/lib/relays'
 import { filterBlacklistedEvents, filterBlacklistedPubkeys } from '@/lib/utils/blacklistFilters'
-import { applyMerchantScope, filterGrinOnly, getMerchantAllowlist, filterToAllowlist } from '@/lib/market-scope'
+import { applyMerchantScope, filterGrinOnly, getMerchantAllowlist, filterToAllowlist, filterPubkeysToAllowlist } from '@/lib/market-scope'
 import { naddrFromAddress } from '@/lib/nostr/naddr'
+import { importedSourcesActions } from '@/lib/stores/imported-sources'
+import { authStore } from '@/lib/stores/auth'
 
 // Re-export productKeys for use in other query files
 export { productKeys }
@@ -214,6 +216,20 @@ export const fetchProductsPaginated = async (limit: number = 20, until?: number,
 }
 
 /**
+ * Thrown when a product event exists on the relay but is permanently not viewable
+ * here — it fails the GRIN-only invariant (non-GRIN / Bitcoin-tagged) or falls
+ * outside the admin merchant scope. Unlike a transient "not on the relay yet"
+ * miss, retrying can never make it resolve, so the product route must render the
+ * "Product not found" state immediately instead of spinning on retries.
+ */
+export class ProductUnavailableError extends Error {
+	constructor(message = 'Product not found') {
+		super(message)
+		this.name = 'ProductUnavailableError'
+	}
+}
+
+/**
  * Fetches a single product listing
  * @param id The ID of the product listing
  * @returns The product listing event
@@ -238,12 +254,34 @@ export const fetchProduct = async (id: string) => {
 
 	const events = await ndkActions.fetchEventsWithTimeout(filter, { timeoutMs: 8000 })
 	const event = Array.from(events)[0] ?? null
-	// magick.market is GRIN-only: treat a non-GRIN or Bitcoin/Lightning-tagged
-	// listing as not found, same as the browse/search filters — there's no way
-	// to check out with it here.
-	if (event && filterGrinOnly([event], true).length > 0) return event
 
-	throw new Error('Product not found')
+	// No event on the relay yet — a transient miss during warmup/propagation. Throw a
+	// plain Error so the route keeps retrying until it propagates.
+	if (!event) throw new Error('Product not found')
+
+	// magick.market is GRIN-only: a non-GRIN or Bitcoin/Lightning-tagged listing is
+	// permanently not viewable here — there's no way to check out with it. This can
+	// never resolve by retrying, so throw the non-retryable ProductUnavailableError.
+	if (filterGrinOnly([event], true).length === 0) throw new ProductUnavailableError()
+
+	// Admin-scoped: a direct product link must not surface a foreign merchant's stall
+	// in the main market. Resolve when the author is on the operator's allowlist
+	// (closed by default), one of this viewer's own imported sources (the deliberate
+	// way to view a non-allowlisted merchant), OR the current user's own product (a
+	// seller must always be able to view their own listing, e.g. right after publishing
+	// even before the operator has allowlisted them). When no operator pubkey is
+	// configured at all, the market is unscoped and any GRIN listing resolves.
+	const allowlist = await getMerchantAllowlist()
+	const ownPubkey = authStore.state.user?.pubkey
+	const inScope =
+		allowlist.length === 0 ||
+		allowlist.includes(event.pubkey) ||
+		importedSourcesActions.list().includes(event.pubkey) ||
+		event.pubkey === ownPubkey
+	if (inScope) return event
+
+	// Found, GRIN-priced, but outside the admin scope — also permanently not viewable.
+	throw new ProductUnavailableError()
 }
 
 /**
@@ -1149,8 +1187,7 @@ export const fetchProductsBySearchWithSellers = async (
 
 	// Keep the seller-name path inside the admin merchant allowlist (if configured)
 	// so search never surfaces a non-allowlisted seller's products.
-	const allowlist = await getMerchantAllowlist()
-	const sellerPubkeys = allowlist.length > 0 ? sellerMatches.filter((pk) => allowlist.includes(pk)) : sellerMatches
+	const sellerPubkeys = filterPubkeysToAllowlist(sellerMatches, await getMerchantAllowlist())
 
 	// If we found matching sellers, fetch their products directly by author pubkey
 	// This queries the regular connected relays (not search relays) which support author filters

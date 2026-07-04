@@ -6,6 +6,7 @@ import { nip19 } from 'nostr-tools'
 import { v4 as uuidv4 } from 'uuid'
 import { v4vKeys } from './queryKeyFactory'
 import { filterBlacklistedPubkeys } from '@/lib/utils/blacklistFilters'
+import { getMerchantAllowlist, filterPubkeysToAllowlist } from '@/lib/market-scope'
 import {
 	getNextCommunityQueryFixtureStep,
 	hasCommunityQueryFixture,
@@ -324,7 +325,12 @@ export const fetchV4VMerchants = async (): Promise<string[]> => {
 		}
 	})
 
-	return filterBlacklistedPubkeys(Array.from(pubkeySet))
+	const pubkeys = filterBlacklistedPubkeys(Array.from(pubkeySet))
+
+	// Admin-scoped: the community merchants list must respect the operator's merchant
+	// allowlist (closed by default), never the relay firehose of everyone who ever
+	// configured V4V. Post-filter to allowlisted authors.
+	return filterPubkeysToAllowlist(pubkeys, await getMerchantAllowlist())
 }
 
 /**

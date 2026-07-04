@@ -5,6 +5,7 @@ import { configKeys } from '@/queries/queryKeyFactory'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { filterBlacklistedProductCoords, filterBlacklistedCollectionCoords, filterBlacklistedPubkeys } from '@/lib/utils/blacklistFilters'
+import { getMerchantAllowlist } from '@/lib/market-scope'
 
 // --- DATA FETCHING FUNCTIONS ---
 
@@ -81,6 +82,20 @@ export const fetchFeaturedUsers = async (appPubkey: string): Promise<FeaturedUse
 }
 
 // --- REACT QUERY HOOKS ---
+
+/**
+ * The operator's merchant allowlist (closed by default — see `lib/market-scope`).
+ * Used to keep operator-chosen featured surfaces inside the admin market scope:
+ * a featured product/collection whose author is not allowlisted is post-filtered out.
+ */
+export const useMerchantAllowlist = (appPubkey: string) => {
+	return useQuery({
+		queryKey: configKeys.merchantAllowlist(appPubkey),
+		queryFn: getMerchantAllowlist,
+		enabled: !!appPubkey,
+		staleTime: 60 * 1000,
+	})
+}
 
 const useFeaturedSettingsSubscription = (appPubkey: string, queryKey: readonly unknown[], expectedKind: number, expectedDTag: string) => {
 	const queryClient = useQueryClient()

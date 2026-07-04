@@ -7,7 +7,7 @@
 import { finalizeEvent, type EventTemplate } from 'nostr-tools/pure'
 import { Relay } from 'nostr-tools/relay'
 import { hexToBytes } from '@noble/hashes/utils.js'
-import { devUser1 } from '../src/lib/fixtures'
+import { devUser1, devUser2 } from '../src/lib/fixtures'
 import { TEST_APP_PRIVATE_KEY, TEST_APP_PUBLIC_KEY, RELAY_URL } from './test-config'
 
 const skBytes = hexToBytes(TEST_APP_PRIVATE_KEY)
@@ -61,6 +61,23 @@ async function main() {
 		],
 	})
 	console.log('  Published admin list (Kind 30000)')
+
+	// Publish the admin merchant allowlist (Kind 30000, d-tag `market_merchants`).
+	// The market is CLOSED BY DEFAULT: without this list the browse surfaces scope to
+	// the operator's own pubkey only, and the seeded merchant stalls would not appear.
+	await publish({
+		kind: 30000,
+		created_at: Math.floor(Date.now() / 1000),
+		content: '',
+		tags: [
+			['d', 'market_merchants'],
+			['title', 'Market Merchants'],
+			['p', TEST_APP_PUBLIC_KEY],
+			['p', devUser1.pk],
+			['p', devUser2.pk],
+		],
+	})
+	console.log('  Published market merchants allowlist (Kind 30000)')
 
 	// Publish Kind 10002 (Relay List)
 	await publish({

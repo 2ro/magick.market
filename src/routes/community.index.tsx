@@ -22,7 +22,7 @@ import { FeaturedUserCard } from '@/components/FeaturedUserCard'
 import { blacklistStore } from '@/lib/stores/blacklist'
 import { filterBlacklistedPubkeys } from '@/lib/utils/blacklistFilters'
 import { useConfigQuery } from '@/queries/config'
-import { useFeaturedCollections } from '@/queries/featured'
+import { useFeaturedCollections, useMerchantAllowlist } from '@/queries/featured'
 import type { NDKEvent } from '@nostr-dev-kit/ndk'
 
 // Hook to inject dynamic CSS for background image
@@ -89,7 +89,12 @@ function CommunityRoute() {
 	// Fetch featured collections for slides
 	const { data: config, isLoading: isLoadingConfig } = useConfigQuery()
 	const { data: featuredCollectionsData, isLoading: isLoadingFeatured } = useFeaturedCollections(config?.appPublicKey || '')
-	const featuredCollectionEvents = useFeaturedCollectionEvents(featuredCollectionsData?.featuredCollections)
+	const allFeaturedCollectionEvents = useFeaturedCollectionEvents(featuredCollectionsData?.featuredCollections)
+	// Keep operator-chosen featured collections inside the admin market scope:
+	// drop any whose author is not on the merchant allowlist (closed by default).
+	const { data: allowlist = [] } = useMerchantAllowlist(config?.appPublicKey || '')
+	const featuredCollectionEvents =
+		allowlist.length > 0 ? allFeaturedCollectionEvents.filter((c) => allowlist.includes(c.pubkey)) : allFeaturedCollectionEvents
 	const isFeaturedLoading = isLoadingConfig || isLoadingFeatured
 
 	const { isAuthenticated } = useStore(authStore)
