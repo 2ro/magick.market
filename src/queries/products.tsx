@@ -230,6 +230,33 @@ export class ProductUnavailableError extends Error {
 }
 
 /**
+ * How many times the product-detail query retries a transient "not on the relay
+ * yet" miss before giving up and rendering the not-found state.
+ *
+ * fetchProduct's own relay fetch already waits up to 8s per attempt (see
+ * fetchEventsWithTimeout), which covers relay/mixnet connection warmup, so the
+ * retries here only cover brief publish→read propagation. This MUST be bounded:
+ * a deep link whose event id is no longer on the relay (an addressable kind-30402
+ * listing that was replaced/republished under a new id, or a truly absent id)
+ * makes every attempt EOSE empty, and an unbounded retry loop leaves the route
+ * spinning on "Loading product…" indefinitely instead of showing "Product not
+ * found". Keep it small.
+ */
+export const MAX_PRODUCT_FETCH_RETRIES = 4
+
+/**
+ * React Query `retry` predicate for the product-detail query.
+ *
+ *  - A ProductUnavailableError (non-GRIN / out-of-scope listing) is permanent —
+ *    never retry, so the route shows "Product not found" immediately.
+ *  - Any other error (a transient "not on the relay yet" miss) retries, but only
+ *    up to MAX_PRODUCT_FETCH_RETRIES so a stale/absent event id resolves to
+ *    not-found in bounded time rather than spinning forever.
+ */
+export const shouldRetryProductFetch = (failureCount: number, error: unknown): boolean =>
+	!(error instanceof ProductUnavailableError) && failureCount < MAX_PRODUCT_FETCH_RETRIES
+
+/**
  * Fetches a single product listing
  * @param id The ID of the product listing
  * @returns The product listing event
