@@ -253,8 +253,8 @@ export const server = serve({
 				})
 			},
 		},
-		// magick.market is GRIN-only: Lightning zap purchases (paid vanity URLs)
-		// are disabled. NIP-05 names are paid in Grin via /api/nip05/claim below.
+		// magick.market is GRIN-only: Lightning zap purchases are disabled.
+		// NIP-05 names and vanity URLs are paid in Grin via the claim routes below.
 		'/api/zapPurchase': {
 			POST: async () => jsonError('Lightning purchases are disabled; magick.market is GRIN-only', 501),
 		},
@@ -279,6 +279,28 @@ export const server = serve({
 					return jsonError(result.error, result.status)
 				}
 				return Response.json({ username: result.username, validUntil: result.validUntil })
+			},
+		},
+		// Verifies a buyer-signed Grin payment receipt (kind 17) and registers the
+		// vanity URL it pays for. See VanityManagerImpl.handleGrinPurchase.
+		'/api/vanity/claim': {
+			POST: async (req) => {
+				let body: { event?: unknown }
+				try {
+					body = await req.json()
+				} catch {
+					return jsonError('Invalid JSON body', 400)
+				}
+				const event = body?.event
+				if (!event || typeof event !== 'object') {
+					return jsonError('Missing event', 400)
+				}
+				const vanityManager = getEventHandler().getVanityManager()
+				const result = await vanityManager.handleGrinPurchase(event as Parameters<typeof vanityManager.handleGrinPurchase>[0])
+				if (!result.ok) {
+					return jsonError(result.error, result.status)
+				}
+				return Response.json({ vanityName: result.vanityName, validUntil: result.validUntil })
 			},
 		},
 		'/images/:file': ({ params }) => serveStatic(`images/${params.file}`),
