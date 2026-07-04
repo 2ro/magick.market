@@ -44,6 +44,7 @@ import {
 	productsByPubkeyQueryOptions,
 	getProductLocation,
 	ProductUnavailableError,
+	shouldRetryProductFetch,
 } from '@/queries/products'
 import { createShippingReference, getShippingInfo, useShippingOptionsByPubkey } from '@/queries/shipping'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -267,11 +268,14 @@ function RouteComponent() {
 
 	const productQuery = useQuery({
 		...productQueryOptions(productId),
-		// Relays can be slow to connect/propagate; keep retrying transient misses for a
-		// while instead of erroring the whole route. But a ProductUnavailableError is
-		// permanent (non-GRIN / out-of-scope listing) — never retry it, so the route
-		// shows "Product not found" immediately instead of spinning forever.
-		retry: (failureCount, error) => !(error instanceof ProductUnavailableError) && failureCount < 120,
+		// Relays can be slow to connect/propagate; retry transient "not on the relay
+		// yet" misses instead of erroring the whole route. But this MUST stay bounded
+		// (shouldRetryProductFetch): a ProductUnavailableError is permanent (non-GRIN /
+		// out-of-scope) and never retries, and a stale/absent event id — an addressable
+		// listing replaced under a new id, or a shared deep link the relay no longer has —
+		// gives up after MAX_PRODUCT_FETCH_RETRIES and shows "Product not found" instead
+		// of spinning on "Loading product…" forever.
+		retry: shouldRetryProductFetch,
 		retryDelay: (attemptIndex) => Math.min(500 + attemptIndex * 750, 5000),
 	})
 
@@ -426,11 +430,15 @@ function RouteComponent() {
 		)
 	}
 
+	// Retries exhausted and still nothing on the relay: the event id isn't there (a
+	// replaced/absent addressable listing or a stale shared deep link). This is a
+	// terminal not-found — surface it instead of spinning forever. A Retry stays in
+	// case the relay was briefly unreachable.
 	if (!product && productQuery.isError) {
 		return (
-			<div className="flex flex-col justify-center items-center gap-4 px-4 h-[50vh] text-center">
-				<h1 className="font-bold text-2xl">Still loading product</h1>
-				<p className="text-gray-600">{productQuery.error instanceof Error ? productQuery.error.message : 'Please try again.'}</p>
+			<div className="flex flex-col justify-center items-center gap-4 px-4 h-[50vh] text-center" data-testid="product-not-found">
+				<h1 className="font-bold text-2xl">Product not found</h1>
+				<p className="text-gray-600">This listing couldn’t be found on the market relay.</p>
 				<div className="flex flex-wrap justify-center items-center gap-2">
 					<Button
 						variant="secondary"

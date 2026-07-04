@@ -41,4 +41,24 @@ test.describe('Admin/GRIN scope — filtered product deep link', () => {
 		await expect(page.getByText('Product not found')).toBeVisible()
 		await expect(page.getByText('Loading product…')).toHaveCount(0)
 	})
+
+	// Mirrors the live "Loading product… forever" bug: a shared deep link whose
+	// kind-30402 event id is no longer on the relay (an addressable listing that was
+	// replaced/republished under a new id, or a truly absent id). Every relay fetch
+	// EOSEs empty, so fetchProduct keeps throwing a plain (retryable) Error. Before
+	// the fix the route retried ~120 times and spun on "Loading product…" for minutes;
+	// the retry budget is now bounded so it resolves to "Product not found".
+	test('a deep link to an absent event id gives up and renders "Product not found", not an infinite spinner', async ({
+		unauthenticatedPage: page,
+	}) => {
+		// A well-formed but never-seeded 64-hex event id: the relay will always EOSE empty.
+		const absentEventId = 'a'.repeat(64)
+
+		await page.goto(`/products/${absentEventId}`)
+
+		// The bounded retries must give up and surface the terminal not-found state.
+		await expect(page.getByTestId('product-not-found')).toBeVisible({ timeout: 30_000 })
+		await expect(page.getByText('Product not found')).toBeVisible()
+		await expect(page.getByText('Loading product…')).toHaveCount(0)
+	})
 })
