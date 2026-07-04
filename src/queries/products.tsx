@@ -21,6 +21,7 @@ import { productKeys } from './queryKeyFactory'
 import { getCoordsFromATag, getATagFromCoords } from '@/lib/utils/coords.ts'
 import { discoverNip50Relays } from '@/lib/relays'
 import { filterBlacklistedEvents, filterBlacklistedPubkeys } from '@/lib/utils/blacklistFilters'
+import { applyMerchantScope, filterGrinOnly, getMerchantAllowlist, filterToAllowlist } from '@/lib/market-scope'
 import { naddrFromAddress } from '@/lib/nostr/naddr'
 
 // Re-export productKeys for use in other query files
@@ -136,17 +137,21 @@ export const fetchProducts = async (limit: number = 500, tag?: string, includeHi
 		return []
 	}
 
-	const filter: NDKFilter = {
+	const baseFilter: NDKFilter = {
 		kinds: [30402], // Product listings in Nostr
 		limit,
 		...(tag && { '#t': [tag] }), // Add tag filter if provided
 	}
 
+	// Scope the default market to the operator's merchant allowlist (if configured).
+	const { filter, scoped } = await applyMerchantScope(baseFilter)
+
 	const events = await ndkActions.fetchEventsWithTimeout(filter, { timeoutMs: 8000 })
 	const allEvents = Array.from(events).sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
 
-	// Filter out blacklisted products and authors, then filter out locally-deleted products
-	const filteredEvents = filterDeletedProducts(filterBlacklistedEvents(allEvents))
+	// Filter out blacklisted/deleted products, then enforce the GRIN-only invariant
+	// (drop Bitcoin/Lightning-tagged listings always; non-GRIN prices when admin-scoped).
+	const filteredEvents = filterGrinOnly(filterDeletedProducts(filterBlacklistedEvents(allEvents)), scoped)
 
 	// Filter out hidden products unless explicitly included
 	if (includeHidden) {
@@ -177,18 +182,21 @@ export const fetchProductsPaginated = async (limit: number = 20, until?: number,
 		return []
 	}
 
-	const filter: NDKFilter = {
+	const baseFilter: NDKFilter = {
 		kinds: [30402], // Product listings in Nostr
 		limit,
 		...(until && { until }),
 		...(tag && { '#t': [tag] }), // Add tag filter if provided
 	}
 
+	// Scope the default market to the operator's merchant allowlist (if configured).
+	const { filter, scoped } = await applyMerchantScope(baseFilter)
+
 	const events = await ndkActions.fetchEventsWithTimeout(filter, { timeoutMs: 8000 })
 	const allEvents = Array.from(events).sort((a, b) => b.created_at! - a.created_at!)
 
-	// Filter out blacklisted products and authors, then filter out locally-deleted products
-	const filteredEvents = filterDeletedProducts(filterBlacklistedEvents(allEvents))
+	// Filter out blacklisted/deleted products, then enforce the GRIN-only invariant.
+	const filteredEvents = filterGrinOnly(filterDeletedProducts(filterBlacklistedEvents(allEvents)), scoped)
 
 	// Filter out hidden products unless explicitly included
 	if (includeHidden) {
@@ -255,9 +263,10 @@ export const fetchProductsByPubkey = async (pubkey: string, includeHidden: boole
 	const events = await ndkActions.fetchEventsWithTimeout(filter, { timeoutMs: 8000 })
 	const allEvents = Array.from(events)
 
-	// Filter out blacklisted products (author check not needed since we're querying by author)
-	// Then filter out locally-deleted products
-	const filteredEvents = filterDeletedProducts(filterBlacklistedEvents(allEvents))
+	// Filter out blacklisted/deleted products; drop any Bitcoin/Lightning-tagged
+	// listing (this author view is used by the seller dashboard and by a viewer's
+	// imported sources — neither may show a non-GRIN payment rail).
+	const filteredEvents = filterGrinOnly(filterDeletedProducts(filterBlacklistedEvents(allEvents)), false)
 
 	// Filter out hidden products unless explicitly included
 	if (includeHidden) {
@@ -434,8 +443,8 @@ export const fetchProductsByCollection = async (collectionEvent: NDKEvent): Prom
 	const results = await Promise.all(productPromises)
 	const allProducts = results.filter((event) => event !== null) as NDKEvent[]
 
-	// Filter out blacklisted products and authors, then filter out locally-deleted products
-	const filteredProducts = filterDeletedProducts(filterBlacklistedEvents(allProducts))
+	// Filter out blacklisted/deleted products and drop Bitcoin/Lightning-tagged listings
+	const filteredProducts = filterGrinOnly(filterDeletedProducts(filterBlacklistedEvents(allProducts)), false)
 
 	// Filter out out-of-stock products from collection views
 	return filteredProducts.filter(isProductInStock)
@@ -1006,13 +1015,19 @@ export const fetchProductsBySearch = async (query: string, limit: number = 20) =
 		limit,
 	}
 
+	// Search runs over NIP-50 relays that may not honour an authors filter, so we
+	// scope the results to the admin merchant allowlist after fetching.
+	const allowlist = await getMerchantAllowlist()
+	const scoped = allowlist.length > 0
+
 	// In some deployments, ndk.fetchEvents may hang if relays are slow/unresponsive.
 	// Race the fetch with a timeout so the UI can recover gracefully.
 	const SEARCH_TIMEOUT_MS = 15000
 	try {
 		const fetchPromise = ndk
 			.fetchEvents(filter)
-			.then((events) => filterBlacklistedEvents(Array.from(events)))
+			.then((events) => filterToAllowlist(filterBlacklistedEvents(Array.from(events)), allowlist))
+			.then((events) => filterGrinOnly(events, scoped)) // GRIN-only invariant
 			.then((events) => filterDeletedProducts(events)) // Filter out locally-deleted products
 			.then((events) => events.filter(isProductInStock)) // Filter out out-of-stock products
 			.catch((err) => {
@@ -1103,7 +1118,12 @@ export const fetchProductsBySearchWithSellers = async (
 	if (!query?.trim()) return []
 
 	// Run product search and seller search in parallel
-	const [productResults, sellerPubkeys] = await Promise.all([fetchProductsBySearch(query, limit), fetchSellersBySearch(query, 5)])
+	const [productResults, sellerMatches] = await Promise.all([fetchProductsBySearch(query, limit), fetchSellersBySearch(query, 5)])
+
+	// Keep the seller-name path inside the admin merchant allowlist (if configured)
+	// so search never surfaces a non-allowlisted seller's products.
+	const allowlist = await getMerchantAllowlist()
+	const sellerPubkeys = allowlist.length > 0 ? sellerMatches.filter((pk) => allowlist.includes(pk)) : sellerMatches
 
 	// If we found matching sellers, fetch their products directly by author pubkey
 	// This queries the regular connected relays (not search relays) which support author filters
