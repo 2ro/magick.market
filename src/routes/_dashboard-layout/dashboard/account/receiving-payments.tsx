@@ -613,9 +613,18 @@ function ReceivingPaymentsComponent() {
 							<CardHeader>
 								<CardTitle>Get paid in Grin with Goblin</CardTitle>
 								<CardDescription>
-									magick.market is GRIN-only. Buyers pay you directly from their Goblin wallet - no server, no middleman. To receive
-									payments, add your Goblin payment address: open Goblin, copy your nprofile (Contacts &gt; your identity), and paste it
-									here. Payments arrive over Nostr even if you are offline when the buyer pays; open Goblin to finalize them.
+									magick.market is GRIN-only. Buyers pay you directly from their{' '}
+									<a
+										href="https://goblin.st"
+										target="_blank"
+										rel="noopener noreferrer"
+										className="font-medium underline decoration-double underline-offset-2"
+									>
+										Goblin
+									</a>{' '}
+									wallet - no server, no middleman. To receive payments, add your Goblin payment address: open Goblin, copy your nprofile
+									(Contacts &gt; your identity), and paste it here. Payments arrive over Nostr even if you are offline when the buyer pays;
+									open Goblin to finalize them.
 								</CardDescription>
 							</CardHeader>
 						</Card>
