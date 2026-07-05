@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { isValidDigitalDeliveryContact, resolveCheckoutDeliveryRequirements } from '@/lib/checkout/deliveryRequirements'
+import {
+	DELIVERY_CONTACT_TYPES,
+	isDeliveryContactType,
+	isValidDeliveryContact,
+	isValidDigitalDeliveryContact,
+	resolveCheckoutDeliveryRequirements,
+} from '@/lib/checkout/deliveryRequirements'
 
 const product = (id: string, shippingMethodId?: string | null) => ({ id, shippingMethodId })
 
@@ -155,5 +161,46 @@ describe('isValidDigitalDeliveryContact', () => {
 	test('rejects empty or invalid contact', () => {
 		expect(isValidDigitalDeliveryContact('')).toBe(false)
 		expect(isValidDigitalDeliveryContact('not-an-email')).toBe(false)
+	})
+})
+
+describe('delivery contact channels', () => {
+	test('exposes the five privacy-respecting channels', () => {
+		expect(DELIVERY_CONTACT_TYPES).toEqual(['email', 'signal', 'matrix', 'session', 'simplex'])
+	})
+
+	test('isDeliveryContactType narrows only to known channels', () => {
+		expect(isDeliveryContactType('signal')).toBe(true)
+		expect(isDeliveryContactType('email')).toBe(true)
+		expect(isDeliveryContactType('bitcoin')).toBe(false)
+		expect(isDeliveryContactType(undefined)).toBe(false)
+	})
+})
+
+describe('isValidDeliveryContact', () => {
+	test('email must look like an email', () => {
+		expect(isValidDeliveryContact('email', 'buyer@example.com')).toBe(true)
+		expect(isValidDeliveryContact('email', 'not-an-email')).toBe(false)
+		// A messenger handle in the email slot is rejected.
+		expect(isValidDeliveryContact('email', '@name:matrix.org')).toBe(false)
+	})
+
+	test('messenger channels accept loose handles and links', () => {
+		expect(isValidDeliveryContact('signal', '+15551234567')).toBe(true)
+		expect(isValidDeliveryContact('signal', 'user.01')).toBe(true)
+		expect(isValidDeliveryContact('matrix', '@name:matrix.org')).toBe(true)
+		expect(isValidDeliveryContact('session', '05abc123def456')).toBe(true)
+		expect(isValidDeliveryContact('simplex', 'https://simplex.chat/invitation#/?v=2')).toBe(true)
+	})
+
+	test('messenger channels reject empty, whitespace, or too-short handles', () => {
+		expect(isValidDeliveryContact('signal', '')).toBe(false)
+		expect(isValidDeliveryContact('matrix', 'a')).toBe(false)
+		expect(isValidDeliveryContact('session', 'has space')).toBe(false)
+	})
+
+	test('unknown channel type falls back to strict email validation', () => {
+		expect(isValidDeliveryContact('bitcoin', 'buyer@example.com')).toBe(true)
+		expect(isValidDeliveryContact('bitcoin', 'lnbc-invoice')).toBe(false)
 	})
 })

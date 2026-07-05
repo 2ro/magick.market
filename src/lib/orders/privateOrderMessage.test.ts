@@ -153,6 +153,36 @@ describe('private order message helper', () => {
 		expect(rumor.content).toBe('Leave the package behind the planter')
 	})
 
+	test('serializes a non-email delivery contact as a contact tag and round-trips it', () => {
+		const buyer = keyPair()
+		const seller = keyPair()
+		const details = privateOrderDetails(buyer.pubkey, seller.pubkey, {
+			delivery: { contactType: 'signal', contactHandle: '+15557654321' },
+		})
+
+		const rumor = createPrivateOrderDetailsRumor({ details, createdAt: CREATED_AT })
+
+		expect(rumor.tags).toContainEqual(['contact', 'signal', '+15557654321'])
+		// A non-email channel must not leak into the legacy email tag.
+		expect(tagValue(rumor.tags, 'email')).toBeUndefined()
+
+		const { giftWrap } = createEncryptedPrivateOrderMessage({
+			details,
+			buyerPrivateKey: buyer.privateKey,
+			createdAt: CREATED_AT,
+		})
+		const decrypted = decryptPrivateOrderMessage({
+			giftWrap,
+			sellerPrivateKey: seller.privateKey,
+			expectedSellerPubkey: seller.pubkey,
+			expectedBuyerPubkey: buyer.pubkey,
+		})
+
+		expect(decrypted.details.delivery.contactType).toBe('signal')
+		expect(decrypted.details.delivery.contactHandle).toBe('+15557654321')
+		expect(decrypted.details.delivery.email).toBeUndefined()
+	})
+
 	test('wraps private order details without exposing buyer PII in kind 1059', () => {
 		const buyer = keyPair()
 		const seller = keyPair()

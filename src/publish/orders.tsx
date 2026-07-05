@@ -9,7 +9,8 @@ import { toast } from 'sonner'
 import { v4 as uuidv4 } from 'uuid'
 import type { CheckoutFormData } from '@/components/checkout/ShippingAddressForm'
 import {
-	isValidDigitalDeliveryContact,
+	DEFAULT_DELIVERY_CONTACT_TYPE,
+	isValidDeliveryContact,
 	resolveCheckoutDeliveryRequirements,
 	type CheckoutDeliveryRequirements,
 } from '@/lib/checkout/deliveryRequirements'
@@ -790,9 +791,15 @@ function createPrivateOrderDeliveryDetails(params: {
 		}
 	}
 
-	const buyerEmail = trimOptional(shippingData.email)
-	if (buyerEmail && isValidDigitalDeliveryContact(buyerEmail)) {
-		delivery.email = buyerEmail
+	const contactType = shippingData.contactType || DEFAULT_DELIVERY_CONTACT_TYPE
+	const contactHandle = trimOptional(shippingData.email)
+	if (contactHandle && isValidDeliveryContact(contactType, contactHandle)) {
+		if (contactType === 'email') {
+			delivery.email = contactHandle
+		} else {
+			delivery.contactType = contactType
+			delivery.contactHandle = contactHandle
+		}
 	}
 
 	if (requirements.needsPhysicalAddress) {
@@ -879,9 +886,10 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 		throw new Error('Encrypted seller delivery could not be prepared')
 	}
 
-	const buyerEmail = shippingData.email.trim()
-	if (buyerEmail && !isValidDigitalDeliveryContact(buyerEmail)) {
-		throw new Error('Enter a valid email address before creating the order')
+	const buyerContactType = shippingData.contactType || DEFAULT_DELIVERY_CONTACT_TYPE
+	const buyerContact = shippingData.email.trim()
+	if (buyerContact && !isValidDeliveryContact(buyerContactType, buyerContact)) {
+		throw new Error('Enter a valid delivery contact before creating the order')
 	}
 
 	const preflight: SellerOrderPreflight[] = []
@@ -897,7 +905,7 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 			throw new Error('Delivery requirements could not be verified for one or more selected shipping options')
 		}
 
-		if (requirements.needsDigitalDeliveryContact && !isValidDigitalDeliveryContact(buyerEmail)) {
+		if (requirements.needsDigitalDeliveryContact && !isValidDeliveryContact(buyerContactType, buyerContact)) {
 			throw new Error('Digital delivery contact is required before creating the order')
 		}
 

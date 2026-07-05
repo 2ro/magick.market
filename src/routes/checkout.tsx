@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
-	isValidDigitalDeliveryContact,
+	DEFAULT_DELIVERY_CONTACT_TYPE,
+	isValidDeliveryContact,
 	resolveCheckoutDeliveryRequirements,
 	type CheckoutDeliveryRequirements,
 } from '@/lib/checkout/deliveryRequirements'
@@ -406,6 +407,7 @@ function RouteComponent() {
 	const form = useForm({
 		defaultValues: {
 			name: '',
+			contactType: DEFAULT_DELIVERY_CONTACT_TYPE,
 			email: '',
 			phone: '',
 			firstLineOfAddress: '',
@@ -420,7 +422,7 @@ function RouteComponent() {
 				toast.error('Delivery requirements must be verified before checkout can continue.')
 				return
 			}
-			if (deliveryRequirements.needsDigitalDeliveryContact && !isValidDigitalDeliveryContact(value.email)) {
+			if (deliveryRequirements.needsDigitalDeliveryContact && !isValidDeliveryContact(value.contactType, value.email)) {
 				toast.error('Enter a valid digital delivery contact before checkout can continue.')
 				return
 			}
@@ -571,7 +573,7 @@ function RouteComponent() {
 		deliveryRequirements.isResolved &&
 		!isDeliveryRequirementsLoading &&
 		!deliveryRequirementsError &&
-		(!deliveryRequirements.needsDigitalDeliveryContact || isValidDigitalDeliveryContact(shippingData.email))
+		(!deliveryRequirements.needsDigitalDeliveryContact || isValidDeliveryContact(shippingData.contactType, shippingData.email))
 
 	const handleContinueToPayment = async () => {
 		if (!canContinueToPayment) {

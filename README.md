@@ -50,6 +50,20 @@ single rail:
   wallet (wallet-to-wallet, sweepable by the operator), and the name is granted only after the
   payment confirms on chain (GoblinPay's 10-confirmation house standard).
 
+### Why the seller confirms payment by hand
+
+Product sales use a rudimentary, non-custodial P2P model: the buyer pays the seller's Goblin wallet
+directly, wallet to wallet, and the seller confirms the payment by hand once they watch the Grin arrive
+in their own wallet. This manual step is intentional, not a missing feature or a broken flow. The
+marketplace never holds the money and, by design, cannot see inside an encrypted, private Grin payment,
+so it has no honest way to auto-confirm a product sale on its own; only the seller, looking at their own
+wallet, knows the funds actually landed. Paid names are different because they are paid to the
+marketplace's own till with a GoblinPay invoice, which the marketplace can watch and confirm
+automatically once it reaches GoblinPay's 10-confirmation house standard. The planned per-seller GoblinPay
+till is the future path that brings that same automatic confirmation to products too: a seller could opt
+in to an invoice-backed till and have product sales auto-confirm, while the funds stay non-custodial and
+land straight in their wallet.
+
 To install dependencies:
 
 ```bash
