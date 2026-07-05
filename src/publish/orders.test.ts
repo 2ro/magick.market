@@ -198,6 +198,7 @@ const PII_SENTINELS = [
 
 const baseShippingData: CheckoutFormData = {
 	name: 'Satoshi Nakamoto',
+	contactType: 'email',
 	email: 'buyer@example.com',
 	phone: '+15551234567',
 	firstLineOfAddress: '123 Main Street',

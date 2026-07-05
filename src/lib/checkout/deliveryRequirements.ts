@@ -68,10 +68,71 @@ export function resolveCheckoutDeliveryRequirements(input: CheckoutDeliveryRequi
 	}
 }
 
-export function isValidDigitalDeliveryContact(value: string | null | undefined): boolean {
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * Privacy-respecting delivery contact channels a buyer can hand a seller so the
+ * seller can reach them to deliver a digital item. Email stays the default and
+ * keeps its historical on-order wire shape; the others are messenger handles or
+ * invite links validated only loosely (they have no single canonical format).
+ */
+export const DELIVERY_CONTACT_TYPES = ['email', 'signal', 'matrix', 'session', 'simplex'] as const
+
+export type DeliveryContactType = (typeof DELIVERY_CONTACT_TYPES)[number]
+
+export const DEFAULT_DELIVERY_CONTACT_TYPE: DeliveryContactType = 'email'
+
+export function isDeliveryContactType(value: string | null | undefined): value is DeliveryContactType {
+	return !!value && (DELIVERY_CONTACT_TYPES as readonly string[]).includes(value)
+}
+
+type DeliveryContactChannelMeta = {
+	value: DeliveryContactType
+	label: string
+	fieldLabel: string
+	placeholder: string
+}
+
+export const DELIVERY_CONTACT_CHANNELS: Record<DeliveryContactType, DeliveryContactChannelMeta> = {
+	email: { value: 'email', label: 'Email', fieldLabel: 'Email address', placeholder: 'e.g. name@example.com' },
+	signal: { value: 'signal', label: 'Signal', fieldLabel: 'Signal number or username', placeholder: 'e.g. +15551234567 or user.01' },
+	matrix: { value: 'matrix', label: 'Matrix', fieldLabel: 'Matrix ID', placeholder: 'e.g. @name:matrix.org' },
+	session: { value: 'session', label: 'Session', fieldLabel: 'Session ID', placeholder: 'e.g. 05abc… Session ID' },
+	simplex: {
+		value: 'simplex',
+		label: 'SimpleX',
+		fieldLabel: 'SimpleX address or invite link',
+		placeholder: 'e.g. https://simplex.chat/invitation#…',
+	},
+}
+
+export const DELIVERY_CONTACT_CHANNEL_LIST: DeliveryContactChannelMeta[] = DELIVERY_CONTACT_TYPES.map(
+	(type) => DELIVERY_CONTACT_CHANNELS[type],
+)
+
+/**
+ * Light per-type validation. Email must look like an email; the messenger
+ * channels accept any single-token handle or link (no whitespace, a few chars
+ * long) because their handle/link formats vary and we do not want to reject a
+ * valid contact the buyer knows works.
+ */
+export function isValidDeliveryContact(type: DeliveryContactType | string | null | undefined, value: string | null | undefined): boolean {
 	const trimmed = value?.trim()
 	if (!trimmed) return false
 
-	const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-	return emailRegex.test(trimmed)
+	if (type === 'email' || !isDeliveryContactType(type)) {
+		return EMAIL_REGEX.test(trimmed)
+	}
+
+	// Messenger handles / invite links: no internal whitespace, reasonable length.
+	if (/\s/.test(trimmed)) return false
+	return trimmed.length >= 3 && trimmed.length <= 2000
+}
+
+/**
+ * Back-compat email-only check retained for the historical digital-delivery
+ * contact path. Equivalent to {@link isValidDeliveryContact} with type 'email'.
+ */
+export function isValidDigitalDeliveryContact(value: string | null | undefined): boolean {
+	return isValidDeliveryContact('email', value)
 }

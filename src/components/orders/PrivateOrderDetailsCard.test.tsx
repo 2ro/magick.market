@@ -81,6 +81,19 @@ describe('PrivateOrderDetailsCard helpers', () => {
 		expect(rows).toEqual([{ label: 'Digital contact', value: 'buyer@example.com' }])
 	})
 
+	test('non-email delivery contact shows a labeled channel row', () => {
+		const rows = getPrivateOrderDetailsRows(
+			privateDetails({
+				delivery: {
+					contactType: 'signal',
+					contactHandle: '+15557654321',
+				},
+			}),
+		)
+
+		expect(rows).toEqual([{ label: 'Signal contact', value: '+15557654321' }])
+	})
+
 	test('physical delivery rows include recipient, address, phone, and notes when present', () => {
 		const rows = getPrivateOrderDetailsRows(
 			privateDetails({

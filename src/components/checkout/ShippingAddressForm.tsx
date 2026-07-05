@@ -5,8 +5,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { CountryCombobox, isValidCountry } from '@/components/checkout/CountryCombobox'
 import { CityCombobox } from '@/components/checkout/CityCombobox'
 import { PhoneInput } from '@/components/checkout/PhoneInput'
-import type { CheckoutDeliveryRequirements } from '@/lib/checkout/deliveryRequirements'
-import { isValidDigitalDeliveryContact } from '@/lib/checkout/deliveryRequirements'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { CheckoutDeliveryRequirements, DeliveryContactType } from '@/lib/checkout/deliveryRequirements'
+import { DELIVERY_CONTACT_CHANNELS, DELIVERY_CONTACT_CHANNEL_LIST, isValidDeliveryContact } from '@/lib/checkout/deliveryRequirements'
 import { cartStore } from '@/lib/stores/cart'
 import { useStore } from '@tanstack/react-store'
 import { getShippingEvent, getShippingPickupAddressString, getShippingService, getShippingTitle } from '@/queries/shipping'
@@ -14,6 +15,7 @@ import { useEffect, useState } from 'react'
 
 export interface CheckoutFormData {
 	name: string
+	contactType: DeliveryContactType
 	email: string
 	phone: string
 	firstLineOfAddress: string
@@ -153,46 +155,83 @@ export function ShippingAddressForm({
 						/>
 
 						<form.Field
-							name="email"
-							validators={{
-								onChange: ({ value }: { value: string }) => {
-									if (needsDigitalDeliveryContact && !value.trim()) {
-										return 'Digital delivery contact is required'
-									}
-									if (value.trim() && !isValidDigitalDeliveryContact(value)) return 'Please enter a valid email address'
-									return undefined
-								},
-							}}
+							name="contactType"
 							children={(field: any) => (
 								<div>
 									<Label htmlFor={field.name} className="text-sm font-medium">
-										{hasDigitalDelivery ? 'Digital Delivery Contact (Email)' : 'Email Address'}{' '}
-										{needsDigitalDeliveryContact && <span className="text-red-500">*</span>}
+										{hasDigitalDelivery ? 'Digital Delivery Contact' : 'Contact Method'}
 									</Label>
-									<Input
-										id={field.name}
-										type="email"
-										placeholder="e.g. satoshi@example.com"
+									<Select
 										value={field.state.value}
-										onChange={(e) => field.handleChange(e.target.value)}
-										onBlur={field.handleBlur}
-										required={needsDigitalDeliveryContact}
-									/>
-									{hasDigitalDelivery && (
-										<div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-											<p className="font-medium">Digital delivery contact</p>
-											<p className="mt-1">The seller will use this contact to deliver your digital item after payment settles.</p>
-											<p className="mt-1">
-												Privacy note: this contact will be shared with the seller and may be visible according to the app's current public
-												order metadata model.
-											</p>
-										</div>
-									)}
-									{field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
-										<p className="text-xs text-red-500 mt-1">{field.state.meta.errors[0]}</p>
-									)}
+										onValueChange={(value) => {
+											field.handleChange(value as DeliveryContactType)
+											// Re-run the handle field's validator against the newly selected channel.
+											form.validateField?.('email', 'change')
+										}}
+									>
+										<SelectTrigger id={field.name} data-testid="contact-method-select">
+											<SelectValue placeholder="Select a contact method" />
+										</SelectTrigger>
+										<SelectContent>
+											{DELIVERY_CONTACT_CHANNEL_LIST.map((channel) => (
+												<SelectItem key={channel.value} value={channel.value} data-testid={`contact-method-${channel.value}`}>
+													{channel.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								</div>
 							)}
+						/>
+
+						<form.Subscribe
+							selector={(state: any) => (state.values.contactType || 'email') as DeliveryContactType}
+							children={(contactType: DeliveryContactType) => {
+								const channel = DELIVERY_CONTACT_CHANNELS[contactType]
+								return (
+									<form.Field
+										name="email"
+										validators={{
+											onChange: ({ value }: { value: string }) => {
+												if (needsDigitalDeliveryContact && !value.trim()) {
+													return 'Digital delivery contact is required'
+												}
+												if (value.trim() && !isValidDeliveryContact(contactType, value))
+													return `Please enter a valid ${channel.label} contact`
+												return undefined
+											},
+										}}
+										children={(field: any) => (
+											<div>
+												<Label htmlFor={field.name} className="text-sm font-medium">
+													{channel.fieldLabel} {needsDigitalDeliveryContact && <span className="text-red-500">*</span>}
+												</Label>
+												<Input
+													id={field.name}
+													type={contactType === 'email' ? 'email' : 'text'}
+													placeholder={channel.placeholder}
+													value={field.state.value}
+													onChange={(e) => field.handleChange(e.target.value)}
+													onBlur={field.handleBlur}
+													required={needsDigitalDeliveryContact}
+												/>
+												{hasDigitalDelivery && (
+													<div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+														<p className="font-medium">Digital delivery contact</p>
+														<p className="mt-1">
+															The seller will use this {channel.label} contact to deliver your digital item after payment settles.
+														</p>
+														<p className="mt-1">Privacy note: this contact is shared with the seller so they can reach you.</p>
+													</div>
+												)}
+												{field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
+													<p className="text-xs text-red-500 mt-1">{field.state.meta.errors[0]}</p>
+												)}
+											</div>
+										)}
+									/>
+								)
+							}}
 						/>
 					</div>
 
