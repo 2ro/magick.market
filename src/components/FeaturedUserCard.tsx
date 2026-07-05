@@ -79,7 +79,7 @@ export function FeaturedUserCard({ userPubkey }: FeaturedUserCardProps) {
 									if (product) {
 										const images = getProductImages(product)
 										return (
-											<Link key={product.id} to="/product/$productId" params={{ productId: product.id }} className="block">
+											<Link key={product.id} to="/products/$productId" params={{ productId: product.id }} className="block">
 												<img
 													src={images?.[0]?.[1] || '/images/placeholder.png'}
 													alt="Product"
