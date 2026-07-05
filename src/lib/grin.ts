@@ -96,6 +96,33 @@ export function buildGoblinPayUri({ to, amountNanogrin, memo }: GoblinPayUriPara
 }
 
 /**
+ * The custom URI scheme the Goblin wallet registers with the OS, so a click on
+ * a `goblin:` link opens Goblin directly.
+ *
+ * QR payloads and copy-paste links stay on the generic `nostr:` scheme (the
+ * wallet accepts both, and shipped builds in the field only parse `nostr:`).
+ * But a *clickable* deeplink on the `nostr:` scheme is routed by desktop OSes to
+ * whichever app claimed `nostr:` — usually a social client (gossip, etc.), not a
+ * wallet. Clicking only ever matters on a device with Goblin installed, so the
+ * clickable deeplink can move to `goblin:` immediately for correct routing.
+ */
+export const GOBLIN_URI_SCHEME = 'goblin'
+
+/**
+ * Turn a canonical `nostr:` Goblin pay-URI into the `goblin:`-scheme clickable
+ * deeplink, preserving the recipient/amount/memo verbatim:
+ *
+ *   nostr:<recipient>?amount=<GRIN>&memo=<enc>  ->  goblin:<recipient>?amount=<GRIN>&memo=<enc>
+ *
+ * The two forms are byte-for-byte identical apart from the scheme, so the same
+ * payment context (merchant nprofile, decimal-GRIN amount, invoice-number memo)
+ * rides along. Anything not on the `nostr:` scheme is returned unchanged.
+ */
+export function toGoblinDeeplink(payUri: string): string {
+	return payUri.replace(/^nostr:/i, `${GOBLIN_URI_SCHEME}:`)
+}
+
+/**
  * Loose shape check for a Goblin payment address a seller can advertise:
  * an nprofile/npub (preferred, Grin-over-Nostr) or a Grin slatepack address.
  * Full validation is the wallet's job; this only guards obvious mistakes.
