@@ -11,7 +11,7 @@ import { EventSigner } from './EventSigner'
 import { NDKService } from './NDKService'
 import NDK from '@nostr-dev-kit/ndk'
 import type { RegistryManager, RegistryEntry } from './RegistryManager'
-import { planNdkBootstrap, nextRetryDelayMs } from './ndkBootstrap'
+import { planNdkBootstrap, nextRetryDelayMs, deriveConnectSucceeded } from './ndkBootstrap'
 
 export class EventHandler {
 	private static instance: EventHandler
@@ -154,12 +154,22 @@ export class EventHandler {
 			])
 			connectSucceeded = true
 		} catch (e) {
-			console.warn('⚠️ App relay NDK connect raced/timed out; NDK stays attached, loads will retry:', e)
+			console.warn(
+				'⚠️ App relay NDK connect raced/timed out; NDK stays attached, loading registries anyway (fetchEvents auto-connects):',
+				e,
+			)
 		}
 
-		if (!connectSucceeded) {
-			return { connectSucceeded, loadSucceeded: false }
-		}
+		// INVARIANT (READ-path sibling of the 2026-07-04 ndkBootstrap WRITE-path
+		// race): NEVER gate the registry load on the connect() promise. NDK 3.0.3's
+		// pool.connect() can stay unresolved while the relay is actually CONNECTED
+		// (connectedRelays().length > 0) and fetchEvents returns the persisted
+		// kind-30000 registry event fine. The old early-return here (`if
+		// (!connectSucceeded) return`) skipped loadExisting*Registry whenever the
+		// promise flaked, so the served /.well-known/nostr.json stayed empty until
+		// the next write republished — every name silently vanished on restart.
+		// Always attempt the load; loadExistingRegistry only returns false if the
+		// fetch itself throws.
 
 		// Blacklist is best-effort and not part of the persistence invariant.
 		try {
@@ -170,7 +180,16 @@ export class EventHandler {
 
 		const vanityLoaded = await this.vanityManager.loadExistingVanityRegistry(appPubkey)
 		const nip05Loaded = await this.nip05Manager.loadExistingNip05Registry(appPubkey)
-		return { connectSucceeded, loadSucceeded: vanityLoaded && nip05Loaded }
+		const loadSucceeded = vanityLoaded && nip05Loaded
+
+		// Derive connectSucceeded from an actual live socket or a successful fetch
+		// when connect()'s promise never resolved, so the background retry loop
+		// (planNdkBootstrap.scheduleLoadRetry) stops once the registries are loaded
+		// instead of spinning against a relay that is demonstrably reachable.
+		const connectedRelayCount = ndk.pool?.connectedRelays()?.length ?? 0
+		connectSucceeded = deriveConnectSucceeded(connectSucceeded, loadSucceeded, connectedRelayCount)
+
+		return { connectSucceeded, loadSucceeded }
 	}
 
 	/**

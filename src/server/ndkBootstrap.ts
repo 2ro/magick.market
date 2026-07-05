@@ -46,6 +46,26 @@ export function planNdkBootstrap({ ndkCreated, connectSucceeded, loadSucceeded }
 }
 
 /**
+ * Decide whether to treat the app relay as connected for retry-scheduling
+ * purposes when connect()'s promise did not resolve.
+ *
+ * THE READ-PATH INVARIANT (sibling of the WRITE-path race above): the registry
+ * LOAD is NEVER gated on this — loadExisting*Registry always runs because
+ * fetchEvents auto-connects and returns the persisted kind-30000 event even
+ * while NDK 3.0.3's pool.connect() promise stays pending against a fast relay.
+ * This helper only decides whether the background retry loop should STOP: if the
+ * fetch just succeeded, or the pool actually has a live socket, the relay is
+ * demonstrably reachable and retrying would be pointless. Previously a flaky
+ * connect() promise both skipped the load AND kept the served
+ * /.well-known/nostr.json empty until the next write — names vanished on restart.
+ *
+ * Pure decision logic only (no NDK/IO) so it is unit-tested directly.
+ */
+export function deriveConnectSucceeded(connectResolved: boolean, loadSucceeded: boolean, connectedRelayCount: number): boolean {
+	return connectResolved || loadSucceeded || connectedRelayCount > 0
+}
+
+/**
  * Capped exponential backoff (ms) for the registry-load retry loop.
  * attempt 0 => 0 (run immediately), attempt N>0 => base * 2^(N-1), capped at maxMs.
  */
