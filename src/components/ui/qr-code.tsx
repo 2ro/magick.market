@@ -2,6 +2,10 @@ import { QRCodeSVG } from 'qrcode.react'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
+// Self-contained white-rounded Goblin badge (white backing + black mark + white eyes/mouth)
+const GOBLIN_MARK_DATA_URI =
+	"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23fff'/%3E%3Cpath fill='%23201d09' d='M20 22c0-3 3-5 6-4l6 3 6-3c3-1 6 1 6 4v10c0 8-6 14-12 14S20 40 20 32z'/%3E%3Ccircle cx='26' cy='30' r='3' fill='%23fff'/%3E%3Ccircle cx='38' cy='30' r='3' fill='%23fff'/%3E%3Cpath fill='%23fff' d='M28 40h8l-4 5z'/%3E%3C/svg%3E"
+
 interface QRCodeProps {
 	value: string
 	size?: number
@@ -13,6 +17,7 @@ interface QRCodeProps {
 	title?: string
 	description?: string
 	showBorder?: boolean
+	logo?: boolean
 }
 
 export function QRCode({
@@ -26,6 +31,7 @@ export function QRCode({
 	title,
 	description,
 	showBorder = true,
+	logo = false,
 }: QRCodeProps) {
 	if (!value) {
 		return (
@@ -41,11 +47,21 @@ export function QRCode({
 		<QRCodeSVG
 			value={value}
 			size={size}
-			level={level}
+			level={logo ? 'H' : level}
 			includeMargin={includeMargin}
 			bgColor={bgColor}
 			fgColor={fgColor}
 			className="rounded-lg"
+			imageSettings={
+				logo
+					? {
+							src: GOBLIN_MARK_DATA_URI,
+							height: Math.round(size * 0.2),
+							width: Math.round(size * 0.2),
+							excavate: true,
+						}
+					: undefined
+			}
 		/>
 	)
 

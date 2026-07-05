@@ -237,7 +237,7 @@ export function PaymentContent({
 
 					{/* Big QR with the canonical nostr: Goblin pay-URI */}
 					<div className="flex justify-center">
-						<QRCode value={currentInvoice.payUri!} size={260} level="M" />
+						<QRCode value={currentInvoice.payUri!} size={260} level="H" logo />
 					</div>
 
 					{/* Open in Goblin */}
