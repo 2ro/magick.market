@@ -45,7 +45,6 @@ import { Route as DashboardLayoutDashboardAccountReceivingPaymentsRouteImport } 
 import { Route as DashboardLayoutDashboardAccountProfileRouteImport } from './routes/_dashboard-layout/dashboard/account/profile'
 import { Route as DashboardLayoutDashboardAccountPreferencesRouteImport } from './routes/_dashboard-layout/dashboard/account/preferences'
 import { Route as DashboardLayoutDashboardAccountNostrAddressRouteImport } from './routes/_dashboard-layout/dashboard/account/nostr-address'
-import { Route as DashboardLayoutDashboardAccountNetworkRouteImport } from './routes/_dashboard-layout/dashboard/account/network'
 import { Route as DashboardLayoutDashboardSalesMessagesPubkeyRouteImport } from './routes/_dashboard-layout/dashboard/sales/messages/$pubkey'
 import { Route as DashboardLayoutDashboardProductsProductsNewRouteImport } from './routes/_dashboard-layout/dashboard/products/products/new'
 import { Route as DashboardLayoutDashboardProductsProductsProductIdRouteImport } from './routes/_dashboard-layout/dashboard/products/products/$productId'
@@ -251,12 +250,6 @@ const DashboardLayoutDashboardAccountNostrAddressRoute =
     path: '/dashboard/account/nostr-address',
     getParentRoute: () => DashboardLayoutRoute,
   } as any)
-const DashboardLayoutDashboardAccountNetworkRoute =
-  DashboardLayoutDashboardAccountNetworkRouteImport.update({
-    id: '/dashboard/account/network',
-    path: '/dashboard/account/network',
-    getParentRoute: () => DashboardLayoutRoute,
-  } as any)
 const DashboardLayoutDashboardSalesMessagesPubkeyRoute =
   DashboardLayoutDashboardSalesMessagesPubkeyRouteImport.update({
     id: '/$pubkey',
@@ -306,7 +299,6 @@ export interface FileRoutesByFullPath {
   '/products/': typeof ProductsIndexRoute
   '/dashboard/about': typeof DashboardLayoutDashboardAboutRoute
   '/dashboard/': typeof DashboardLayoutDashboardIndexRoute
-  '/dashboard/account/network': typeof DashboardLayoutDashboardAccountNetworkRoute
   '/dashboard/account/nostr-address': typeof DashboardLayoutDashboardAccountNostrAddressRoute
   '/dashboard/account/preferences': typeof DashboardLayoutDashboardAccountPreferencesRoute
   '/dashboard/account/profile': typeof DashboardLayoutDashboardAccountProfileRoute
@@ -349,7 +341,6 @@ export interface FileRoutesByTo {
   '/products': typeof ProductsIndexRoute
   '/dashboard/about': typeof DashboardLayoutDashboardAboutRoute
   '/dashboard': typeof DashboardLayoutDashboardIndexRoute
-  '/dashboard/account/network': typeof DashboardLayoutDashboardAccountNetworkRoute
   '/dashboard/account/nostr-address': typeof DashboardLayoutDashboardAccountNostrAddressRoute
   '/dashboard/account/preferences': typeof DashboardLayoutDashboardAccountPreferencesRoute
   '/dashboard/account/profile': typeof DashboardLayoutDashboardAccountProfileRoute
@@ -394,7 +385,6 @@ export interface FileRoutesById {
   '/products/': typeof ProductsIndexRoute
   '/_dashboard-layout/dashboard/about': typeof DashboardLayoutDashboardAboutRoute
   '/_dashboard-layout/dashboard/': typeof DashboardLayoutDashboardIndexRoute
-  '/_dashboard-layout/dashboard/account/network': typeof DashboardLayoutDashboardAccountNetworkRoute
   '/_dashboard-layout/dashboard/account/nostr-address': typeof DashboardLayoutDashboardAccountNostrAddressRoute
   '/_dashboard-layout/dashboard/account/preferences': typeof DashboardLayoutDashboardAccountPreferencesRoute
   '/_dashboard-layout/dashboard/account/profile': typeof DashboardLayoutDashboardAccountProfileRoute
@@ -439,7 +429,6 @@ export interface FileRouteTypes {
     | '/products/'
     | '/dashboard/about'
     | '/dashboard/'
-    | '/dashboard/account/network'
     | '/dashboard/account/nostr-address'
     | '/dashboard/account/preferences'
     | '/dashboard/account/profile'
@@ -482,7 +471,6 @@ export interface FileRouteTypes {
     | '/products'
     | '/dashboard/about'
     | '/dashboard'
-    | '/dashboard/account/network'
     | '/dashboard/account/nostr-address'
     | '/dashboard/account/preferences'
     | '/dashboard/account/profile'
@@ -526,7 +514,6 @@ export interface FileRouteTypes {
     | '/products/'
     | '/_dashboard-layout/dashboard/about'
     | '/_dashboard-layout/dashboard/'
-    | '/_dashboard-layout/dashboard/account/network'
     | '/_dashboard-layout/dashboard/account/nostr-address'
     | '/_dashboard-layout/dashboard/account/preferences'
     | '/_dashboard-layout/dashboard/account/profile'
@@ -825,13 +812,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardLayoutDashboardAccountNostrAddressRouteImport
       parentRoute: typeof DashboardLayoutRoute
     }
-    '/_dashboard-layout/dashboard/account/network': {
-      id: '/_dashboard-layout/dashboard/account/network'
-      path: '/dashboard/account/network'
-      fullPath: '/dashboard/account/network'
-      preLoaderRoute: typeof DashboardLayoutDashboardAccountNetworkRouteImport
-      parentRoute: typeof DashboardLayoutRoute
-    }
     '/_dashboard-layout/dashboard/sales/messages/$pubkey': {
       id: '/_dashboard-layout/dashboard/sales/messages/$pubkey'
       path: '/$pubkey'
@@ -924,7 +904,6 @@ const DashboardLayoutDashboardSalesMessagesRouteWithChildren =
 interface DashboardLayoutRouteChildren {
   DashboardLayoutDashboardAboutRoute: typeof DashboardLayoutDashboardAboutRoute
   DashboardLayoutDashboardIndexRoute: typeof DashboardLayoutDashboardIndexRoute
-  DashboardLayoutDashboardAccountNetworkRoute: typeof DashboardLayoutDashboardAccountNetworkRoute
   DashboardLayoutDashboardAccountNostrAddressRoute: typeof DashboardLayoutDashboardAccountNostrAddressRoute
   DashboardLayoutDashboardAccountPreferencesRoute: typeof DashboardLayoutDashboardAccountPreferencesRoute
   DashboardLayoutDashboardAccountProfileRoute: typeof DashboardLayoutDashboardAccountProfileRoute
@@ -948,8 +927,6 @@ interface DashboardLayoutRouteChildren {
 const DashboardLayoutRouteChildren: DashboardLayoutRouteChildren = {
   DashboardLayoutDashboardAboutRoute: DashboardLayoutDashboardAboutRoute,
   DashboardLayoutDashboardIndexRoute: DashboardLayoutDashboardIndexRoute,
-  DashboardLayoutDashboardAccountNetworkRoute:
-    DashboardLayoutDashboardAccountNetworkRoute,
   DashboardLayoutDashboardAccountNostrAddressRoute:
     DashboardLayoutDashboardAccountNostrAddressRoute,
   DashboardLayoutDashboardAccountPreferencesRoute:
