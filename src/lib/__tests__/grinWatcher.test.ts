@@ -6,6 +6,7 @@ import {
 	buildConfirmedReceiptTags,
 	classifyOrderReceipts,
 	CONFIRMATIONS_REQUIRED,
+	derivePaymentPanelDisplay,
 	hasExistingConfirmed,
 	queryKernelConfirmations,
 	receiptMatchesInvoice,
@@ -271,5 +272,44 @@ describe('watcher idempotence + confirmed receipt (steps 7-8)', () => {
 	test('below depth 10 the tag set is status=confirming', () => {
 		const tags = buildConfirmedReceiptTags(INVOICE, 2_000_000_000, 4)
 		expect(tags).toContainEqual(['status', 'confirming'])
+	})
+})
+
+describe('derivePaymentPanelDisplay (checkout/order panel face)', () => {
+	const base = { invoiceStatus: 'pending', mode: 'checkout' as const, hasPayUri: true, confirmationState: 'waiting' as const }
+
+	test('waiting with a pay-URI shows the pay face (QR + Open in Goblin)', () => {
+		expect(derivePaymentPanelDisplay(base)).toBe('pay')
+	})
+
+	test('a missing pay-URI shows the no-address face', () => {
+		expect(derivePaymentPanelDisplay({ ...base, hasPayUri: false })).toBe('no-address')
+	})
+
+	test("the buyer's plain receipt (detected) flips to the calm sent face, hiding pay affordances", () => {
+		expect(derivePaymentPanelDisplay({ ...base, confirmationState: 'detected' })).toBe('sent')
+	})
+
+	test('a stray confirming state is still treated as the calm sent face (watcher decommissioned)', () => {
+		expect(derivePaymentPanelDisplay({ ...base, confirmationState: 'confirming' })).toBe('sent')
+	})
+
+	test('a watcher-signed paid state shows the completed face even before the invoice status flips', () => {
+		expect(derivePaymentPanelDisplay({ ...base, confirmationState: 'paid' })).toBe('completed')
+	})
+
+	test('a paid invoice status shows the completed face', () => {
+		expect(derivePaymentPanelDisplay({ ...base, invoiceStatus: 'paid' })).toBe('completed')
+	})
+
+	test('checkout mode counts skipped and expired as completed; order mode does not', () => {
+		expect(derivePaymentPanelDisplay({ ...base, invoiceStatus: 'skipped' })).toBe('completed')
+		expect(derivePaymentPanelDisplay({ ...base, invoiceStatus: 'expired' })).toBe('completed')
+		// In order mode a skipped invoice can be re-attempted, so it falls back to the pay face.
+		expect(derivePaymentPanelDisplay({ ...base, mode: 'order', invoiceStatus: 'skipped' })).toBe('pay')
+	})
+
+	test('completion wins over a missing pay-URI (no dangling pay prompt on a paid invoice)', () => {
+		expect(derivePaymentPanelDisplay({ ...base, invoiceStatus: 'paid', hasPayUri: false })).toBe('completed')
 	})
 })

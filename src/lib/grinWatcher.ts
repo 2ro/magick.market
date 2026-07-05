@@ -159,6 +159,37 @@ export function classifyOrderReceipts(events: ReceiptEventLike[], watcherPubkeyH
 	return { state, confirmations, required: CONFIRMATIONS_REQUIRED, proof }
 }
 
+/**
+ * Which face the checkout/order payment panel shows for one invoice. Pure
+ * derivation so the render branches are unit-testable without a DOM:
+ *
+ * - 'completed': the invoice is done (paid, or in checkout mode also skipped/
+ *   expired). The watcher-signed 'paid' state also lands here.
+ * - 'no-address': the seller has no Goblin payment address, nothing to pay to.
+ * - 'sent': the buyer's plain receipt arrived (state model waiting -> sent ->
+ *   paid). Pay affordances (QR, Open in Goblin) are hidden; the copy is a calm
+ *   "your payment is sent" with no chain-depth counting.
+ * - 'pay': the default — show the QR and Open in Goblin.
+ */
+export type PaymentPanelDisplay = 'completed' | 'no-address' | 'sent' | 'pay'
+
+export function derivePaymentPanelDisplay(input: {
+	invoiceStatus: string
+	mode: 'checkout' | 'order'
+	hasPayUri: boolean
+	confirmationState: OrderConfirmationState
+}): PaymentPanelDisplay {
+	const { invoiceStatus, mode, hasPayUri, confirmationState } = input
+	const statusComplete =
+		mode === 'order' ? invoiceStatus === 'paid' : invoiceStatus === 'paid' || invoiceStatus === 'skipped' || invoiceStatus === 'expired'
+	if (confirmationState === 'paid' || statusComplete) return 'completed'
+	if (!hasPayUri) return 'no-address'
+	// The watcher is decommissioned, so 'confirming' is effectively unreachable;
+	// treat both post-receipt states as the calm "sent" face regardless.
+	if (confirmationState === 'detected' || confirmationState === 'confirming') return 'sent'
+	return 'pay'
+}
+
 // ---------------------------------------------------------------------------
 // Watcher reference: node client (section 7 step 5)
 // ---------------------------------------------------------------------------

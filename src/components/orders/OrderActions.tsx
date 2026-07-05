@@ -244,13 +244,14 @@ export function OrderActions({ order, userPubkey, variant = 'outline', className
 					<DialogHeader>
 						<DialogTitle>Confirm Payment Received</DialogTitle>
 						<DialogDescription className="break-words">
-							Please confirm that you have received payment for this order with the Order Payment details below before proceeding.
+							The buyer may report their payment as sent, but that is only their claim. Check your own Goblin wallet and confirm the funds
+							actually arrived before marking this order paid.
 						</DialogDescription>
 					</DialogHeader>
 
 					<div className="space-y-2 py-4">
 						<p className="text-muted-foreground text-sm">
-							By confirming, you acknowledge that the payment has been received and you are ready to process this order.
+							By confirming, you acknowledge that the payment is in your wallet and you are ready to process this order.
 						</p>
 					</div>
 

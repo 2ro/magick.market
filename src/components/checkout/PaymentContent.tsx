@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { QRCode } from '@/components/ui/qr-code'
 import { formatGrinAmount, toGoblinDeeplink } from '@/lib/grin'
+import { derivePaymentPanelDisplay } from '@/lib/grinWatcher'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
 import { useOrderConfirmation } from '@/queries/payment'
 import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink } from 'lucide-react'
@@ -133,10 +134,17 @@ export function PaymentContent({
 		return <div className="text-sm text-muted-foreground p-4">No payment request to display</div>
 	}
 
-	// Check if current invoice is already completed
-	// In 'order' mode, only 'paid' is considered completed (skipped can be re-attempted)
-	const isCurrentCompleted = mode === 'order' ? currentInvoice.status === 'paid' : isCompletedForProgress(currentInvoice)
+	// One honest face for this invoice. The buyer's plain receipt (confirmation
+	// state 'detected') flips the panel to the calm "sent" face: the QR and Open
+	// in Goblin disappear and the copy tells them they can close the page. State
+	// model is waiting -> sent/detected -> paid.
 	const hasPayUri = !!currentInvoice.payUri
+	const display = derivePaymentPanelDisplay({
+		invoiceStatus: currentInvoice.status,
+		mode,
+		hasPayUri,
+		confirmationState: confirmation.state,
+	})
 
 	return (
 		<div className="space-y-6 lg:px-6 lg:pb-6">
@@ -179,10 +187,10 @@ export function PaymentContent({
 			)}
 
 			{/* Show completed message if current invoice is done */}
-			{isCurrentCompleted ? (
+			{display === 'completed' ? (
 				<div className="text-center py-8">
 					<div className="text-green-600 font-medium mb-2">
-						{currentInvoice.status === 'paid'
+						{currentInvoice.status === 'paid' || confirmation.state === 'paid'
 							? '✓ Payment Complete'
 							: currentInvoice.status === 'skipped'
 								? '⏭️ Payment Skipped'
@@ -197,7 +205,26 @@ export function PaymentContent({
 						</Button>
 					)}
 				</div>
-			) : !hasPayUri ? (
+			) : display === 'sent' ? (
+				/* The buyer's plain receipt arrived: no more pay affordances, just a
+				   calm confirmation. Nothing on this page needs their attention. */
+				<div className="text-center py-8 space-y-3">
+					<div className="flex justify-center">
+						<div className="flex items-center justify-center w-14 h-14 rounded-full bg-green-100">
+							<Check className="w-7 h-7 text-green-600" />
+						</div>
+					</div>
+					<div className="text-green-700 font-medium">Your payment is sent. You can close this page.</div>
+					<p className="text-sm text-gray-600">
+						{currentInvoice.recipientName} - {formatGrinAmount(currentInvoice.amount)}
+					</p>
+					{activeIndex < invoices.length - 1 && (
+						<Button onClick={() => handleNavigate(activeIndex + 1)} variant="outline">
+							Next Payment <ChevronRight className="w-4 h-4 ml-1" />
+						</Button>
+					)}
+				</div>
+			) : display === 'no-address' ? (
 				/* Seller has no Goblin payment address configured */
 				<div className="text-center py-8 space-y-4">
 					<div className="text-amber-600 font-medium">Seller payment details unavailable</div>
@@ -236,22 +263,13 @@ export function PaymentContent({
 					    encrypted order conversation, not here). */}
 					<CopyRow label="Invoice number (payment memo)" value={currentInvoice.id} />
 
-					{/* Honest live status: waiting -> payment detected, confirming n of 10 -> paid. */}
-					{confirmation.state === 'detected' || confirmation.state === 'confirming' ? (
-						<div className="flex items-center justify-center gap-2 text-sm text-blue-700">
-							<div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full" />
-							<span>
-								{confirmation.confirmations > 0
-									? `Payment detected — confirming ${confirmation.confirmations} of ${confirmation.required}`
-									: 'Payment detected — confirming on chain'}
-							</span>
-						</div>
-					) : (
-						<div className="flex items-center justify-center gap-2 text-sm text-gray-600">
-							<div className="animate-spin w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full" />
-							<span>Waiting for your payment</span>
-						</div>
-					)}
+					{/* Live status. The buyer's receipt (state model waiting -> sent ->
+					    paid) flips this whole panel to the calm "sent" face above, so
+					    here we are always still waiting. */}
+					<div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+						<div className="animate-spin w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full" />
+						<span>Waiting for your payment</span>
+					</div>
 
 					<p className="text-xs text-gray-500 text-center max-w-md mx-auto">
 						No account needed. Scan the QR or open the link in your Goblin wallet. Grin payments are interactive — if the seller&apos;s

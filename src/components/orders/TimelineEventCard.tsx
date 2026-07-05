@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { copyToClipboard } from '@/lib/utils'
+import { isClaimReceipt } from '@/components/orders/orderDetailHelpers'
 import type { NDKEvent } from '@nostr-dev-kit/ndk'
 import { CheckCircle, Copy } from 'lucide-react'
 
@@ -50,7 +51,18 @@ export function TimelineEventCard({ event, title, icon, type, timelineIndex }: T
 		const amount = amountTag?.[1] ? parseInt(amountTag[1], 10) : 0
 		if (amount > 0) {
 			if (type === 'payment') {
-				extraInfo = (
+				// A receipt whose status tag is sent/confirming is the buyer's own
+				// claim, not a settled payment: label it as a report, never "Paid".
+				// The seller confirms the money in their own wallet, then marks the
+				// order paid by hand.
+				extraInfo = isClaimReceipt(event) ? (
+					<Badge
+						variant="outline"
+						className="w-full justify-center border-amber-300 bg-amber-100 text-amber-800 sm:w-auto sm:justify-start"
+					>
+						Buyer reports payment sent: {formatGrinAmount(amount)}
+					</Badge>
+				) : (
 					<Badge
 						variant="outline"
 						className="w-full justify-center border-green-300 bg-green-100 text-green-800 sm:w-auto sm:justify-start"
@@ -63,7 +75,7 @@ export function TimelineEventCard({ event, title, icon, type, timelineIndex }: T
 				const paymentTag = event.tags.find((tag) => tag[0] === 'payment')
 				const preimage = paymentTag?.[3] // Format: ["payment", "<medium>", "<medium-reference>", "<proof>"]
 
-				if (preimage) {
+				if (preimage && !isClaimReceipt(event)) {
 					paymentDetails = (
 						<div className="space-y-3">
 							<div className="flex items-center gap-2 text-green-700">

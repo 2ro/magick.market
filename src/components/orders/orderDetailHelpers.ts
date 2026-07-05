@@ -155,6 +155,16 @@ export const getInvoiceNumber = (event: NDKEvent): string | undefined => {
 }
 
 /**
+ * A kind-17 receipt whose `status` tag is `sent` or `confirming` is the buyer's
+ * own claim (or an interim depth report), never a settled payment. Such events
+ * must not mark anything paid: the buyer's word is a claim, not a confirmation.
+ */
+export const isClaimReceipt = (receipt: Pick<NDKEvent, 'tags'>): boolean => {
+	const status = receipt.tags.find((tag) => tag[0] === 'status')?.[1]
+	return status === 'sent' || status === 'confirming'
+}
+
+/**
  * Check if payment has been completed based on receipts
  */
 export const isPaymentCompleted = (paymentRequest: NDKEvent, paymentReceipts: NDKEvent[]): boolean => {
@@ -162,6 +172,10 @@ export const isPaymentCompleted = (paymentRequest: NDKEvent, paymentReceipts: ND
 	const requestRecipient = paymentRequest.tags.find((tag) => tag[0] === 'recipient')?.[1] || paymentRequest.pubkey
 
 	const matchingReceipt = paymentReceipts.find((receipt) => {
+		// Buyer "payment sent" claims and interim confirming reports never count
+		// as completed, whatever other tags they carry.
+		if (isClaimReceipt(receipt)) return false
+
 		const orderTag = receipt.tags.find((tag) => tag[0] === 'order')
 		const amountTag = receipt.tags.find((tag) => tag[0] === 'amount')
 		const recipientTag = receipt.tags.find((tag) => tag[0] === 'p')
