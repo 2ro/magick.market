@@ -1,13 +1,30 @@
 import { PAYMENT_DETAILS_METHOD, type PaymentDetailsMethod } from '@/lib/constants'
-import { buildGoblinPayUri, isValidGoblinPayAddress } from '@/lib/grin'
-import { configStore } from '@/lib/stores/config'
+import { buildGoblinPayUri, deriveProofAddress, isValidGoblinPayAddress } from '@/lib/grin'
+import { classifyOrderReceipts, receiptMatchesInvoice, type OrderConfirmationResult } from '@/lib/grinWatcher'
+import { configActions, configStore } from '@/lib/stores/config'
 import { ndkActions } from '@/lib/stores/ndk'
 import { NDKEvent, NDKKind } from '@nostr-dev-kit/ndk'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { nip19 } from 'nostr-tools'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { v4 as uuidv4 } from 'uuid'
 import { paymentDetailsKeys } from './queryKeyFactory'
+
+/**
+ * Resolve the instance watcher's pubkey (hex) from the configured npub, or null.
+ * Only events signed by this key may flip an order to "paid" (contract 4.5).
+ */
+export function resolveWatcherPubkeyHex(): string | null {
+	const npub = configActions.getWatcherNpub()
+	if (!npub) return null
+	try {
+		const decoded = nip19.decode(npub)
+		return decoded.type === 'npub' && typeof decoded.data === 'string' ? decoded.data : null
+	} catch {
+		return null
+	}
+}
 
 /**
  * Payment method types as defined in the spec
@@ -896,10 +913,17 @@ export const generateInvoice = async (params: GenerateInvoiceParams): Promise<Ge
 		}
 	}
 
+	// Proof-on-request (contract 4.1): when the merchant advertised a grin1 proof
+	// address, turn on proof mode and point the wallet at the instance watcher.
+	// A merchant on an nprofile-only detail emits today's proof-free URI (M4).
+	const proofAddress = deriveProofAddress(grinAddress) ?? undefined
 	const payUri = buildGoblinPayUri({
 		to: grinAddress.trim(),
 		amountNanogrin,
 		memo: params.invoiceId,
+		proofAddress,
+		order: proofAddress ? params.invoiceId : undefined,
+		notify: proofAddress ? configActions.getWatcherNpub() : undefined,
 	})
 
 	return {
@@ -1038,85 +1062,66 @@ export const resolvePaymentDetailsForProduct = async (productId: string, sellerP
 	}
 }
 
-export interface PaymentReceiptSubscriptionParams {
-	orderId: string
+export interface OrderConfirmationParams {
+	/** The MM- invoice number: the sole matching key (contract 4.5). */
 	invoiceId: string
 	sessionStartTime: number
 	enabled: boolean
 }
 
 /**
- * Subscribes to Kind 17 payment receipts for a specific invoice number.
- * Both confirmation paths land here: the seller-published receipt (when the
- * seller's Goblin receiver is online) and the buyer-published grin_proof
- * receipt. Whichever arrives first flips the order to paid.
- * @returns The Grin payment proof string (or 'external-payment') when a valid receipt is found.
+ * Live order-confirmation state for one invoice (proof-on-request, contract 4.5).
+ *
+ * Subscribes to kind-17 events, matches by the `payment-request` (invoice
+ * number) tag ALONE, and classifies them by `status` tag and signer:
+ *
+ * - "waiting": no receipt yet.
+ * - "detected"/"confirming": the buyer's plain `status=sent` receipt (4.3.1) or
+ *   the watcher's interim `status=confirming` events.
+ * - "paid": ONLY a watcher-signed `status=confirmed` event (4.4). No buyer- or
+ *   merchant-signed event can ever reach "paid".
+ *
+ * The classification is streamed and idempotent: escalating events raise the
+ * state; duplicates/replays collapse to the same result (dedupe by invoice).
  */
-export const usePaymentReceiptSubscription = (params: PaymentReceiptSubscriptionParams) => {
-	const { orderId, invoiceId, sessionStartTime, enabled } = params
-
-	return useQuery<string | null>({
-		queryKey: paymentDetailsKeys.paymentReceipt(orderId!, invoiceId!),
-		queryFn: () => {
-			return new Promise((resolve) => {
-				if (!enabled) {
-					resolve(null)
-					return
-				}
-
-				const ndk = ndkActions.getNDK()
-				if (!ndk) {
-					resolve(null)
-					return
-				}
-
-				console.log(`🔍 Subscribing to payment receipts for invoice: ${invoiceId}`)
-
-				// Cannot use multi-character tag filters - fetch all kind 17 events and filter programmatically
-				const receiptFilter = {
-					kinds: [17],
-					since: sessionStartTime - 30, // 30-second buffer for clock skew
-				}
-
-				const subscription = ndk.subscribe(receiptFilter, {
-					closeOnEose: false,
-				})
-
-				subscription.on('event', (receiptEvent: NDKEvent) => {
-					// Filter programmatically for order and payment-request
-					const orderTag = receiptEvent.tags.find((tag) => tag[0] === 'order')
-					const paymentRequestTag = receiptEvent.tags.find((tag) => tag[0] === 'payment-request')
-
-					// Only process events for our specific order and invoice
-					if (orderTag?.[1] !== orderId || paymentRequestTag?.[1] !== invoiceId) {
-						return
-					}
-
-					console.log(`💳 Payment receipt received for invoice: ${invoiceId}`, receiptEvent)
-
-					if (receiptEvent.created_at && receiptEvent.created_at < sessionStartTime - 30) {
-						console.log('⏰ Ignoring old receipt from before session start')
-						return
-					}
-
-					const paymentTag = receiptEvent.tags.find((tag) => tag[0] === 'payment')
-					const preimage = paymentTag?.[3] || 'external-payment'
-
-					console.log(`✅ Valid payment receipt detected for ${invoiceId}`)
-
-					// Defensive stop with try/catch to handle NDK race condition
-					try {
-						subscription.stop()
-					} catch (error) {
-						console.warn('[PaymentReceiptSubscription] Error stopping subscription (can be safely ignored):', error)
-					}
-
-					resolve(preimage)
-				})
-			})
-		},
-		enabled: enabled,
-		refetchOnWindowFocus: false,
-		refetchOnReconnect: true,
+export const useOrderConfirmation = (params: OrderConfirmationParams): OrderConfirmationResult => {
+	const { invoiceId, sessionStartTime, enabled } = params
+	const [result, setResult] = useState<OrderConfirmationResult>({
+		state: 'waiting',
+		confirmations: 0,
+		required: 10,
+		proof: null,
 	})
+	const eventsRef = useRef<NDKEvent[]>([])
+
+	useEffect(() => {
+		if (!enabled || !invoiceId) return
+
+		const ndk = ndkActions.getNDK()
+		if (!ndk) return
+
+		const watcherHex = resolveWatcherPubkeyHex()
+		eventsRef.current = []
+
+		// Multi-char tag filters aren't reliable across relays: subscribe to kind
+		// 17 and match by invoice number programmatically.
+		const subscription = ndk.subscribe({ kinds: [17], since: sessionStartTime - 30 }, { closeOnEose: false })
+
+		subscription.on('event', (ev: NDKEvent) => {
+			if (!receiptMatchesInvoice(ev, invoiceId)) return
+			if (ev.created_at && ev.created_at < sessionStartTime - 30) return
+			eventsRef.current.push(ev)
+			setResult(classifyOrderReceipts(eventsRef.current, watcherHex))
+		})
+
+		return () => {
+			try {
+				subscription.stop()
+			} catch (error) {
+				console.warn('[useOrderConfirmation] Error stopping subscription (can be safely ignored):', error)
+			}
+		}
+	}, [enabled, invoiceId, sessionStartTime])
+
+	return result
 }

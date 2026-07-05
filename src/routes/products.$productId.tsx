@@ -14,6 +14,7 @@ import { UserCard } from '@/components/UserCard'
 import { useBreakpoint } from '@/hooks/useBreakpoint'
 import { useEntityPermissions } from '@/hooks/useEntityPermissions'
 import { authStore } from '@/lib/stores/auth'
+import { isSelfPurchase, SELF_PURCHASE_MESSAGE } from '@/lib/checkout/selfPurchase'
 import { cartActions, useCart, type RichShippingInfo } from '@/lib/stores/cart'
 import { ndkActions } from '@/lib/stores/ndk'
 import { uiActions, uiStore } from '@/lib/stores/ui'
@@ -494,6 +495,13 @@ function RouteComponent() {
 	const handleAddToCartClick = async () => {
 		// Check if we have a valid product and it's not hidden
 		if (!product || visibility === 'hidden') return
+
+		// Self-purchase guard: sender == receiver can never settle on the Grin rail,
+		// so refuse before anything enters the cart / order flow.
+		if (isSelfPurchase(authStore.state.user?.pubkey, [pubkey])) {
+			toast.error(SELF_PURCHASE_MESSAGE)
+			return
+		}
 
 		// Just add the product ID to the cart with the specified quantity
 		await cartActions.addProduct({

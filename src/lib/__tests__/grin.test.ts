@@ -2,11 +2,11 @@ import { describe, test, expect } from 'bun:test'
 import {
 	NANOGRIN_PER_GRIN,
 	buildGoblinPayUri,
+	deriveProofAddress,
 	formatGrin,
 	formatGrinAmount,
 	grinToNanogrin,
 	isValidGoblinPayAddress,
-	looksLikeGrinPaymentProof,
 	mintInvoiceNumber,
 	nanogrinToGrin,
 	toGoblinDeeplink,
@@ -17,12 +17,26 @@ import {
 // The recipient rides in the path (everything between `nostr:` and `?`); the
 // emitter percent-encodes with encodeURIComponent (space -> %20, never `+`), so
 // URLSearchParams decoding here agrees with the wallet's RFC-3986 decoder.
-function parseGoblinPayUri(uri: string): { recipient: string; amount: string | null; memo: string | null } {
+function parseGoblinPayUri(uri: string): {
+	recipient: string
+	amount: string | null
+	memo: string | null
+	proof: string | null
+	order: string | null
+	notify: string | null
+} {
 	const rest = uri.replace(/^nostr:/i, '')
 	const qIndex = rest.indexOf('?')
-	if (qIndex === -1) return { recipient: rest, amount: null, memo: null }
+	if (qIndex === -1) return { recipient: rest, amount: null, memo: null, proof: null, order: null, notify: null }
 	const params = new URLSearchParams(rest.slice(qIndex + 1))
-	return { recipient: rest.slice(0, qIndex), amount: params.get('amount'), memo: params.get('memo') }
+	return {
+		recipient: rest.slice(0, qIndex),
+		amount: params.get('amount'),
+		memo: params.get('memo'),
+		proof: params.get('proof'),
+		order: params.get('order'),
+		notify: params.get('notify'),
+	}
 }
 
 describe('grin nanogrin conversions', () => {
@@ -137,16 +151,63 @@ describe('isValidGoblinPayAddress', () => {
 	})
 })
 
-describe('looksLikeGrinPaymentProof', () => {
-	test('accepts JSON, armored, and base64-ish blobs above the min length', () => {
-		expect(looksLikeGrinPaymentProof('{"recipient_sig":"abc123","kernel":"09ab"}')).toBe(true)
-		expect(looksLikeGrinPaymentProof('BEGINPROOF-abcdefghijklmnop-ENDPROOF')).toBe(true)
-		expect(looksLikeGrinPaymentProof('ZmFrZS1wcm9vZi1ibG9iLWJhc2U2NA==')).toBe(true)
+describe('deriveProofAddress (proof-on-request, contract 4.1)', () => {
+	test('returns the grin1/tgrin1 slatepack address when the merchant advertised one', () => {
+		expect(deriveProofAddress('grin1qpzry9x8gf2tvdw0s3jn54kh')).toBe('grin1qpzry9x8gf2tvdw0s3jn54kh')
+		expect(deriveProofAddress('  tgrin1qpzry9x8gf2tvdw0s3jn54kh  ')).toBe('tgrin1qpzry9x8gf2tvdw0s3jn54kh')
 	})
 
-	test('rejects too-short or clearly-not-a-proof input', () => {
-		expect(looksLikeGrinPaymentProof('short')).toBe(false)
-		expect(looksLikeGrinPaymentProof('   ')).toBe(false)
-		expect(looksLikeGrinPaymentProof('has spaces and 🚀 emoji not allowed')).toBe(false)
+	test('returns null for nprofile/npub-only details (degraded mode, no proof address)', () => {
+		expect(deriveProofAddress('nprofile1qpzry9x8gf2tvdw0s3jn')).toBeNull()
+		expect(deriveProofAddress('npub1qpzry9x8gf2tvdw0s3jn')).toBeNull()
+		expect(deriveProofAddress('')).toBeNull()
+		expect(deriveProofAddress(null)).toBeNull()
+		expect(deriveProofAddress(undefined)).toBeNull()
+	})
+})
+
+describe('buildGoblinPayUri proof-on-request params (contract 4.1)', () => {
+	const grin1 = 'grin1qpzry9x8gf2tvdw0s3jn54kh'
+	const npub = 'npub1qpzry9x8gf2tvdw0s3jn'
+
+	test('emits proof, order, and notify when supplied, after amount/memo', () => {
+		const invoice = mintInvoiceNumber()
+		const uri = buildGoblinPayUri({
+			to: 'nprofile1abcdef',
+			amountNanogrin: 1_500_000_000,
+			memo: invoice,
+			proofAddress: grin1,
+			order: invoice,
+			notify: npub,
+		})
+		const parsed = parseGoblinPayUri(uri)
+		// recipient stays the nprofile transport identity, proof is the grin1 key.
+		expect(parsed.recipient).toBe('nprofile1abcdef')
+		expect(parsed.proof).toBe(grin1)
+		expect(parsed.order).toBe(invoice)
+		expect(parsed.notify).toBe(npub)
+		// amount/memo remain first for backward-compatible ordering.
+		expect(uri.indexOf('amount=')).toBeLessThan(uri.indexOf('proof='))
+	})
+
+	test('omits the proof params entirely when not supplied (proof-free send)', () => {
+		const uri = buildGoblinPayUri({ to: 'nprofile1abcdef', amountNanogrin: 1_000_000_000, memo: 'MM-1' })
+		expect(uri).not.toContain('proof=')
+		expect(uri).not.toContain('order=')
+		expect(uri).not.toContain('notify=')
+	})
+
+	test('a pre-feature parser (recipient/amount/memo only) is unaffected by the new params', () => {
+		const uri = buildGoblinPayUri({
+			to: 'x',
+			amountNanogrin: 1_000_000_000,
+			memo: 'MM-2',
+			proofAddress: grin1,
+			order: 'MM-2',
+			notify: npub,
+		})
+		const parsed = parseGoblinPayUri(uri)
+		expect(parsed.amount).toBe('1')
+		expect(parsed.memo).toBe('MM-2')
 	})
 })

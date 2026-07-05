@@ -76,12 +76,6 @@ export function InvoiceCard({ invoice, index, totalInvoices, isBuyer, isGenerati
 								Prepare Payment
 							</Button>
 						)}
-
-						{hasPayUri && (
-							<Button variant="ghost" size="sm" onClick={() => copyToClipboard(invoiceToUse.payUri || '')} title="Copy Goblin payment link">
-								<Copy className="w-4 h-4" />
-							</Button>
-						)}
 					</div>
 				</div>
 			)}
