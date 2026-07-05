@@ -1,20 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { NDKEvent } from '@nostr-dev-kit/ndk'
 import { ndkActions } from '@/lib/stores/ndk'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { QRCode } from '@/components/ui/qr-code'
 import { toast } from 'sonner'
 import { useDashboardTitle } from '@/routes/_dashboard-layout'
 import { useConfigQuery } from '@/queries/config'
 import { useNip05Settings, getNip05ForPubkey, getExpiredNip05ForPubkey } from '@/queries/nip05'
 import { nip05Actions } from '@/lib/stores/nip05'
-import { NIP05_PRICING, NIP05_GRIN_RECIPIENT_NPUB, NIP05_GRIN_RECIPIENT_PUBKEY } from '@/server/Nip05Manager'
-import { buildGoblinPayUri, formatGrinAmount, mintInvoiceNumber, looksLikeGrinPaymentProof } from '@/lib/grin'
-import { AlertCircle, CheckCircle2, Clock, Copy, Coins, RefreshCw, AtSign, ExternalLink, Check } from 'lucide-react'
+import { NIP05_PRICING, NIP05_GRIN_RECIPIENT_PUBKEY } from '@/server/Nip05Manager'
+import { formatGrinAmount } from '@/lib/grin'
+import { AlertCircle, CheckCircle2, Clock, Copy, Coins, RefreshCw, AtSign, ExternalLink, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -155,30 +154,55 @@ function NostrAddressComponent() {
 		toast.success('Nostr address copied to clipboard!')
 	}
 
-	// GRIN payment state for the purchase dialog
+	// Live purchase state: mint a REAL GoblinPay invoice, deep-link the wallet,
+	// poll status, and auto-claim the name once the payment confirms on-chain.
+	type PurchaseStatus = 'creating' | 'waiting' | 'confirming' | 'confirmed' | 'granting' | 'error'
 	const [paymentState, setPaymentState] = useState<{
 		isOpen: boolean
 		invoiceId: string
+		payUrl: string
 		username: string
 		tierKey: string
 		amountNanogrin: number
-		payUri: string
-		submitting: boolean
-		proofDraft: string
-		showProofImport: boolean
+		status: PurchaseStatus
+		confirmations: number
+		confirmationsRequired: number
+		error: string
 	}>({
 		isOpen: false,
 		invoiceId: '',
+		payUrl: '',
 		username: '',
 		tierKey: '',
 		amountNanogrin: 0,
-		payUri: '',
-		submitting: false,
-		proofDraft: '',
-		showProofImport: false,
+		status: 'creating',
+		confirmations: 0,
+		confirmationsRequired: 10,
+		error: '',
 	})
 
-	const handlePurchase = (tierKey: string) => {
+	// Guards a single auto-claim per confirmed invoice.
+	const claimedInvoiceRef = useRef<string>('')
+
+	const closePaymentDialog = () => setPaymentState((s) => ({ ...s, isOpen: false }))
+
+	const handleOpenInGoblin = useCallback(() => {
+		if (!paymentState.payUrl) return
+		window.location.href = paymentState.payUrl
+	}, [paymentState.payUrl])
+
+	const copyPaymentValue = useCallback(async (value: string) => {
+		try {
+			await navigator.clipboard.writeText(value)
+			toast.success('Copied to clipboard')
+		} catch {
+			toast.error('Could not copy to clipboard')
+		}
+	}, [])
+
+	// Ask the server to mint a real GoblinPay invoice for this name+tier, then
+	// open the pay dialog. The funds go wallet-to-wallet to the marketplace till.
+	const handlePurchase = async (tierKey: string) => {
 		const tier = NIP05_PRICING[tierKey]
 		if (!pubkey) {
 			toast.error('Please connect your Nostr account')
@@ -190,110 +214,137 @@ function NostrAddressComponent() {
 			return
 		}
 
-		const invoiceId = mintInvoiceNumber()
-		const payUri = buildGoblinPayUri({ to: NIP05_GRIN_RECIPIENT_NPUB, amountNanogrin: tier.nanogrin, memo: invoiceId })
-
+		const name = username.toLowerCase()
+		claimedInvoiceRef.current = ''
 		setPaymentState({
 			isOpen: true,
-			invoiceId,
-			username: username.toLowerCase(),
+			invoiceId: '',
+			payUrl: '',
+			username: name,
 			tierKey,
 			amountNanogrin: tier.nanogrin,
-			payUri,
-			submitting: false,
-			proofDraft: '',
-			showProofImport: false,
+			status: 'creating',
+			confirmations: 0,
+			confirmationsRequired: 10,
+			error: '',
 		})
-	}
 
-	const closePaymentDialog = () => setPaymentState((s) => ({ ...s, isOpen: false }))
-
-	const handleOpenInGoblin = useCallback(() => {
-		if (!paymentState.payUri) return
-		window.location.href = paymentState.payUri
-	}, [paymentState.payUri])
-
-	const copyPaymentValue = useCallback(async (value: string) => {
 		try {
-			await navigator.clipboard.writeText(value)
-			toast.success('Copied to clipboard')
-		} catch {
-			toast.error('Could not copy to clipboard')
-		}
-	}, [])
-
-	/**
-	 * Submit a buyer-signed Grin payment receipt (kind 17) to the server for
-	 * verification and registration. See handleGrinPurchase in
-	 * src/server/Nip05Manager.ts for the server-side check.
-	 */
-	const submitClaim = useCallback(async (event: unknown) => {
-		try {
-			const res = await fetch('/api/nip05/claim', {
+			const res = await fetch('/api/nip05/invoice', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ event }),
+				body: JSON.stringify({ name, tier: tierKey, pubkey }),
 			})
 			const data = await res.json()
 			if (!res.ok) {
-				toast.error(data?.error || 'Payment could not be verified')
-				return false
+				setPaymentState((s) => ({ ...s, status: 'error', error: data?.error || 'Could not create an invoice' }))
+				return
 			}
-			toast.success(`@${data.username} registered!`)
-			setPaymentState((s) => ({ ...s, isOpen: false }))
-			return true
+			setPaymentState((s) => ({ ...s, invoiceId: data.invoice_id, payUrl: data.pay_url, status: 'waiting' }))
 		} catch (error) {
-			console.error('Failed to submit NIP-05 payment claim:', error)
-			toast.error('Failed to verify payment')
-			return false
+			console.error('Failed to create NIP-05 invoice:', error)
+			setPaymentState((s) => ({ ...s, status: 'error', error: 'Could not reach the payment service' }))
 		}
-	}, [])
+	}
 
-	/**
-	 * Buyer pastes the receiver-signed Grin payment proof Goblin shows after the
-	 * payment finalizes. We sign our own kind-17 receipt (proving we, the logged
-	 * in buyer, made this payment) and submit it for verification — the same
-	 * "proof-import" shape checkout uses (see src/publish/payment.tsx).
-	 */
-	const handleProofImport = async () => {
-		const proof = paymentState.proofDraft.trim()
-		if (!looksLikeGrinPaymentProof(proof)) {
-			toast.error('That does not look like a Grin payment proof. Copy it from Goblin after the payment finalizes.')
-			return
-		}
+	// Sign the buyer's pubkey-ownership authorization (kind 17, carrying the
+	// invoice id) and submit it. The server grants the name only if GoblinPay
+	// reports the invoice confirmed on-chain. Runs once, when status hits confirmed.
+	const autoClaim = useCallback(async () => {
+		const { invoiceId, username: name, tierKey } = paymentState
+		if (!invoiceId || claimedInvoiceRef.current === invoiceId) return
+		claimedInvoiceRef.current = invoiceId
 
 		const ndk = ndkActions.getNDK()
 		const signer = ndkActions.getSigner()
 		if (!ndk || !signer) {
-			toast.error('No signer available')
+			setPaymentState((s) => ({ ...s, status: 'error', error: 'No signer available' }))
 			return
 		}
 
-		setPaymentState((s) => ({ ...s, submitting: true }))
+		setPaymentState((s) => ({ ...s, status: 'granting' }))
 		try {
-			const tier = NIP05_PRICING[paymentState.tierKey]
+			const tier = NIP05_PRICING[tierKey]
 			const event = new NDKEvent(ndk)
 			event.kind = 17
-			event.content = `NIP-05 Address: ${paymentState.username} (${tier?.label ?? ''})`
+			event.content = `NIP-05 Address: ${name} (${tier?.label ?? ''})`
 			event.tags = [
 				['p', NIP05_GRIN_RECIPIENT_PUBKEY],
 				['subject', 'nip05-receipt'],
-				['nip05', paymentState.username],
-				['payment-request', paymentState.invoiceId],
-				['payment', 'grin', paymentState.invoiceId, proof],
-				['amount', paymentState.amountNanogrin.toString()],
+				['nip05', name],
+				['invoice', invoiceId],
 			]
 			event.created_at = Math.floor(Date.now() / 1000)
 			await event.sign(signer)
 			await ndkActions.publishEvent(event)
-			await submitClaim(event.rawEvent())
+
+			const res = await fetch('/api/nip05/claim', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ event: event.rawEvent() }),
+			})
+			const data = await res.json()
+			if (!res.ok) {
+				setPaymentState((s) => ({ ...s, status: 'error', error: data?.error || 'The name could not be granted' }))
+				return
+			}
+			toast.success(`@${data.username} registered!`)
+			setPaymentState((s) => ({ ...s, isOpen: false }))
 		} catch (error) {
-			console.error('Failed to publish NIP-05 payment receipt:', error)
-			toast.error('Failed to publish payment proof')
-		} finally {
-			setPaymentState((s) => ({ ...s, submitting: false }))
+			console.error('Failed to claim NIP-05 name:', error)
+			setPaymentState((s) => ({ ...s, status: 'error', error: 'Failed to publish the claim' }))
 		}
-	}
+	}, [paymentState.invoiceId, paymentState.username, paymentState.tierKey])
+
+	// Poll invoice status while the dialog is open and the payment is unresolved.
+	// open -> waiting; paid -> confirming (n of 10); confirmed -> claim.
+	useEffect(() => {
+		const { isOpen, invoiceId, status } = paymentState
+		if (!isOpen || !invoiceId) return
+		if (status === 'confirmed' || status === 'granting' || status === 'error') return
+
+		let cancelled = false
+		const poll = async () => {
+			try {
+				const res = await fetch(`/api/nip05/invoice/${encodeURIComponent(invoiceId)}/status`)
+				if (!res.ok || cancelled) return
+				const data = await res.json()
+				if (cancelled) return
+				if (data.status === 'confirmed') {
+					setPaymentState((s) => ({
+						...s,
+						status: 'confirmed',
+						confirmations: data.confirmations ?? s.confirmations,
+						confirmationsRequired: data.confirmations_required ?? s.confirmationsRequired,
+					}))
+				} else if (data.status === 'paid') {
+					setPaymentState((s) => ({
+						...s,
+						status: 'confirming',
+						confirmations: data.confirmations ?? 0,
+						confirmationsRequired: data.confirmations_required ?? s.confirmationsRequired,
+					}))
+				} else {
+					setPaymentState((s) => ({ ...s, status: 'waiting' }))
+				}
+			} catch {
+				// transient; keep polling
+			}
+		}
+		poll()
+		const timer = setInterval(poll, 5000)
+		return () => {
+			cancelled = true
+			clearInterval(timer)
+		}
+	}, [paymentState.isOpen, paymentState.invoiceId, paymentState.status])
+
+	// Fire the claim exactly once when the payment reaches confirmed.
+	useEffect(() => {
+		if (paymentState.isOpen && paymentState.status === 'confirmed') {
+			autoClaim()
+		}
+	}, [paymentState.isOpen, paymentState.status, autoClaim])
 
 	if (!pubkey) {
 		return (
@@ -490,64 +541,88 @@ function NostrAddressComponent() {
 							</div>
 						</div>
 
-						<div className="flex justify-center">
-							<QRCode value={paymentState.payUri} size={220} level="M" />
-						</div>
-
-						<div className="flex justify-center">
-							<Button onClick={handleOpenInGoblin} size="lg" className="btn-black px-8">
-								<ExternalLink className="w-4 h-4 mr-2" />
-								Open in Goblin
-							</Button>
-						</div>
-
-						<button
-							type="button"
-							onClick={() => copyPaymentValue(paymentState.payUri)}
-							className="w-full flex items-center justify-between gap-2 rounded-lg border bg-gray-50 px-3 py-2 text-left hover:bg-gray-100"
-						>
-							<div className="min-w-0">
-								<div className="text-xs text-gray-500">Payment link</div>
-								<div className="text-sm font-mono truncate">{paymentState.payUri}</div>
+						{paymentState.status === 'creating' && (
+							<div className="flex flex-col items-center gap-2 py-8 text-gray-600">
+								<Loader2 className="w-6 h-6 animate-spin" />
+								<span className="text-sm">Creating your invoice…</span>
 							</div>
-							<Copy className="w-4 h-4 shrink-0 text-gray-500" />
-						</button>
+						)}
 
-						<p className="text-xs text-gray-500 text-center">
-							Scan or open the link in your Goblin wallet. Grin payments are interactive — after it finalizes, Goblin shows you a
-							receiver-signed payment proof.
-						</p>
-
-						<div className="border-t pt-4 space-y-3">
-							{!paymentState.showProofImport ? (
-								<Button variant="outline" className="w-full" onClick={() => setPaymentState((s) => ({ ...s, showProofImport: true }))}>
-									<Check className="w-4 h-4 mr-2" />I paid — import proof from Goblin
+						{paymentState.status === 'error' && (
+							<div className="flex flex-col items-center gap-3 py-6">
+								<AlertCircle className="w-6 h-6 text-red-500" />
+								<p className="text-sm text-red-600 text-center">{paymentState.error || 'Something went wrong'}</p>
+								<Button variant="outline" onClick={closePaymentDialog}>
+									Close
 								</Button>
-							) : (
-								<div className="space-y-2">
-									<label className="text-sm font-medium">Paste the payment proof from Goblin</label>
-									<Textarea
-										value={paymentState.proofDraft}
-										onChange={(e) => setPaymentState((s) => ({ ...s, proofDraft: e.target.value }))}
-										placeholder="Paste the Grin payment proof here"
-										rows={4}
-										className="font-mono text-xs"
-									/>
-									<div className="flex gap-2">
-										<Button
-											onClick={handleProofImport}
-											disabled={!paymentState.proofDraft.trim() || paymentState.submitting}
-											className="flex-1 btn-black"
+							</div>
+						)}
+
+						{(paymentState.status === 'waiting' ||
+							paymentState.status === 'confirming' ||
+							paymentState.status === 'confirmed' ||
+							paymentState.status === 'granting') && (
+							<>
+								{paymentState.status === 'waiting' ? (
+									<>
+										<div className="flex justify-center">
+											<QRCode value={paymentState.payUrl} size={220} level="M" />
+										</div>
+
+										<div className="flex justify-center">
+											<Button onClick={handleOpenInGoblin} size="lg" className="btn-black px-8">
+												<ExternalLink className="w-4 h-4 mr-2" />
+												Open in Goblin
+											</Button>
+										</div>
+
+										<button
+											type="button"
+											onClick={() => copyPaymentValue(paymentState.payUrl)}
+											className="w-full flex items-center justify-between gap-2 rounded-lg border bg-gray-50 px-3 py-2 text-left hover:bg-gray-100"
 										>
-											{paymentState.submitting ? 'Verifying…' : 'Submit proof'}
-										</Button>
-										<Button variant="ghost" onClick={() => setPaymentState((s) => ({ ...s, showProofImport: false }))}>
-											Cancel
-										</Button>
+											<div className="min-w-0">
+												<div className="text-xs text-gray-500">Payment link</div>
+												<div className="text-sm font-mono truncate">{paymentState.payUrl}</div>
+											</div>
+											<Copy className="w-4 h-4 shrink-0 text-gray-500" />
+										</button>
+
+										<div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+											<Loader2 className="w-4 h-4 animate-spin" />
+											Waiting for payment…
+										</div>
+									</>
+								) : (
+									<div className="flex flex-col items-center gap-3 py-6">
+										{paymentState.status === 'granting' ? (
+											<>
+												<Loader2 className="w-6 h-6 animate-spin text-green-600" />
+												<p className="text-sm font-medium text-green-700">Payment confirmed — activating your name…</p>
+											</>
+										) : paymentState.status === 'confirmed' ? (
+											<>
+												<CheckCircle2 className="w-6 h-6 text-green-600" />
+												<p className="text-sm font-medium text-green-700">Payment confirmed</p>
+											</>
+										) : (
+											<>
+												<Loader2 className="w-6 h-6 animate-spin text-yellow-600" />
+												<p className="text-sm font-medium">Payment received — confirming on-chain</p>
+												<p className="text-sm text-gray-600">
+													{paymentState.confirmations} of {paymentState.confirmationsRequired} confirmations
+												</p>
+											</>
+										)}
 									</div>
-								</div>
-							)}
-						</div>
+								)}
+
+								<p className="text-xs text-gray-500 text-center border-t pt-4">
+									Your payment goes wallet-to-wallet to the marketplace till wallet. The name activates automatically after 10 network
+									confirmations, typically a few minutes. You can keep this open or come back.
+								</p>
+							</>
+						)}
 					</div>
 				</DialogContent>
 			</Dialog>

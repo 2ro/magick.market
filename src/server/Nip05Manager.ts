@@ -3,7 +3,9 @@ import { verifyEvent, type Event } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 import { RegistryManager, type RegistryEntry } from './RegistryManager'
 import type { EventSigner } from './EventSigner'
-import { grinToNanogrin, nanogrinToGrin } from '@/lib/grin'
+import { grinToNanogrin } from '@/lib/grin'
+import { buildNameOrderRef, decideNameGrant, type GoblinPayInvoiceView } from './nameGrant'
+import type { CreatedNameInvoice } from './goblinPayServer'
 
 // Reserved NIP-05 names that cannot be registered
 const RESERVED_NAMES = new Set([
@@ -72,6 +74,8 @@ export const NIP05_GRIN_RECIPIENT_PUBKEY: string = decodedRecipient.data
 
 export interface Nip05Entry extends RegistryEntry {
 	username: string
+	/** The GoblinPay invoice consumed to grant this entry (reuse guard). */
+	invoiceId?: string
 }
 
 export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
@@ -79,6 +83,10 @@ export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 
 	// Dedup set for processed Grin payment-claim events.
 	private processedGrinClaims: Set<string> = new Set()
+
+	// GoblinPay invoice ids already spent on a grant. Rebuilt from the registry
+	// on load so reuse is rejected across restarts.
+	private consumedInvoiceIds: Set<string> = new Set()
 
 	constructor(eventSigner: EventSigner) {
 		super(
@@ -115,12 +123,19 @@ export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 					username: tag[1].toLowerCase(),
 					pubkey: tag[2],
 					validUntil: parseInt(tag[3]) || 0,
+					invoiceId: tag[4] || undefined,
 				},
 			}))
 	}
 
 	protected buildRegistryTags(entries: Map<string, Nip05Entry>): string[][] {
-		return Array.from(entries.values()).map((entry) => ['nip05', entry.username, entry.pubkey, entry.validUntil.toString()])
+		return Array.from(entries.values()).map((entry) => [
+			'nip05',
+			entry.username,
+			entry.pubkey,
+			entry.validUntil.toString(),
+			...(entry.invoiceId ? [entry.invoiceId] : []),
+		])
 	}
 
 	protected createEntry(key: string, pubkey: string, validUntil: number): Nip05Entry {
@@ -129,12 +144,15 @@ export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 
 	protected onEntryRegistered(key: string, entry: Nip05Entry): void {
 		this.pubkeyToUsername.set(entry.pubkey, key)
+		if (entry.invoiceId) this.consumedInvoiceIds.add(entry.invoiceId)
 	}
 
 	protected onRegistryRebuilt(): void {
 		this.pubkeyToUsername.clear()
+		this.consumedInvoiceIds.clear()
 		for (const [key, entry] of Array.from(this.registry.entries())) {
 			this.pubkeyToUsername.set(entry.pubkey, key)
+			if (entry.invoiceId) this.consumedInvoiceIds.add(entry.invoiceId)
 		}
 	}
 
@@ -198,19 +216,59 @@ export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 	}
 
 	/**
-	 * Verify a buyer-signed Grin payment receipt (kind 17) and register the
-	 * NIP-05 username it pays for.
+	 * Create a REAL GoblinPay invoice for a NIP-05 name purchase.
 	 *
-	 * The receipt is signed by the buyer's own Nostr key (their real, logged-in
-	 * identity — not a seller's or the platform's), published client-side
-	 * either after the buyer pastes the receiver-signed Grin payment proof
-	 * Goblin shows them, mirroring the checkout "proof-import" path in
-	 * publishPaymentReceipt (src/publish/payment.tsx). Trust comes entirely
-	 * from the Nostr signature: `event.pubkey` is the verified registrant, so
-	 * there is nothing else for the caller to authenticate.
+	 * Validates the name is available and the tier exists, then mints an invoice
+	 * whose funds land in the marketplace till wallet. The `order_ref` binds the
+	 * invoice to `nip05:<name>:<buyerPubkey>` so only that name+buyer can later
+	 * consume it. Returns the invoice id and hosted pay URL for the client to
+	 * deep-link into the wallet and poll.
+	 */
+	public async createPurchaseInvoice(
+		params: { name: string; tierKey: string; buyerPubkey: string },
+		createInvoiceFn: (p: { amountNanogrin: number; orderRef: string; memo: string }) => Promise<CreatedNameInvoice>,
+	): Promise<{ ok: true; invoiceId: string; payUrl: string } | { ok: false; error: string; status: number }> {
+		const name = params.name?.toLowerCase()
+		const tier = NIP05_PRICING[params.tierKey]
+		if (!tier) {
+			return { ok: false, error: 'Unknown pricing tier', status: 400 }
+		}
+		if (!name || !this.isUsernameAvailable(name)) {
+			return { ok: false, error: `NIP-05 username unavailable: ${name}`, status: 400 }
+		}
+		const existing = this.registry.get(name)
+		if (existing && existing.pubkey !== params.buyerPubkey && existing.validUntil > Math.floor(Date.now() / 1000)) {
+			return { ok: false, error: `NIP-05 username already taken: ${name}`, status: 400 }
+		}
+		try {
+			const invoice = await createInvoiceFn({
+				amountNanogrin: tier.nanogrin,
+				orderRef: buildNameOrderRef('nip05', name, params.buyerPubkey),
+				memo: `magick.market NIP-05 name ${name} (${tier.label})`,
+			})
+			return { ok: true, invoiceId: invoice.invoiceId, payUrl: invoice.payUrl }
+		} catch (error) {
+			console.error('[nip05] GoblinPay invoice creation failed:', error)
+			return { ok: false, error: 'Could not create a payment invoice', status: 502 }
+		}
+	}
+
+	/**
+	 * Verify a buyer-signed claim (kind 17) against a CONFIRMED GoblinPay invoice
+	 * and register the NIP-05 username it pays for.
+	 *
+	 * The kind-17 event is the buyer's pubkey-ownership authorization: its
+	 * signature proves `event.pubkey` (the registrant) controls the key, and it
+	 * carries `['invoice', invoiceId]`. Payment trust comes entirely from
+	 * GoblinPay: we fetch the invoice, require `status === "confirmed"` (10
+	 * on-chain confirmations), require its `order_ref` to equal
+	 * `nip05:<name>:<event.pubkey>`, and require the paid amount to clear a tier.
+	 * The consumed invoice id is persisted on the entry and rejected on reuse.
+	 * If GoblinPay is unreachable the grant fails closed.
 	 */
 	public async handleGrinPurchase(
 		event: Event,
+		fetchInvoice: (invoiceId: string) => Promise<GoblinPayInvoiceView | null>,
 	): Promise<{ ok: true; username: string; validUntil: number } | { ok: false; error: string; status: number }> {
 		if (event?.kind !== 17) {
 			return { ok: false, error: 'Not a payment receipt (kind 17)', status: 400 }
@@ -232,10 +290,9 @@ export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 			return { ok: false, error: 'Receipt missing nip05 tag', status: 400 }
 		}
 
-		const amountTag = event.tags.find((t) => t[0] === 'amount')?.[1]
-		const amountNanogrin = amountTag ? parseInt(amountTag, 10) : NaN
-		if (!Number.isFinite(amountNanogrin) || amountNanogrin <= 0) {
-			return { ok: false, error: 'Receipt missing a valid amount tag', status: 400 }
+		const invoiceId = event.tags.find((t) => t[0] === 'invoice')?.[1]
+		if (!invoiceId) {
+			return { ok: false, error: 'Receipt missing invoice tag', status: 400 }
 		}
 
 		const requesterPubkey = event.pubkey
@@ -244,9 +301,18 @@ export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 			return { ok: false, error: validationError, status: 400 }
 		}
 
-		const validitySeconds = matchNip05PricingTier(amountNanogrin)
-		if (validitySeconds === null) {
-			return { ok: false, error: `Insufficient payment: ${nanogrinToGrin(amountNanogrin)} GRIN`, status: 400 }
+		const invoice = await fetchInvoice(invoiceId)
+		const decision = decideNameGrant({
+			invoice,
+			invoiceId,
+			claimedName: username,
+			buyerPubkey: requesterPubkey,
+			orderRefPrefix: 'nip05',
+			matchTier: matchNip05PricingTier,
+			isConsumed: (id) => this.consumedInvoiceIds.has(id),
+		})
+		if (!decision.ok) {
+			return decision
 		}
 
 		this.processedGrinClaims.add(event.id)
@@ -256,13 +322,14 @@ export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 		}
 
 		const now = Math.floor(Date.now() / 1000)
-		let validUntil = now + validitySeconds
+		let validUntil = now + decision.validitySeconds
 		const existing = this.registry.get(username)
 		if (existing && existing.pubkey === requesterPubkey && existing.validUntil > now) {
-			validUntil = existing.validUntil + validitySeconds
+			validUntil = existing.validUntil + decision.validitySeconds
 		}
 
 		const entry = this.createEntry(username, requesterPubkey, validUntil)
+		entry.invoiceId = invoiceId
 		this.registry.set(username, entry)
 		this.onEntryRegistered?.(username, entry)
 		await this.publishRegistry()

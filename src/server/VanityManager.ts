@@ -3,7 +3,9 @@ import { verifyEvent, type Event } from 'nostr-tools/pure'
 import { RegistryManager, type RegistryEntry } from './RegistryManager'
 import type { EventSigner } from './EventSigner'
 import { NIP05_GRIN_RECIPIENT_NPUB, NIP05_GRIN_RECIPIENT_PUBKEY } from './Nip05Manager'
-import { grinToNanogrin, nanogrinToGrin } from '@/lib/grin'
+import { grinToNanogrin } from '@/lib/grin'
+import { buildNameOrderRef, decideNameGrant, type GoblinPayInvoiceView } from './nameGrant'
+import type { CreatedNameInvoice } from './goblinPayServer'
 
 // Reserved vanity names that cannot be registered
 const RESERVED_NAMES = new Set([
@@ -88,6 +90,8 @@ export const VANITY_GRIN_RECIPIENT_PUBKEY = NIP05_GRIN_RECIPIENT_PUBKEY
 
 export interface VanityEntry extends RegistryEntry {
 	vanityName: string
+	/** The GoblinPay invoice consumed to grant this entry (reuse guard). */
+	invoiceId?: string
 }
 
 export class VanityManagerImpl extends RegistryManager<VanityEntry> {
@@ -95,6 +99,10 @@ export class VanityManagerImpl extends RegistryManager<VanityEntry> {
 
 	// Dedup set for processed Grin payment-claim events.
 	private processedGrinClaims: Set<string> = new Set()
+
+	// GoblinPay invoice ids already spent on a grant. Rebuilt from the registry
+	// on load so reuse is rejected across restarts.
+	private consumedInvoiceIds: Set<string> = new Set()
 
 	constructor(eventSigner: EventSigner) {
 		super(
@@ -131,12 +139,19 @@ export class VanityManagerImpl extends RegistryManager<VanityEntry> {
 					vanityName: tag[1].toLowerCase(),
 					pubkey: tag[2],
 					validUntil: parseInt(tag[3]) || 0,
+					invoiceId: tag[4] || undefined,
 				},
 			}))
 	}
 
 	protected buildRegistryTags(entries: Map<string, VanityEntry>): string[][] {
-		return Array.from(entries.values()).map((entry) => ['vanity', entry.vanityName, entry.pubkey, entry.validUntil.toString()])
+		return Array.from(entries.values()).map((entry) => [
+			'vanity',
+			entry.vanityName,
+			entry.pubkey,
+			entry.validUntil.toString(),
+			...(entry.invoiceId ? [entry.invoiceId] : []),
+		])
 	}
 
 	protected createEntry(key: string, pubkey: string, validUntil: number): VanityEntry {
@@ -147,12 +162,15 @@ export class VanityManagerImpl extends RegistryManager<VanityEntry> {
 
 	protected onEntryRegistered(key: string, entry: VanityEntry): void {
 		this.pubkeyToVanity.set(entry.pubkey, key)
+		if (entry.invoiceId) this.consumedInvoiceIds.add(entry.invoiceId)
 	}
 
 	protected onRegistryRebuilt(): void {
 		this.pubkeyToVanity.clear()
+		this.consumedInvoiceIds.clear()
 		for (const [key, entry] of Array.from(this.registry.entries())) {
 			this.pubkeyToVanity.set(entry.pubkey, key)
+			if (entry.invoiceId) this.consumedInvoiceIds.add(entry.invoiceId)
 		}
 	}
 
@@ -204,13 +222,51 @@ export class VanityManagerImpl extends RegistryManager<VanityEntry> {
 	}
 
 	/**
-	 * Verify a buyer-signed Grin payment receipt (kind 17) and register the
-	 * vanity URL it pays for. Same shape and trust model as
-	 * Nip05ManagerImpl.handleGrinPurchase: the receipt is signed by the buyer's
-	 * own logged-in Nostr key, so `event.pubkey` is the verified registrant.
+	 * Create a REAL GoblinPay invoice for a vanity URL purchase. Same shape and
+	 * trust model as Nip05ManagerImpl.createPurchaseInvoice; order_ref binds the
+	 * invoice to `vanity:<name>:<buyerPubkey>`.
+	 */
+	public async createPurchaseInvoice(
+		params: { name: string; tierKey: string; buyerPubkey: string },
+		createInvoiceFn: (p: { amountNanogrin: number; orderRef: string; memo: string }) => Promise<CreatedNameInvoice>,
+	): Promise<{ ok: true; invoiceId: string; payUrl: string } | { ok: false; error: string; status: number }> {
+		const name = params.name?.toLowerCase()
+		const tier = VANITY_PRICING[params.tierKey]
+		if (!tier) {
+			return { ok: false, error: 'Unknown pricing tier', status: 400 }
+		}
+		if (!name || !this.isVanityAvailable(name)) {
+			return { ok: false, error: `Vanity name unavailable: ${name}`, status: 400 }
+		}
+		const existing = this.registry.get(name)
+		if (existing && existing.pubkey !== params.buyerPubkey && existing.validUntil > Math.floor(Date.now() / 1000)) {
+			return { ok: false, error: `Vanity name already taken: ${name}`, status: 400 }
+		}
+		try {
+			const invoice = await createInvoiceFn({
+				amountNanogrin: tier.nanogrin,
+				orderRef: buildNameOrderRef('vanity', name, params.buyerPubkey),
+				memo: `magick.market vanity URL /${name} (${tier.label})`,
+			})
+			return { ok: true, invoiceId: invoice.invoiceId, payUrl: invoice.payUrl }
+		} catch (error) {
+			console.error('[vanity] GoblinPay invoice creation failed:', error)
+			return { ok: false, error: 'Could not create a payment invoice', status: 502 }
+		}
+	}
+
+	/**
+	 * Verify a buyer-signed claim (kind 17) against a CONFIRMED GoblinPay invoice
+	 * and register the vanity URL it pays for. Same trust model as
+	 * Nip05ManagerImpl.handleGrinPurchase: the kind-17 event authorizes the
+	 * buyer's pubkey, and the grant gate is a confirmed GoblinPay invoice whose
+	 * order_ref equals `vanity:<name>:<event.pubkey>` and whose amount clears a
+	 * tier. Consumed invoice ids are persisted and reuse is rejected; an
+	 * unreachable GoblinPay fails closed.
 	 */
 	public async handleGrinPurchase(
 		event: Event,
+		fetchInvoice: (invoiceId: string) => Promise<GoblinPayInvoiceView | null>,
 	): Promise<{ ok: true; vanityName: string; validUntil: number } | { ok: false; error: string; status: number }> {
 		if (event?.kind !== 17) {
 			return { ok: false, error: 'Not a payment receipt (kind 17)', status: 400 }
@@ -232,10 +288,9 @@ export class VanityManagerImpl extends RegistryManager<VanityEntry> {
 			return { ok: false, error: 'Receipt missing vanity tag', status: 400 }
 		}
 
-		const amountTag = event.tags.find((t) => t[0] === 'amount')?.[1]
-		const amountNanogrin = amountTag ? parseInt(amountTag, 10) : NaN
-		if (!Number.isFinite(amountNanogrin) || amountNanogrin <= 0) {
-			return { ok: false, error: 'Receipt missing a valid amount tag', status: 400 }
+		const invoiceId = event.tags.find((t) => t[0] === 'invoice')?.[1]
+		if (!invoiceId) {
+			return { ok: false, error: 'Receipt missing invoice tag', status: 400 }
 		}
 
 		const requesterPubkey = event.pubkey
@@ -244,9 +299,18 @@ export class VanityManagerImpl extends RegistryManager<VanityEntry> {
 			return { ok: false, error: validationError, status: 400 }
 		}
 
-		const validitySeconds = matchVanityPricingTier(amountNanogrin)
-		if (validitySeconds === null) {
-			return { ok: false, error: `Insufficient payment: ${nanogrinToGrin(amountNanogrin)} GRIN`, status: 400 }
+		const invoice = await fetchInvoice(invoiceId)
+		const decision = decideNameGrant({
+			invoice,
+			invoiceId,
+			claimedName: vanityName,
+			buyerPubkey: requesterPubkey,
+			orderRefPrefix: 'vanity',
+			matchTier: matchVanityPricingTier,
+			isConsumed: (id) => this.consumedInvoiceIds.has(id),
+		})
+		if (!decision.ok) {
+			return decision
 		}
 
 		this.processedGrinClaims.add(event.id)
@@ -256,13 +320,14 @@ export class VanityManagerImpl extends RegistryManager<VanityEntry> {
 		}
 
 		const now = Math.floor(Date.now() / 1000)
-		let validUntil = now + validitySeconds
+		let validUntil = now + decision.validitySeconds
 		const existing = this.registry.get(vanityName)
 		if (existing && existing.pubkey === requesterPubkey && existing.validUntil > now) {
-			validUntil = existing.validUntil + validitySeconds
+			validUntil = existing.validUntil + decision.validitySeconds
 		}
 
 		const entry = this.createEntry(vanityName, requesterPubkey, validUntil)
+		entry.invoiceId = invoiceId
 		this.registry.set(vanityName, entry)
 		this.onEntryRegistered?.(vanityName, entry)
 		await this.publishRegistry()
