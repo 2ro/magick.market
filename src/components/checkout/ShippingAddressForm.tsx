@@ -6,16 +6,22 @@ import { CountryCombobox, isValidCountry } from '@/components/checkout/CountryCo
 import { CityCombobox } from '@/components/checkout/CityCombobox'
 import { PhoneInput } from '@/components/checkout/PhoneInput'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { CheckoutDeliveryRequirements, DeliveryContactType } from '@/lib/checkout/deliveryRequirements'
-import { DELIVERY_CONTACT_CHANNELS, DELIVERY_CONTACT_CHANNEL_LIST, isValidDeliveryContact } from '@/lib/checkout/deliveryRequirements'
+import type { CheckoutDeliveryRequirements } from '@/lib/checkout/deliveryRequirements'
+import {
+	getDeliveryContactOptions,
+	isValidResolvedDeliveryContact,
+	resolveDeliveryContactOption,
+} from '@/lib/checkout/deliveryRequirements'
 import { cartStore } from '@/lib/stores/cart'
 import { useStore } from '@tanstack/react-store'
 import { getShippingEvent, getShippingPickupAddressString, getShippingService, getShippingTitle } from '@/queries/shipping'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 export interface CheckoutFormData {
 	name: string
-	contactType: DeliveryContactType
+	// The seller-enabled contact method the buyer picked: a known channel id
+	// (email/signal/matrix/session/simplex) or a seller's custom free-text entry.
+	contactType: string
 	email: string
 	phone: string
 	firstLineOfAddress: string
@@ -57,6 +63,26 @@ export function ShippingAddressForm({
 	const needsPhysicalAddress = deliveryRequirements.isResolved ? deliveryRequirements.needsPhysicalAddress : true
 	const needsDigitalDeliveryContact = deliveryRequirements.isResolved && deliveryRequirements.needsDigitalDeliveryContact
 	const hasDigitalDelivery = deliveryRequirements.hasDigitalDelivery
+
+	// Seller-controlled: the buyer picks from the methods the seller enabled for the
+	// cart's digital product(s). Empty seller set (older products) falls back to the
+	// full default channel list so checkout never breaks.
+	const contactOptions = useMemo(
+		() => getDeliveryContactOptions(deliveryRequirements.digitalDeliveryContactMethods),
+		[deliveryRequirements.digitalDeliveryContactMethods],
+	)
+
+	// Keep the selected contact method inside the seller-enabled set. If the current
+	// value is not offered (e.g. default 'email' but the seller only offers Signal),
+	// snap to the first allowed option.
+	useEffect(() => {
+		const allowed = contactOptions.map((option) => option.value)
+		if (allowed.length === 0) return
+		const current = form.getFieldValue?.('contactType')
+		if (!allowed.includes(current)) {
+			form.setFieldValue?.('contactType', allowed[0])
+		}
+	}, [contactOptions, form])
 	const deliveryRequirementsBlocked =
 		isDeliveryRequirementsLoading || !!deliveryRequirementsError || (hasAllShippingMethods && !deliveryRequirements.isResolved)
 
@@ -164,7 +190,7 @@ export function ShippingAddressForm({
 									<Select
 										value={field.state.value}
 										onValueChange={(value) => {
-											field.handleChange(value as DeliveryContactType)
+											field.handleChange(value)
 											// Re-run the handle field's validator against the newly selected channel.
 											form.validateField?.('email', 'change')
 										}}
@@ -173,7 +199,7 @@ export function ShippingAddressForm({
 											<SelectValue placeholder="Select a contact method" />
 										</SelectTrigger>
 										<SelectContent>
-											{DELIVERY_CONTACT_CHANNEL_LIST.map((channel) => (
+											{contactOptions.map((channel) => (
 												<SelectItem key={channel.value} value={channel.value} data-testid={`contact-method-${channel.value}`}>
 													{channel.label}
 												</SelectItem>
@@ -185,9 +211,9 @@ export function ShippingAddressForm({
 						/>
 
 						<form.Subscribe
-							selector={(state: any) => (state.values.contactType || 'email') as DeliveryContactType}
-							children={(contactType: DeliveryContactType) => {
-								const channel = DELIVERY_CONTACT_CHANNELS[contactType]
+							selector={(state: any) => (state.values.contactType || contactOptions[0]?.value || 'email') as string}
+							children={(contactType: string) => {
+								const channel = resolveDeliveryContactOption(contactType)
 								return (
 									<form.Field
 										name="email"
@@ -196,7 +222,7 @@ export function ShippingAddressForm({
 												if (needsDigitalDeliveryContact && !value.trim()) {
 													return 'Digital delivery contact is required'
 												}
-												if (value.trim() && !isValidDeliveryContact(contactType, value))
+												if (value.trim() && !isValidResolvedDeliveryContact(contactType, value))
 													return `Please enter a valid ${channel.label} contact`
 												return undefined
 											},

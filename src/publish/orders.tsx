@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { CheckoutFormData } from '@/components/checkout/ShippingAddressForm'
 import {
 	DEFAULT_DELIVERY_CONTACT_TYPE,
-	isValidDeliveryContact,
+	isValidResolvedDeliveryContact,
 	resolveCheckoutDeliveryRequirements,
 	type CheckoutDeliveryRequirements,
 } from '@/lib/checkout/deliveryRequirements'
@@ -793,7 +793,7 @@ function createPrivateOrderDeliveryDetails(params: {
 
 	const contactType = shippingData.contactType || DEFAULT_DELIVERY_CONTACT_TYPE
 	const contactHandle = trimOptional(shippingData.email)
-	if (contactHandle && isValidDeliveryContact(contactType, contactHandle)) {
+	if (contactHandle && isValidResolvedDeliveryContact(contactType, contactHandle)) {
 		if (contactType === 'email') {
 			delivery.email = contactHandle
 		} else {
@@ -888,7 +888,7 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 
 	const buyerContactType = shippingData.contactType || DEFAULT_DELIVERY_CONTACT_TYPE
 	const buyerContact = shippingData.email.trim()
-	if (buyerContact && !isValidDeliveryContact(buyerContactType, buyerContact)) {
+	if (buyerContact && !isValidResolvedDeliveryContact(buyerContactType, buyerContact)) {
 		throw new Error('Enter a valid delivery contact before creating the order')
 	}
 
@@ -905,7 +905,7 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 			throw new Error('Delivery requirements could not be verified for one or more selected shipping options')
 		}
 
-		if (requirements.needsDigitalDeliveryContact && !isValidDeliveryContact(buyerContactType, buyerContact)) {
+		if (requirements.needsDigitalDeliveryContact && !isValidResolvedDeliveryContact(buyerContactType, buyerContact)) {
 			throw new Error('Digital delivery contact is required before creating the order')
 		}
 
