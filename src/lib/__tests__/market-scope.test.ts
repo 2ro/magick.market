@@ -6,6 +6,7 @@ import {
 	filterGrinOnly,
 	filterToAllowlist,
 	resolveAllowlist,
+	resolveOwnerStallPubkey,
 	buildScopedFilter,
 	filterPubkeysToAllowlist,
 } from '@/lib/market-scope'
@@ -98,6 +99,28 @@ describe('filterToAllowlist', () => {
 const owner = 'o'.repeat(64)
 const m1 = '1'.repeat(64)
 const m2 = '2'.repeat(64)
+
+describe('resolveOwnerStallPubkey — closed-default scopes to the operator STALL key, not the app key', () => {
+	const appKey = 'a'.repeat(64) // appPublicKey (automation key; never authors a product)
+	// Regression: the market used to scope the closed-default catalog to appPublicKey,
+	// which authors no products, so every browse surface came back empty. It must scope
+	// to the operator's own stall key (appSettings.ownerPk) instead.
+	test('prefers the operator ownerPk over the app automation key', () => {
+		expect(resolveOwnerStallPubkey(owner, appKey)).toBe(owner)
+	})
+	test('the closed-default allowlist ends up scoped to the operator stall, so their own products pass', () => {
+		const allowlist = resolveAllowlist([], resolveOwnerStallPubkey(owner, appKey))
+		expect(allowlist).toEqual([owner])
+		expect(filterPubkeysToAllowlist([owner, m1], allowlist)).toEqual([owner])
+	})
+	test('falls back to the app key only when no ownerPk is configured', () => {
+		expect(resolveOwnerStallPubkey(undefined, appKey)).toBe(appKey)
+	})
+	test('undefined when neither key is configured (market cannot be scoped)', () => {
+		expect(resolveOwnerStallPubkey(undefined, undefined)).toBeUndefined()
+		expect(resolveOwnerStallPubkey('', '')).toBeUndefined()
+	})
+})
 
 describe('resolveAllowlist — closed by default', () => {
 	test('no published list scopes to the operator OWN pubkey (never the firehose)', () => {

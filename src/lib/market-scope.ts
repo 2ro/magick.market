@@ -99,6 +99,22 @@ export const buildScopedFilter = (filter: NDKFilter, allowlist: string[]): { fil
 export const filterPubkeysToAllowlist = (pubkeys: string[], allowlist: string[]): string[] =>
 	allowlist.length === 0 ? pubkeys : pubkeys.filter((pk) => allowlist.includes(pk))
 
+/**
+ * The pubkey the CLOSED-BY-DEFAULT market scopes to when the operator has
+ * published no `market_merchants` list: the operator's own STALL identity
+ * (`appSettings.ownerPk` — the human Nostr key they sign product listings with),
+ * NOT the app's automation key (`appPublicKey`, derived from APP_PRIVATE_KEY,
+ * which signs app-settings/allowlist events but never authors a product).
+ *
+ * These two keys differ on a real deployment, so scoping the default catalog to
+ * `appPublicKey` filtered out the operator's OWN stall and left every browse
+ * surface empty (`authors: [appPublicKey]` matches no product). Falls back to
+ * `appPublicKey` only when no ownerPk is configured, and to undefined when
+ * neither exists. Pure — safe to unit-test.
+ */
+export const resolveOwnerStallPubkey = (ownerPk: string | undefined, appPublicKey: string | undefined): string | undefined =>
+	ownerPk || appPublicKey || undefined
+
 let cachedAllowlist: { pubkeys: string[]; fetchedAt: number } | null = null
 const ALLOWLIST_TTL_MS = 60_000
 
@@ -111,10 +127,12 @@ export const clearMerchantAllowlistCache = (): void => {
  * The operator-curated set of merchant pubkeys.
  *
  * CLOSED BY DEFAULT: when the operator has published no `market_merchants` list
- * (or published an empty one), this returns `[appPubkey]` — the operator's own
- * pubkey — so a fresh / self-hosted instance scopes the market to the operator's
- * own stall instead of leaking the connected relay's firehose. Publishing a list
- * via the dashboard replaces this with the named merchants.
+ * (or published an empty one), this returns `[ownerStallPubkey]` — the operator's
+ * own STALL key (`appSettings.ownerPk`) — so a fresh / self-hosted instance scopes
+ * the market to the operator's own stall instead of leaking the connected relay's
+ * firehose. Publishing a list via the dashboard replaces this with the named
+ * merchants. The `market_merchants` list itself is authored under `appPublicKey`
+ * (the app signs app-settings events), which is why we fetch it by that key.
  *
  * Returns [] only when no operator pubkey is configured at all (no app settings),
  * in which case the market cannot be scoped to anyone and falls back to unscoped.
@@ -132,8 +150,11 @@ export const getMerchantAllowlist = async (): Promise<string[]> => {
 		'#d': [MERCHANT_ALLOWLIST_DTAG],
 	})
 	const listed = event ? event.tags.filter((t) => t[0] === 'p' && t[1]).map((t) => t[1]) : []
-	// Closed by default: with no configured allowlist, scope to the operator's own pubkey.
-	const pubkeys = resolveAllowlist(listed, appPubkey)
+	// Closed by default: with no published list, scope to the operator's own STALL
+	// key (ownerPk) — the key they sign products with — NOT the app automation key,
+	// which never authors a product (that left every browse surface empty).
+	const ownerStallPubkey = resolveOwnerStallPubkey(configStore.state.config.appSettings?.ownerPk, appPubkey)
+	const pubkeys = resolveAllowlist(listed, ownerStallPubkey)
 	cachedAllowlist = { pubkeys, fetchedAt: Date.now() }
 	return pubkeys
 }
