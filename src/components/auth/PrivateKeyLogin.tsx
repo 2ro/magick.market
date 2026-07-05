@@ -356,6 +356,10 @@ export function PrivateKeyLogin({ onError, onSuccess }: PrivateKeyLoginProps) {
 					<span className="font-medium">Nostr key</span>, enter your wallet password, tap <span className="font-medium">Copy nsec</span>,
 					then paste it here.
 				</p>
+				<p className="text-sm text-muted-foreground">
+					Your key is encrypted with your password and stored only on this device. It never leaves your device and never touches our
+					servers.
+				</p>
 				<div className="relative max-w-full" ref={privateKeyInputRef}>
 					<Input
 						id="private-key"
