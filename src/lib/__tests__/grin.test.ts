@@ -197,6 +197,15 @@ describe('buildGoblinPayUri proof-on-request params (contract 4.1)', () => {
 		expect(uri).not.toContain('notify=')
 	})
 
+	test('the order param value (the MM- invoice number) fits the wallet cap of 64 bytes and needs no escaping', () => {
+		// Wallet-side rule (contract 4.1): order is capped at 64 bytes after
+		// percent-decode and control-stripped. The MM-<24 hex> invoice number is
+		// 27 ASCII bytes with no control chars, so it always survives verbatim.
+		const invoice = mintInvoiceNumber()
+		expect(new TextEncoder().encode(invoice).length).toBeLessThanOrEqual(64)
+		expect(encodeURIComponent(invoice)).toBe(invoice)
+	})
+
 	test('a pre-feature parser (recipient/amount/memo only) is unaffected by the new params', () => {
 		const uri = buildGoblinPayUri({
 			to: 'x',

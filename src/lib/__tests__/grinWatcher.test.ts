@@ -30,6 +30,55 @@ describe('receiptMatchesInvoice (contract 4.5 matching)', () => {
 	})
 })
 
+describe('wallet interop: the EXACT committed receipt shapes', () => {
+	// The wallet's plain receipt (4.3.1), byte-for-byte as the wallet build emits
+	// it: payment-request tag ONLY (no order tag), empty proof field, goblin=1.
+	// If this test breaks, the wallet<->market seam broke.
+	const walletPlainReceipt: ReceiptEventLike = {
+		pubkey: BUYER,
+		content: 'Payment sent',
+		tags: [
+			['payment-request', INVOICE],
+			['payment', 'grin', INVOICE, ''],
+			['amount', '1500000000'],
+			['status', 'sent'],
+			['goblin', '1'],
+		],
+	}
+
+	test('matches by payment-request ALONE (the wallet sends NO order tag)', () => {
+		expect(walletPlainReceipt.tags.some((t) => t[0] === 'order')).toBe(false)
+		expect(receiptMatchesInvoice(walletPlainReceipt, INVOICE)).toBe(true)
+	})
+
+	test('flips DETECTED only, never paid, and carries no proof', () => {
+		const result = classifyOrderReceipts([walletPlainReceipt], WATCHER)
+		expect(result.state).toBe('detected')
+		expect(result.proof).toBeNull() // proof field is EMPTY on the plain receipt
+	})
+
+	test('the encrypted proof-delivery RUMOR shape (4.3.2) also matches by payment-request alone', () => {
+		// What the watcher sees after the wrapv3 unwrap (the unwrap itself is the
+		// daemon's job; see the grinWatcher module header). Rumor kind 17:
+		const rumor: ReceiptEventLike = {
+			pubkey: BUYER,
+			content:
+				'{"amount":"1500000000","excess":"09..","recipient_address":"grin1..","recipient_sig":"..","sender_address":"grin1..","sender_sig":".."}',
+			tags: [
+				['payment-request', INVOICE],
+				['amount', '1500000000'],
+				['kernel', '09aabb'],
+				['status', 'proof'],
+				['goblin', '1'],
+			],
+		}
+		expect(receiptMatchesInvoice(rumor, INVOICE)).toBe(true)
+		// A proof delivery is watcher input, not a UI state escalation: the
+		// classifier must not treat status=proof as detected/confirming/paid.
+		expect(classifyOrderReceipts([rumor], WATCHER).state).toBe('waiting')
+	})
+})
+
 describe('classifyOrderReceipts (marketplace trust rules, contract 4.5)', () => {
 	test('no events => waiting', () => {
 		expect(classifyOrderReceipts([], WATCHER).state).toBe('waiting')

@@ -16,6 +16,35 @@
  *    and `queryKernelConfirmations` (the node client), plus `hasExistingConfirmed`
  *    for idempotence (step 8). magick does not run these; they are the reusable,
  *    tested reference for whoever builds the watcher.
+ *
+ * WALLET INTEROP FACTS (authoritative, from the committed wallet build):
+ *
+ * - Plain receipt (4.3.1), buyer-signed unencrypted kind 17: content
+ *   "Payment sent"; tags ["payment-request","<order param>"],
+ *   ["payment","grin","<order param>",""] (proof field EMPTY),
+ *   ["amount","<integer nanogrin>"], ["status","sent"], ["goblin","1"].
+ *   It carries a payment-request tag ONLY, NO order tag: matching MUST be by
+ *   payment-request alone (receiptMatchesInvoice). Flips DETECTED only.
+ *
+ * - Encrypted proof delivery (4.3.2) to the notify npub is a NIP-44 V3 gift
+ *   wrap (the wallet's wrapv3 scheme, goblin/src/nostr/wrapv3.rs), NOT the
+ *   standard v2 gift wrap. The watcher daemon must port/reuse the wallet's
+ *   wrapv3 unwrap; this module intentionally starts at the UNWRAPPED rumor
+ *   (verifyProofDelivery consumes the rumor content + tags). Rumor: kind 17,
+ *   content = the Grin PaymentProof JSON verbatim; tags payment-request,
+ *   amount, ["kernel","<excess hex>"], ["status","proof"], ["goblin","1"].
+ *
+ * - RELAY OVERLAP (deployment requirement): the wallet publishes its receipts
+ *   to ITS advertised relay pool, not to whatever this instance happens to
+ *   run. The marketplace subscription (useOrderConfirmation rides the
+ *   instance NDK, i.e. the configured app relay) and the watcher daemon MUST
+ *   listen on at least one relay in the wallet's pool. The deployed instance
+ *   is aligned today because its pinned app relay (config.appRelay;
+ *   relay.floonet.dev on the live deploy) is in the wallet's pool. Note the
+ *   repo's stage DEFAULT is wss://relay.magick.market (src/lib/constants.ts),
+ *   so any operator standing up a fresh instance must either get their app
+ *   relay into the wallet's pool or pin one of the wallet's relays — no code
+ *   enforces this; it is an operations invariant.
  */
 import { parsePaymentProof, verifyProofBindings } from './grinProofs'
 

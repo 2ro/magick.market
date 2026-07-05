@@ -51,6 +51,12 @@ export const configActions = {
 	 * emitted as the pay-URI `notify` param (so the wallet gift-wraps the proof to
 	 * it) and is the ONLY pubkey allowed to flip an order to "paid" (contract 4.5).
 	 * Absent -> proofs run in degraded mode (M4): no auto-flip to paid.
+	 *
+	 * OPERATIONS INVARIANT (relay overlap): the wallet publishes its receipts to
+	 * ITS advertised relay pool. This instance's app relay (config.appRelay) and
+	 * the watcher daemon must listen on at least one relay in that pool, or no
+	 * receipt is ever seen. The live deploy is aligned (its pinned app relay is
+	 * in the wallet's pool); fresh instances must arrange the overlap themselves.
 	 */
 	getWatcherNpub: (): string | undefined => {
 		const npub = configStore.state.config.watcherNpub
