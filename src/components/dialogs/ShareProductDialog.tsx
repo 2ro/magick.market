@@ -1,10 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { authStore } from '@/lib/stores/auth'
-import { ndkActions } from '@/lib/stores/ndk'
-import { NDKEvent } from '@nostr-dev-kit/ndk'
-import { useStore } from '@tanstack/react-store'
 import { Check, Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -17,11 +13,13 @@ interface ShareProductDialogProps {
 	title: string
 }
 
-export function ShareProductDialog({ open, onOpenChange, productId, pubkey, title }: ShareProductDialogProps) {
-	const { isAuthenticated } = useStore(authStore)
+// Share is copy-only. Posting to a Nostr feed required publishing a kind-1 note,
+// which the market's relay deliberately blocks (public-note kinds are author-locked
+// by policy), so that action always failed ("0 published, 1 required"). We share by
+// copying a link or a ready-made blurb instead.
+export function ShareProductDialog({ open, onOpenChange, productId, pubkey: _pubkey, title }: ShareProductDialogProps) {
 	const [shareText, setShareText] = useState('')
-	const [isPosting, setIsPosting] = useState(false)
-	const [isCopied, setIsCopied] = useState(false)
+	const [copied, setCopied] = useState<'url' | 'content' | null>(null)
 
 	// Build the product URL
 	const productUrl = typeof window !== 'undefined' ? `${window.location.origin}/products/${productId}` : `/products/${productId}`
@@ -35,74 +33,19 @@ ${productUrl}
 
 #magick`
 			setShareText(defaultText)
-			setIsCopied(false)
+			setCopied(null)
 		}
 	}, [open, title, productUrl])
 
-	const handleCopyUrl = async () => {
+	const copy = async (value: string, which: 'url' | 'content', label: string) => {
 		try {
-			await navigator.clipboard.writeText(productUrl)
-			setIsCopied(true)
-			toast.success('URL copied to clipboard!')
-			setTimeout(() => setIsCopied(false), 2000)
+			await navigator.clipboard.writeText(value)
+			setCopied(which)
+			toast.success(`${label} copied to clipboard!`)
+			setTimeout(() => setCopied((c) => (c === which ? null : c)), 2000)
 		} catch (error) {
-			console.error('Failed to copy URL:', error)
-			toast.error('Failed to copy URL')
-		}
-	}
-
-	const handlePostToNostr = async () => {
-		if (!isAuthenticated) {
-			toast.error('You must be logged in to post to Nostr')
-			return
-		}
-
-		setIsPosting(true)
-		try {
-			const ndk = ndkActions.getNDK()
-			if (!ndk) {
-				throw new Error('NDK not initialized')
-			}
-
-			// Check if we have a signer
-			if (!ndk.signer) {
-				throw new Error('No signer available. Please log in with a signing method.')
-			}
-
-			// Create kind 1 event (text note)
-			const event = new NDKEvent(ndk)
-			event.kind = 1
-			event.content = shareText
-
-			// Add tags for the product reference and discoverability
-			event.tags = [
-				['a', `30402:${pubkey}:${productId}`], // Reference to the product event (kind:pubkey:d-tag)
-				['r', productUrl], // Reference to the product URL
-				['t', 'magick'], // Hashtag for discoverability
-			]
-
-			// Sign the event with timeout
-			const signPromise = event.sign()
-			const signTimeoutPromise = new Promise((_, reject) =>
-				setTimeout(() => reject(new Error('Sign timeout - signer not responding')), 30000),
-			)
-			await Promise.race([signPromise, signTimeoutPromise])
-
-			// Publish with timeout
-			const publishPromise = ndkActions.publishEvent(event)
-			const publishTimeoutPromise = new Promise((_, reject) =>
-				setTimeout(() => reject(new Error('Publish timeout after 10 seconds')), 10000),
-			)
-			await Promise.race([publishPromise, publishTimeoutPromise])
-
-			toast.success('Posted to Nostr successfully!')
-			onOpenChange(false)
-		} catch (error) {
-			console.error('Failed to post to Nostr:', error)
-			const message = error instanceof Error ? error.message : 'Failed to post to Nostr'
-			toast.error(message)
-		} finally {
-			setIsPosting(false)
+			console.error(`Failed to copy ${which}:`, error)
+			toast.error(`Failed to copy ${label.toLowerCase()}`)
 		}
 	}
 
@@ -111,43 +54,41 @@ ${productUrl}
 			<DialogContent className="bg-white max-w-[calc(100%-2rem)] sm:max-w-[40em] max-h-[90vh] overflow-x-hidden overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>Share Product</DialogTitle>
-					<DialogDescription id="share-dialog-description">Share this product with others or post it to your Nostr feed.</DialogDescription>
+					<DialogDescription id="share-dialog-description">
+						Copy a link to this product, or copy a ready-made blurb to share.
+					</DialogDescription>
 				</DialogHeader>
 
 				<div className="space-y-6 py-4 overflow-x-hidden">
-					{isAuthenticated && (
-						<div className="space-y-2">
-							<label htmlFor="share-text" className="font-medium text-gray-700 text-sm">
-								Content to post to Nostr
-							</label>
-							<Textarea
-								id="share-text"
-								aria-describedby="share-dialog-description"
-								value={shareText}
-								onChange={(e) => setShareText(e.target.value)}
-								rows={8}
-								className="w-full overflow-wrap-anywhere break-words whitespace-pre-wrap resize-none"
-								placeholder="Write something about this product..."
-							/>
-						</div>
-					)}
+					<div className="space-y-2">
+						<label htmlFor="share-text" className="font-medium text-gray-700 text-sm">
+							Shareable text
+						</label>
+						<Textarea
+							id="share-text"
+							aria-describedby="share-dialog-description"
+							value={shareText}
+							onChange={(e) => setShareText(e.target.value)}
+							rows={8}
+							className="w-full overflow-wrap-anywhere break-words whitespace-pre-wrap resize-none"
+							placeholder="Write something about this product..."
+						/>
+					</div>
 
 					<div className="flex flex-wrap gap-2">
-						<Button variant="outline" onClick={handleCopyUrl} className="shrink-0">
-							{isCopied ? <Check className="mr-2 w-4 h-4" /> : <Copy className="mr-2 w-4 h-4" />}
-							{isCopied ? 'Copied!' : 'Copy URL'}
+						<Button variant="outline" onClick={() => copy(productUrl, 'url', 'URL')} className="shrink-0">
+							{copied === 'url' ? <Check className="mr-2 w-4 h-4" /> : <Copy className="mr-2 w-4 h-4" />}
+							{copied === 'url' ? 'Copied!' : 'Copy URL'}
 						</Button>
 
-						{isAuthenticated && (
-							<Button
-								onClick={handlePostToNostr}
-								disabled={isPosting || !shareText.trim()}
-								className="flex flex-1 justify-center items-center gap-2"
-							>
-								<span className="w-4 h-4 i-send-message" />
-								{isPosting ? 'Posting...' : 'Post to Nostr'}
-							</Button>
-						)}
+						<Button
+							onClick={() => copy(shareText, 'content', 'Content')}
+							disabled={!shareText.trim()}
+							className="flex flex-1 justify-center items-center gap-2"
+						>
+							{copied === 'content' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+							{copied === 'content' ? 'Copied!' : 'Copy content'}
+						</Button>
 					</div>
 				</div>
 			</DialogContent>
