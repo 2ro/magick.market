@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
 	DEFAULT_DELIVERY_CONTACT_TYPE,
-	isValidDeliveryContact,
+	isValidResolvedDeliveryContact,
 	resolveCheckoutDeliveryRequirements,
 	type CheckoutDeliveryRequirements,
 } from '@/lib/checkout/deliveryRequirements'
@@ -20,7 +20,7 @@ import { encodeOrderCode, mintGuestOrderSigner, saveGuestOrder } from '@/lib/sto
 import { ndkActions } from '@/lib/stores/ndk'
 import { persistInvoicesLocally, updatePersistedInvoiceLocally } from '@/lib/utils/invoiceStorage'
 import { publishOrderWithDependencies, type CreatedOrderInfo } from '@/publish/orders'
-import { getShippingEvent, getShippingService } from '@/queries/shipping'
+import { getShippingContactMethods, getShippingEvent, getShippingService } from '@/queries/shipping'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
 import { useGenerateInvoiceMutation, resolveV4VGrinAddress } from '@/queries/payment'
 import { buildGoblinPayUri, deriveProofAddress } from '@/lib/grin'
@@ -177,12 +177,14 @@ function RouteComponent() {
 			setDeliveryRequirementsError(null)
 
 			const servicesByShippingRef: Record<string, string | null> = {}
+			const contactMethodsByShippingRef: Record<string, string[]> = {}
 
 			try {
 				await Promise.all(
 					shippingRefs.map(async (shippingRef) => {
 						const shippingEvent = await getShippingEvent(shippingRef)
 						servicesByShippingRef[shippingRef] = shippingEvent ? getShippingService(shippingEvent)?.[1] || null : null
+						contactMethodsByShippingRef[shippingRef] = shippingEvent ? getShippingContactMethods(shippingEvent) : []
 					}),
 				)
 
@@ -192,6 +194,7 @@ function RouteComponent() {
 					resolveCheckoutDeliveryRequirements({
 						products: cartProducts,
 						servicesByShippingRef,
+						contactMethodsByShippingRef,
 					}),
 				)
 				setIsDeliveryRequirementsLoading(false)
@@ -203,6 +206,7 @@ function RouteComponent() {
 					resolveCheckoutDeliveryRequirements({
 						products: cartProducts,
 						servicesByShippingRef,
+						contactMethodsByShippingRef,
 					}),
 				)
 				setDeliveryRequirementsError('Delivery requirements could not be verified. Please retry before continuing to payment.')
@@ -422,7 +426,7 @@ function RouteComponent() {
 				toast.error('Delivery requirements must be verified before checkout can continue.')
 				return
 			}
-			if (deliveryRequirements.needsDigitalDeliveryContact && !isValidDeliveryContact(value.contactType, value.email)) {
+			if (deliveryRequirements.needsDigitalDeliveryContact && !isValidResolvedDeliveryContact(value.contactType, value.email)) {
 				toast.error('Enter a valid digital delivery contact before checkout can continue.')
 				return
 			}
@@ -573,7 +577,7 @@ function RouteComponent() {
 		deliveryRequirements.isResolved &&
 		!isDeliveryRequirementsLoading &&
 		!deliveryRequirementsError &&
-		(!deliveryRequirements.needsDigitalDeliveryContact || isValidDeliveryContact(shippingData.contactType, shippingData.email))
+		(!deliveryRequirements.needsDigitalDeliveryContact || isValidResolvedDeliveryContact(shippingData.contactType, shippingData.email))
 
 	const handleContinueToPayment = async () => {
 		if (!canContinueToPayment) {

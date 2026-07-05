@@ -6,6 +6,10 @@ export type CheckoutDeliveryRequirementInput = {
 		shippingMethodId?: string | null
 	}>
 	servicesByShippingRef: Record<string, string | null | undefined>
+	// Seller-controlled: the secure contact/messaging methods each digital
+	// shipping option enables. The buyer picks from this per-product-seller set.
+	// Older products with no methods set fall back to the full default channel list.
+	contactMethodsByShippingRef?: Record<string, string[] | null | undefined>
 }
 
 export type CheckoutDeliveryRequirements = {
@@ -16,6 +20,10 @@ export type CheckoutDeliveryRequirements = {
 	needsPhysicalAddress: boolean
 	isResolved: boolean
 	unresolvedShippingRefs: string[]
+	// The union of seller-enabled contact methods across the cart's digital
+	// products. Empty means no seller configured a set (older products) — the
+	// buyer form falls back to the full default channel list.
+	digitalDeliveryContactMethods: string[]
 }
 
 const PHYSICAL_SERVICES = new Set(['standard', 'express', 'overnight'])
@@ -32,6 +40,7 @@ export function resolveCheckoutDeliveryRequirements(input: CheckoutDeliveryRequi
 	let hasPhysicalDelivery = false
 	let hasPickupDelivery = false
 	const unresolvedShippingRefs = new Set<string>()
+	const digitalContactMethods = new Set<string>()
 
 	for (const product of input.products) {
 		const shippingRef = product.shippingMethodId?.trim()
@@ -50,6 +59,11 @@ export function resolveCheckoutDeliveryRequirements(input: CheckoutDeliveryRequi
 
 		if (mode === 'digital') {
 			hasDigitalDelivery = true
+			// Seller-controlled set for this product: fold its enabled methods into
+			// the cart-wide union the buyer will pick from.
+			for (const method of normalizeDeliveryContactMethods(input.contactMethodsByShippingRef?.[shippingRef])) {
+				digitalContactMethods.add(method)
+			}
 		} else if (mode === 'pickup') {
 			hasPickupDelivery = true
 		} else {
@@ -65,6 +79,7 @@ export function resolveCheckoutDeliveryRequirements(input: CheckoutDeliveryRequi
 		needsPhysicalAddress: hasPhysicalDelivery,
 		isResolved: unresolvedShippingRefs.size === 0,
 		unresolvedShippingRefs: Array.from(unresolvedShippingRefs),
+		digitalDeliveryContactMethods: Array.from(digitalContactMethods),
 	}
 }
 
@@ -135,4 +150,86 @@ export function isValidDeliveryContact(type: DeliveryContactType | string | null
  */
 export function isValidDigitalDeliveryContact(value: string | null | undefined): boolean {
 	return isValidDeliveryContact('email', value)
+}
+
+// --- SELLER-CONTROLLED CONTACT METHODS ---
+//
+// A seller enables, per digital product, which secure contact/messaging methods
+// they offer (from the known channels above, plus any free-text custom entry).
+// The buyer then picks their contact from that seller-enabled set at checkout.
+
+/**
+ * Fallback method set for older digital products that never had a seller set
+ * (nothing persisted). Keeps checkout working: the buyer sees the full default
+ * channel list instead of an empty picker.
+ */
+export const DEFAULT_DELIVERY_CONTACT_METHODS: string[] = [...DELIVERY_CONTACT_TYPES]
+
+/**
+ * Normalizes a raw seller-enabled method list: trims, drops empties, and
+ * de-duplicates while preserving order. Custom (free-text) entries are kept
+ * as-is alongside the known channel ids.
+ */
+export function normalizeDeliveryContactMethods(methods: readonly string[] | null | undefined): string[] {
+	if (!methods) return []
+	const seen = new Set<string>()
+	const result: string[] = []
+	for (const raw of methods) {
+		const trimmed = typeof raw === 'string' ? raw.trim() : ''
+		if (!trimmed || seen.has(trimmed)) continue
+		seen.add(trimmed)
+		result.push(trimmed)
+	}
+	return result
+}
+
+export type ResolvedDeliveryContactOption = {
+	value: string
+	label: string
+	fieldLabel: string
+	placeholder: string
+	isCustom: boolean
+}
+
+/**
+ * Resolves a method id (a known channel like 'signal', or a seller's custom
+ * free-text entry) into display + input metadata for the buyer's picker.
+ */
+export function resolveDeliveryContactOption(method: string): ResolvedDeliveryContactOption {
+	if (isDeliveryContactType(method)) {
+		const channel = DELIVERY_CONTACT_CHANNELS[method]
+		return { ...channel, isCustom: false }
+	}
+	const label = method.trim() || 'Contact'
+	return {
+		value: method,
+		label,
+		fieldLabel: `${label} contact`,
+		placeholder: `Your ${label} contact`,
+		isCustom: true,
+	}
+}
+
+/**
+ * Buyer picker options for a seller-enabled set. Falls back to the full default
+ * channel list when the set is empty (older products with nothing persisted).
+ */
+export function getDeliveryContactOptions(allowedMethods: readonly string[] | null | undefined): ResolvedDeliveryContactOption[] {
+	const normalized = normalizeDeliveryContactMethods(allowedMethods)
+	const source = normalized.length > 0 ? normalized : DEFAULT_DELIVERY_CONTACT_METHODS
+	return source.map(resolveDeliveryContactOption)
+}
+
+/**
+ * Custom-aware validation. Known channels reuse {@link isValidDeliveryContact}
+ * (email strict, messengers loose); custom free-text methods validate loosely
+ * (single token, reasonable length) since they have no canonical format.
+ */
+export function isValidResolvedDeliveryContact(method: string | null | undefined, value: string | null | undefined): boolean {
+	if (isDeliveryContactType(method)) return isValidDeliveryContact(method, value)
+
+	const trimmed = value?.trim()
+	if (!trimmed) return false
+	if (/\s/.test(trimmed)) return false
+	return trimmed.length >= 3 && trimmed.length <= 2000
 }

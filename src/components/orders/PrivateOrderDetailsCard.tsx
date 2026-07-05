@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { DELIVERY_CONTACT_CHANNELS } from '@/lib/checkout/deliveryRequirements'
+import { resolveDeliveryContactOption } from '@/lib/checkout/deliveryRequirements'
 import type { PrivateOrderDeliveryDetails } from '@/lib/orders/privateOrderMessage'
 import { cn } from '@/lib/utils'
 import type { OrderWithRelatedEvents } from '@/queries/orders'
@@ -29,7 +29,7 @@ export function getPrivateOrderDetailsRows(details: PrivateOrderDeliveryDetails)
 
 	if (delivery.email) rows.push({ label: 'Digital contact', value: delivery.email })
 	if (delivery.contactType && delivery.contactType !== 'email' && delivery.contactHandle) {
-		rows.push({ label: `${DELIVERY_CONTACT_CHANNELS[delivery.contactType].label} contact`, value: delivery.contactHandle })
+		rows.push({ label: `${resolveDeliveryContactOption(delivery.contactType).label} contact`, value: delivery.contactHandle })
 	}
 	if (delivery.name) rows.push({ label: 'Recipient', value: delivery.name })
 

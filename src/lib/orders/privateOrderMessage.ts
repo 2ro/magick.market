@@ -1,7 +1,6 @@
 import type { NDKSigner } from '@nostr-dev-kit/ndk'
 import { getPublicKey } from 'nostr-tools'
 import type { Event } from 'nostr-tools'
-import { isDeliveryContactType, type DeliveryContactType } from '../checkout/deliveryRequirements'
 import {
 	createNip59GiftWrap,
 	createNip59GiftWrapWithSigner,
@@ -38,10 +37,12 @@ export type PrivateOrderDeliveryDetails = {
 		email?: string
 		phone?: string
 		address?: PrivateOrderAddress
-		// Privacy-respecting non-email delivery contact channel (signal/matrix/session/simplex).
-		// Email keeps its historical `email` field + `['email', …]` tag; the others ride on
-		// `contactType`/`contactHandle` and a `['contact', type, handle]` tag.
-		contactType?: DeliveryContactType
+		// Privacy-respecting non-email delivery contact channel. The seller enables
+		// which methods they offer (known channels signal/matrix/session/simplex plus
+		// custom free-text entries) and the buyer picks one. Email keeps its historical
+		// `email` field + `['email', …]` tag; the others ride on `contactType`/
+		// `contactHandle` and a `['contact', type, handle]` tag.
+		contactType?: string
 		contactHandle?: string
 	}
 	orderNotes?: string
@@ -249,7 +250,9 @@ export function parsePrivateOrderDetailsRumor(
 	}
 
 	const contactTag = getSingleTag(normalizedRumor.tags, 'contact')
-	const contactType = contactTag && isDeliveryContactType(contactTag[1]) ? (contactTag[1] as DeliveryContactType) : undefined
+	// Accept any non-empty contact type: known channels and seller-defined custom
+	// free-text methods both round-trip through the `['contact', type, handle]` tag.
+	const contactType = normalizeOptionalText(contactTag?.[1])
 	const contactHandle = contactType ? normalizeOptionalText(contactTag?.[2]) : undefined
 
 	const delivery = {
