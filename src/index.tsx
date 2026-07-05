@@ -17,6 +17,14 @@ const RELAY_URL = process.env.APP_RELAY_URL
 const NIP46_RELAY_URL = process.env.NIP46_RELAY_URL || 'wss://relay.nsec.app'
 const APP_PRIVATE_KEY = process.env.APP_PRIVATE_KEY
 
+// The instance proof-watcher's npub (spec 4.4/4.5): the ONLY pubkey allowed to
+// flip an order to "paid", and the `notify` target the pay-URI advertises so the
+// buyer's wallet gift-wraps its payment proof to it. Sourced from server env
+// (never build-time) and validated as an npub1 string; absent -> proofs degrade
+// to manual confirmation (client getWatcherNpub() returns undefined).
+const WATCHER_NPUB =
+	typeof process.env.WATCHER_NPUB === 'string' && process.env.WATCHER_NPUB.startsWith('npub1') ? process.env.WATCHER_NPUB : undefined
+
 let appSettings: Awaited<ReturnType<typeof fetchAppSettings>> = null
 let APP_PUBLIC_KEY: string
 let CVM_SERVER_PUBKEY: string
@@ -182,6 +190,7 @@ export const server = serve({
 					appSettings: appSettings,
 					appPublicKey: APP_PUBLIC_KEY,
 					cvmServerPubkey: getCvmServerPublicKey(),
+					watcherNpub: WATCHER_NPUB,
 					...computeConfigFlags({ appSettings, appSettingsResolved, eventHandlerReady }),
 				})
 			},
