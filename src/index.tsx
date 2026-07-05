@@ -9,6 +9,7 @@ import { getEventHandler } from './server'
 import { join } from 'path'
 import { file } from 'bun'
 import { computeConfigFlags } from './lib/configFlags'
+import { createNameInvoice, fetchNameInvoice } from './server/goblinPayServer'
 
 import.meta.hot.accept()
 
@@ -185,11 +186,53 @@ export const server = serve({
 				})
 			},
 		},
-		// magick.market is GRIN-only: NIP-05 names and vanity URLs are paid in
-		// Grin via the claim routes below.
-		// Verifies a buyer-signed Grin payment receipt (kind 17) and registers the
-		// NIP-05 username it pays for. See Nip05ManagerImpl.handleGrinPurchase for
-		// the verification/registration logic; this route only unwraps the body.
+		// magick.market is GRIN-only: NIP-05 names and vanity URLs are paid with
+		// REAL GoblinPay invoices. The buyer's payment travels wallet-to-wallet to
+		// the marketplace till wallet; the name is granted only after the payment
+		// confirms on-chain (10 confirmations). The GoblinPay API token lives
+		// server-side only (goblinPayServer.ts) and is never exposed to the browser.
+		//
+		// Mint a real GoblinPay invoice for a NIP-05 name. Body: {name, tier, pubkey}.
+		'/api/nip05/invoice': {
+			POST: async (req) => {
+				let body: { name?: unknown; tier?: unknown; pubkey?: unknown }
+				try {
+					body = await req.json()
+				} catch {
+					return jsonError('Invalid JSON body', 400)
+				}
+				if (typeof body?.name !== 'string' || typeof body?.tier !== 'string' || typeof body?.pubkey !== 'string') {
+					return jsonError('Missing name, tier, or pubkey', 400)
+				}
+				const nip05Manager = getEventHandler().getNip05Manager()
+				const result = await nip05Manager.createPurchaseInvoice({ name: body.name, tierKey: body.tier, buyerPubkey: body.pubkey }, (p) =>
+					createNameInvoice(p),
+				)
+				if (!result.ok) {
+					return jsonError(result.error, result.status)
+				}
+				return Response.json({ invoice_id: result.invoiceId, pay_url: result.payUrl })
+			},
+		},
+		// Proxy GoblinPay's invoice status for the NIP-05 buyer to poll. Returns
+		// only status + confirmations (never the API token or till identity).
+		'/api/nip05/invoice/:id/status': {
+			GET: async (req) => {
+				const invoiceId = (req.params as { id: string }).id
+				const invoice = await fetchNameInvoice(invoiceId)
+				if (!invoice) {
+					return jsonError('Payment service is unavailable', 503)
+				}
+				return Response.json({
+					status: invoice.status,
+					confirmations: invoice.confirmations,
+					confirmations_required: invoice.confirmationsRequired,
+				})
+			},
+		},
+		// Verifies a buyer-signed claim (kind 17, carrying ['invoice', id]) against a
+		// CONFIRMED GoblinPay invoice and registers the NIP-05 username. See
+		// Nip05ManagerImpl.handleGrinPurchase for the grant gate.
 		'/api/nip05/claim': {
 			POST: async (req) => {
 				let body: { event?: unknown }
@@ -203,15 +246,54 @@ export const server = serve({
 					return jsonError('Missing event', 400)
 				}
 				const nip05Manager = getEventHandler().getNip05Manager()
-				const result = await nip05Manager.handleGrinPurchase(event as Parameters<typeof nip05Manager.handleGrinPurchase>[0])
+				const result = await nip05Manager.handleGrinPurchase(event as Parameters<typeof nip05Manager.handleGrinPurchase>[0], (id) =>
+					fetchNameInvoice(id),
+				)
 				if (!result.ok) {
 					return jsonError(result.error, result.status)
 				}
 				return Response.json({ username: result.username, validUntil: result.validUntil })
 			},
 		},
-		// Verifies a buyer-signed Grin payment receipt (kind 17) and registers the
-		// vanity URL it pays for. See VanityManagerImpl.handleGrinPurchase.
+		// Mint a real GoblinPay invoice for a vanity URL. Body: {name, tier, pubkey}.
+		'/api/vanity/invoice': {
+			POST: async (req) => {
+				let body: { name?: unknown; tier?: unknown; pubkey?: unknown }
+				try {
+					body = await req.json()
+				} catch {
+					return jsonError('Invalid JSON body', 400)
+				}
+				if (typeof body?.name !== 'string' || typeof body?.tier !== 'string' || typeof body?.pubkey !== 'string') {
+					return jsonError('Missing name, tier, or pubkey', 400)
+				}
+				const vanityManager = getEventHandler().getVanityManager()
+				const result = await vanityManager.createPurchaseInvoice({ name: body.name, tierKey: body.tier, buyerPubkey: body.pubkey }, (p) =>
+					createNameInvoice(p),
+				)
+				if (!result.ok) {
+					return jsonError(result.error, result.status)
+				}
+				return Response.json({ invoice_id: result.invoiceId, pay_url: result.payUrl })
+			},
+		},
+		// Proxy GoblinPay's invoice status for the vanity buyer to poll.
+		'/api/vanity/invoice/:id/status': {
+			GET: async (req) => {
+				const invoiceId = (req.params as { id: string }).id
+				const invoice = await fetchNameInvoice(invoiceId)
+				if (!invoice) {
+					return jsonError('Payment service is unavailable', 503)
+				}
+				return Response.json({
+					status: invoice.status,
+					confirmations: invoice.confirmations,
+					confirmations_required: invoice.confirmationsRequired,
+				})
+			},
+		},
+		// Verifies a buyer-signed claim (kind 17) against a CONFIRMED GoblinPay
+		// invoice and registers the vanity URL. See VanityManagerImpl.handleGrinPurchase.
 		'/api/vanity/claim': {
 			POST: async (req) => {
 				let body: { event?: unknown }
@@ -225,7 +307,9 @@ export const server = serve({
 					return jsonError('Missing event', 400)
 				}
 				const vanityManager = getEventHandler().getVanityManager()
-				const result = await vanityManager.handleGrinPurchase(event as Parameters<typeof vanityManager.handleGrinPurchase>[0])
+				const result = await vanityManager.handleGrinPurchase(event as Parameters<typeof vanityManager.handleGrinPurchase>[0], (id) =>
+					fetchNameInvoice(id),
+				)
 				if (!result.ok) {
 					return jsonError(result.error, result.status)
 				}
