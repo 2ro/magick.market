@@ -46,9 +46,10 @@ export const createHandlerInfoEvent = (
 		['k', COLLECTION_KIND.toString()], // Supports collections (kind 30405)
 
 		// URL patterns for handling products (kind 30402)
-		// <bech32> will be replaced by clients with the actual NIP-19 encoded entity
-		['web', `${MAGICK_MARKET_URL}/product/<bech32>`, 'naddr'],
-		['web', `${MAGICK_MARKET_URL}/a/<bech32>`, 'naddr'], // Alternative pattern
+		// <bech32> will be replaced by clients with the actual NIP-19 encoded entity.
+		// The canonical product route is /products/<id> (plural); the singular
+		// /product/<id> also resolves via a legacy redirect route.
+		['web', `${MAGICK_MARKET_URL}/products/<bech32>`, 'naddr'],
 
 		// URL patterns for handling collections (kind 30405)
 		['web', `${MAGICK_MARKET_URL}/collection/<bech32>`, 'naddr'],
@@ -79,8 +80,7 @@ export const createHandlerInfoEventData = (
 		['d', id],
 		['k', PRODUCT_KIND.toString()],
 		['k', COLLECTION_KIND.toString()],
-		['web', `${MAGICK_MARKET_URL}/product/<bech32>`, 'naddr'],
-		['web', `${MAGICK_MARKET_URL}/a/<bech32>`, 'naddr'],
+		['web', `${MAGICK_MARKET_URL}/products/<bech32>`, 'naddr'],
 		['web', `${MAGICK_MARKET_URL}/collection/<bech32>`, 'naddr'],
 	]
 

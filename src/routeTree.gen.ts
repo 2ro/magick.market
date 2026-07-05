@@ -23,6 +23,7 @@ import { Route as CommunityIndexRouteImport } from './routes/community.index'
 import { Route as SearchProductsRouteImport } from './routes/search.products'
 import { Route as ProfileProfileIdRouteImport } from './routes/profile.$profileId'
 import { Route as ProductsProductIdRouteImport } from './routes/products.$productId'
+import { Route as ProductProductIdRouteImport } from './routes/product.$productId'
 import { Route as PostsPostIdRouteImport } from './routes/posts.$postId'
 import { Route as CollectionCollectionIdRouteImport } from './routes/collection.$collectionId'
 import { Route as DashboardLayoutDashboardIndexRouteImport } from './routes/_dashboard-layout/dashboard/index'
@@ -118,6 +119,11 @@ const ProfileProfileIdRoute = ProfileProfileIdRouteImport.update({
 const ProductsProductIdRoute = ProductsProductIdRouteImport.update({
   id: '/products/$productId',
   path: '/products/$productId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductProductIdRoute = ProductProductIdRouteImport.update({
+  id: '/product/$productId',
+  path: '/product/$productId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PostsPostIdRoute = PostsPostIdRouteImport.update({
@@ -290,6 +296,7 @@ export interface FileRoutesByFullPath {
   '/track': typeof TrackRoute
   '/collection/$collectionId': typeof CollectionCollectionIdRoute
   '/posts/$postId': typeof PostsPostIdRoute
+  '/product/$productId': typeof ProductProductIdRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/profile/$profileId': typeof ProfileProfileIdRoute
   '/search/products': typeof SearchProductsRoute
@@ -332,6 +339,7 @@ export interface FileRoutesByTo {
   '/track': typeof TrackRoute
   '/collection/$collectionId': typeof CollectionCollectionIdRoute
   '/posts/$postId': typeof PostsPostIdRoute
+  '/product/$productId': typeof ProductProductIdRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/profile/$profileId': typeof ProfileProfileIdRoute
   '/search/products': typeof SearchProductsRoute
@@ -376,6 +384,7 @@ export interface FileRoutesById {
   '/track': typeof TrackRoute
   '/collection/$collectionId': typeof CollectionCollectionIdRoute
   '/posts/$postId': typeof PostsPostIdRoute
+  '/product/$productId': typeof ProductProductIdRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/profile/$profileId': typeof ProfileProfileIdRoute
   '/search/products': typeof SearchProductsRoute
@@ -420,6 +429,7 @@ export interface FileRouteTypes {
     | '/track'
     | '/collection/$collectionId'
     | '/posts/$postId'
+    | '/product/$productId'
     | '/products/$productId'
     | '/profile/$profileId'
     | '/search/products'
@@ -462,6 +472,7 @@ export interface FileRouteTypes {
     | '/track'
     | '/collection/$collectionId'
     | '/posts/$postId'
+    | '/product/$productId'
     | '/products/$productId'
     | '/profile/$profileId'
     | '/search/products'
@@ -505,6 +516,7 @@ export interface FileRouteTypes {
     | '/track'
     | '/collection/$collectionId'
     | '/posts/$postId'
+    | '/product/$productId'
     | '/products/$productId'
     | '/profile/$profileId'
     | '/search/products'
@@ -549,6 +561,7 @@ export interface RootRouteChildren {
   TrackRoute: typeof TrackRoute
   CollectionCollectionIdRoute: typeof CollectionCollectionIdRoute
   PostsPostIdRoute: typeof PostsPostIdRoute
+  ProductProductIdRoute: typeof ProductProductIdRoute
   ProductsProductIdRoute: typeof ProductsProductIdRoute
   ProfileProfileIdRoute: typeof ProfileProfileIdRoute
   SearchProductsRoute: typeof SearchProductsRoute
@@ -656,6 +669,13 @@ declare module '@tanstack/react-router' {
       path: '/products/$productId'
       fullPath: '/products/$productId'
       preLoaderRoute: typeof ProductsProductIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/product/$productId': {
+      id: '/product/$productId'
+      path: '/product/$productId'
+      fullPath: '/product/$productId'
+      preLoaderRoute: typeof ProductProductIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/posts/$postId': {
@@ -979,6 +999,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrackRoute: TrackRoute,
   CollectionCollectionIdRoute: CollectionCollectionIdRoute,
   PostsPostIdRoute: PostsPostIdRoute,
+  ProductProductIdRoute: ProductProductIdRoute,
   ProductsProductIdRoute: ProductsProductIdRoute,
   ProfileProfileIdRoute: ProfileProfileIdRoute,
   SearchProductsRoute: SearchProductsRoute,

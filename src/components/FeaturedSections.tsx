@@ -133,15 +133,8 @@ export function FeaturedSections({ className, maxItemsPerSection = 5 }: Featured
 								<FolderOpen className="w-6 h-6 shrink-0" />
 								<h2 className="text-xl sm:text-2xl font-heading">Featured Collections</h2>
 							</div>
-							{featuredCollections?.featuredCollections && featuredCollections.featuredCollections.length > maxItemsPerSection && (
-								<div className="w-full sm:w-auto flex justify-end">
-									<Link to="/collections" className="flex items-center gap-2 hover:underline">
-										<Button variant="ghost" size="sm" className="gap-2">
-											View All <ArrowRight className="w-4 h-4" />
-										</Button>
-									</Link>
-								</div>
-							)}
+							{/* No public collections-index route exists, so there is no "View All"
+							    destination for collections (unlike products, which browse at /products). */}
 						</div>
 						<ItemGrid className="gap-4 sm:gap-8">
 							{displayCollections.map((collectionCoords: string) => (
