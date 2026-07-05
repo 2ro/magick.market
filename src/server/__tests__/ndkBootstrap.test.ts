@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { planNdkBootstrap, nextRetryDelayMs } from '../ndkBootstrap'
+import { planNdkBootstrap, nextRetryDelayMs, deriveConnectSucceeded } from '../ndkBootstrap'
 
 describe('planNdkBootstrap (boot NDK wiring invariant)', () => {
 	test('THE INVARIANT: attaches NDK even when the first connect races/times out', () => {
@@ -39,6 +39,34 @@ describe('planNdkBootstrap (boot NDK wiring invariant)', () => {
 
 	test('no retry once connected and loaded', () => {
 		const plan = planNdkBootstrap({ ndkCreated: true, connectSucceeded: true, loadSucceeded: true })
+		expect(plan.scheduleLoadRetry).toBe(false)
+	})
+})
+
+describe('deriveConnectSucceeded (READ-path connect race)', () => {
+	test('THE READ INVARIANT: a successful fetch counts as connected even when connect() never resolved', () => {
+		// This is the restart bug: NDK 3.0.3 left connect() pending against a fast
+		// relay, but fetchEvents returned the persisted kind-30000 registry fine.
+		// The load must be treated as reachable so the retry loop stops (and, in
+		// EventHandler, so the load is never skipped in the first place).
+		expect(deriveConnectSucceeded(false, true, 0)).toBe(true)
+	})
+
+	test('a live pool socket counts as connected even when connect() never resolved', () => {
+		expect(deriveConnectSucceeded(false, false, 1)).toBe(true)
+	})
+
+	test('a resolved connect() still counts (happy path preserved)', () => {
+		expect(deriveConnectSucceeded(true, false, 0)).toBe(true)
+	})
+
+	test('genuinely unreachable: no resolve, no load, no socket => not connected (retry)', () => {
+		expect(deriveConnectSucceeded(false, false, 0)).toBe(false)
+	})
+
+	test('feeds scheduleLoadRetry: fetch-succeeded-while-connect-pending stops the retry loop', () => {
+		const connectSucceeded = deriveConnectSucceeded(false, true, 1)
+		const plan = planNdkBootstrap({ ndkCreated: true, connectSucceeded, loadSucceeded: true })
 		expect(plan.scheduleLoadRetry).toBe(false)
 	})
 })

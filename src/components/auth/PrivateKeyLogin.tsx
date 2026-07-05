@@ -343,7 +343,16 @@ export function PrivateKeyLogin({ onError, onSuccess }: PrivateKeyLoginProps) {
 					</div>
 				</div>
 				<p className="text-sm text-muted-foreground">
-					Using Goblin? Open the <span className="font-medium">Me</span> tab → <span className="font-medium">Advanced</span> →{' '}
+					Using{' '}
+					<a
+						href="https://goblin.st"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="font-medium underline decoration-double underline-offset-2"
+					>
+						Goblin
+					</a>
+					? Open the <span className="font-medium">Me</span> tab → <span className="font-medium">Advanced</span> →{' '}
 					<span className="font-medium">Nostr key</span>, enter your wallet password, tap <span className="font-medium">Copy nsec</span>,
 					then paste it here.
 				</p>
