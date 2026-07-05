@@ -69,10 +69,6 @@ export const dashboardNavigation: NavSection[] = [
 				path: '/dashboard/account/your-purchases',
 			},
 			{
-				title: '🌐 Network',
-				path: '/dashboard/account/network',
-			},
-			{
 				title: '⚙️ Preferences',
 				path: '/dashboard/account/preferences',
 			},

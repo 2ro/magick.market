@@ -1,5 +1,4 @@
-import { defaultRelaysUrls, DEFAULT_PUBLIC_RELAYS, MAIN_RELAY_BY_STAGE, type Stage } from '@/lib/constants'
-import { fetchUserRelayListWithPreferences } from '@/queries/relay-list'
+import { DEFAULT_PUBLIC_RELAYS, MAIN_RELAY_BY_STAGE, type Stage } from '@/lib/constants'
 import type { NDKFilter, NDKSigner, NDKSubscriptionOptions, NDKUser } from '@nostr-dev-kit/ndk'
 import NDK, { NDKEvent, NDKRelaySet } from '@nostr-dev-kit/ndk'
 import { Store } from '@tanstack/store'
@@ -376,47 +375,6 @@ export const ndkActions = {
 		}
 	},
 
-	removeRelay: (relayUrl: string): boolean => {
-		const state = ndkStore.state
-		if (!state.ndk) return false
-
-		try {
-			// Remove from NDK pool
-			const relay = state.ndk.pool.relays.get(relayUrl)
-			if (relay) {
-				state.ndk.pool.removeRelay(relayUrl)
-			}
-
-			// Update state
-			const updatedUrls = state.explicitRelayUrls.filter((url) => url !== relayUrl)
-			ndkStore.setState((state) => ({ ...state, explicitRelayUrls: updatedUrls }))
-			return true
-		} catch (error) {
-			console.error('Failed to remove relay:', error)
-			return false
-		}
-	},
-
-	getRelays: () => {
-		const state = ndkStore.state
-		if (!state.ndk) return { explicit: [], outbox: [] }
-
-		return {
-			explicit: Array.from(state.ndk.pool.relays.values()),
-			outbox: state.ndk.outboxPool ? Array.from(state.ndk.outboxPool.relays.values()) : [],
-		}
-	},
-
-	connectToDefaultRelays: (): boolean => {
-		try {
-			ndkActions.addExplicitRelay(defaultRelaysUrls)
-			return true
-		} catch (error) {
-			console.error('Failed to connect to default relays:', error)
-			return false
-		}
-	},
-
 	setSigner: async (signer: NDKSigner | undefined) => {
 		const state = ndkStore.state
 		if (!state.ndk) {
@@ -434,48 +392,11 @@ export const ndkActions = {
 
 		ndkStore.setState((s) => ({ ...s, signer }))
 
-		if (signer) {
-			await ndkActions.loadRelaysFromNostr()
-		}
-	},
-
-	/**
-	 * Load user's relay list from Nostr (kind 10002)
-	 * This enables the outbox model to work properly by adding user's preferred relays
-	 */
-	loadRelaysFromNostr: async (): Promise<void> => {
-		const ndk = ndkStore.state.ndk
-		if (!ndk || !ndk.signer) {
-			console.warn('NDK or signer not available for loading relays')
-			return
-		}
-
-		let user: NDKUser | null = null
-		try {
-			user = await ndk.signer.user()
-		} catch (e) {
-			console.error('Error getting user from signer:', e)
-			return
-		}
-
-		if (!user || !user.pubkey) {
-			console.warn('User or user pubkey not available from signer')
-			return
-		}
-
-		try {
-			const relayPrefs = await fetchUserRelayListWithPreferences(user.pubkey)
-			if (relayPrefs && relayPrefs.length > 0) {
-				console.log(`📡 Loading ${relayPrefs.length} relays from user's Nostr relay list`)
-				for (const relay of relayPrefs) {
-					ndkActions.addSingleRelay(relay.url)
-				}
-			} else {
-				console.log('📡 No relay list found on Nostr for user')
-			}
-		} catch (error) {
-			console.error('Failed to load relays from Nostr:', error)
-		}
+		// NOTE: The connection set is operator infrastructure, not user preference.
+		// We deliberately do NOT read the user's kind-10002 relay list here — the app
+		// federates only with its operator-configured relay(s) (config.appRelay /
+		// MAIN_RELAY_BY_STAGE + DEFAULT_PUBLIC_RELAYS). Any user relay prefs persisted
+		// on Nostr are ignored for this app's connections.
 	},
 
 	removeSigner: () => {
