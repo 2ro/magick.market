@@ -73,10 +73,19 @@ export abstract class RegistryManager<TEntry extends RegistryEntry> {
 	}
 
 	// Load existing registry state from the relay on startup.
-	public async loadExistingRegistry(appPubkey: string): Promise<void> {
+	//
+	// Returns true when the relay was reached and the fetch completed (including
+	// the "no existing registry" case — that is a successful empty read), and
+	// false when it could not load (no NDK, or the fetch threw). The boot
+	// bootstrap uses this to decide whether to retry: a false result means the
+	// connection was not actually usable yet and the load should be reattempted.
+	//
+	// A failed fetch throws before reaching handleRegistryEvent, so it never
+	// clears an already-populated in-memory registry.
+	public async loadExistingRegistry(appPubkey: string): Promise<boolean> {
 		if (!this.ndk) {
 			console.warn(`[${this.config.registryDTag}] NDK not available, cannot load existing registry`)
-			return
+			return false
 		}
 
 		this.appPubkey = appPubkey
@@ -96,8 +105,10 @@ export abstract class RegistryManager<TEntry extends RegistryEntry> {
 			} else {
 				console.log(`[${this.config.registryDTag}] No existing registry found`)
 			}
+			return true
 		} catch (error) {
 			console.error(`[${this.config.registryDTag}] Error loading existing registry:`, error)
+			return false
 		}
 	}
 

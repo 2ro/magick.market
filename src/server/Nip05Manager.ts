@@ -193,7 +193,7 @@ export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 		return this.getAllEntries()
 	}
 
-	public async loadExistingNip05Registry(appPubkey: string): Promise<void> {
+	public async loadExistingNip05Registry(appPubkey: string): Promise<boolean> {
 		return this.loadExistingRegistry(appPubkey)
 	}
 

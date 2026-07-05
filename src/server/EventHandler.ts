@@ -11,6 +11,7 @@ import { EventSigner } from './EventSigner'
 import { NDKService } from './NDKService'
 import NDK from '@nostr-dev-kit/ndk'
 import type { RegistryManager, RegistryEntry } from './RegistryManager'
+import { planNdkBootstrap, nextRetryDelayMs } from './ndkBootstrap'
 
 export class EventHandler {
 	private static instance: EventHandler
@@ -96,30 +97,35 @@ export class EventHandler {
 			console.warn('⚠️ Starting NDK service subscriptions failed, continuing anyway:', e)
 		}
 
-		// Set up NDK for blacklist and vanity managers
+		// Set up NDK for the blacklist and name-registry managers.
 		if (config.relayUrl) {
 			this.ndk = new NDK({ explicitRelayUrls: [config.relayUrl] })
-			try {
-				await Promise.race([
-					this.ndk.connect(),
-					new Promise((_, reject) => setTimeout(() => reject(new Error('App relay NDK connect timeout')), 10000)),
-				])
 
-				// Initialize blacklist
+			// INVARIANT (see planNdkBootstrap / ndkBootstrap.ts): attach the NDK to
+			// every manager UNCONDITIONALLY, before and regardless of the connect
+			// race. NDK accepts the reference while still connecting and queues
+			// publishes until the socket is up. Previously these setNDK calls lived
+			// inside the connect try-block, so a flaky ~10s connect timeout left the
+			// managers permanently holding ndk = null and name registrations were
+			// never published (kind-30000 registry) — lost on restart.
+			const attach = planNdkBootstrap({ ndkCreated: true, connectSucceeded: false, loadSucceeded: false })
+			if (attach.attachNdk) {
 				this.blacklistManager.setNDK(this.ndk)
-				await this.blacklistManager.loadExistingBlacklist(this.eventSigner.getAppPubkey())
-
-				// Initialize vanity
 				this.vanityManager.setNDK(this.ndk)
-				await this.vanityManager.loadExistingVanityRegistry(this.eventSigner.getAppPubkey())
-
-				// Initialize NIP-05
 				this.nip05Manager.setNDK(this.ndk)
-				await this.nip05Manager.loadExistingNip05Registry(this.eventSigner.getAppPubkey())
+			}
 
-				// magick.market is GRIN-only: no zap (Lightning) receipt processing.
-			} catch (e) {
-				console.warn('⚠️ App relay NDK setup failed, continuing anyway:', e)
+			const appPubkey = this.eventSigner.getAppPubkey()
+
+			// Bring the connection up and load existing registries on the happy path.
+			// If the first connect races/fails or a load does not complete, keep the
+			// (already-attached) NDK and retry the loads in the background so the
+			// registries populate once the relay is reachable — never block boot on
+			// the flaky connection.
+			const outcome = await this.connectAndLoadRegistries(this.ndk, appPubkey)
+			const plan = planNdkBootstrap({ ndkCreated: true, ...outcome })
+			if (plan.scheduleLoadRetry) {
+				void this.retryRegistryLoads(this.ndk, appPubkey)
 			}
 
 			// magick.market is GRIN-only: we do NOT connect to Lightning "zap"
@@ -129,6 +135,64 @@ export class EventHandler {
 
 		this.isInitialized = true
 		console.log('EventHandler initialized successfully')
+	}
+
+	/**
+	 * One connect + registry-load attempt against the app relay. The NDK is
+	 * assumed already attached to the managers. Returns whether the connect won
+	 * its timeout race and whether the name registries loaded (relay responded).
+	 * Errors are swallowed and reported via the returned flags so the caller can
+	 * decide whether to retry — a failed load never throws and never wipes an
+	 * already-populated registry.
+	 */
+	private async connectAndLoadRegistries(ndk: NDK, appPubkey: string): Promise<{ connectSucceeded: boolean; loadSucceeded: boolean }> {
+		let connectSucceeded = false
+		try {
+			await Promise.race([
+				ndk.connect(),
+				new Promise((_, reject) => setTimeout(() => reject(new Error('App relay NDK connect timeout')), 10000)),
+			])
+			connectSucceeded = true
+		} catch (e) {
+			console.warn('⚠️ App relay NDK connect raced/timed out; NDK stays attached, loads will retry:', e)
+		}
+
+		if (!connectSucceeded) {
+			return { connectSucceeded, loadSucceeded: false }
+		}
+
+		// Blacklist is best-effort and not part of the persistence invariant.
+		try {
+			await this.blacklistManager.loadExistingBlacklist(appPubkey)
+		} catch (e) {
+			console.warn('⚠️ Blacklist load failed, continuing anyway:', e)
+		}
+
+		const vanityLoaded = await this.vanityManager.loadExistingVanityRegistry(appPubkey)
+		const nip05Loaded = await this.nip05Manager.loadExistingNip05Registry(appPubkey)
+		return { connectSucceeded, loadSucceeded: vanityLoaded && nip05Loaded }
+	}
+
+	/**
+	 * Background retry loop for the app-relay registry loads, with capped
+	 * exponential backoff. Runs only when the first boot attempt raced/failed.
+	 * The NDK is already attached to the managers, so registrations published in
+	 * the meantime are not lost; this only backfills the in-memory registries
+	 * from the relay once it becomes reachable.
+	 */
+	private async retryRegistryLoads(ndk: NDK, appPubkey: string): Promise<void> {
+		const maxAttempts = 8
+		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+			await new Promise((r) => setTimeout(r, nextRetryDelayMs(attempt)))
+			const outcome = await this.connectAndLoadRegistries(ndk, appPubkey)
+			const plan = planNdkBootstrap({ ndkCreated: true, ...outcome })
+			if (!plan.scheduleLoadRetry) {
+				console.log('✅ App relay registries loaded on retry')
+				return
+			}
+			console.warn(`⚠️ App relay registry load retry ${attempt}/${maxAttempts} incomplete; will keep trying`)
+		}
+		console.warn('⚠️ App relay registry loads did not complete after retries; NDK remains attached so writes still publish')
 	}
 
 	public handleEvent(event: NostrEvent): NostrEvent | null {
