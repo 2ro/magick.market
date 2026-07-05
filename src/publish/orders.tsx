@@ -1,5 +1,5 @@
 import { ORDER_MESSAGE_TYPE, ORDER_PROCESS_KIND, ORDER_GENERAL_KIND, PAYMENT_RECEIPT_KIND, ORDER_STATUS } from '@/lib/schemas/order'
-import { mintInvoiceNumber } from '@/lib/grin'
+import { deriveProofAddress, mintInvoiceNumber } from '@/lib/grin'
 import { ndkActions } from '@/lib/stores/ndk'
 import { orderKeys } from '@/queries/queryKeyFactory'
 import { NDKEvent, type NDKSigner } from '@nostr-dev-kit/ndk'
@@ -403,6 +403,12 @@ export interface PaymentRequestData {
 	}>
 	/** Opaque invoice number carried in the Goblin pay memo. */
 	invoiceNumber?: string
+	/**
+	 * Merchant grin1 proof address (proof-on-request, contract 4.2). When present
+	 * it is stamped as a ["proof-address", ...] tag so the watcher learns, from
+	 * relays alone, which address a given invoice's proof must be signed by.
+	 */
+	proofAddress?: string
 	expirationTime?: number
 	notes?: string
 }
@@ -516,6 +522,13 @@ export async function createPaymentRequestEvent(data: PaymentRequestData, signer
 	data.paymentMethods.forEach((method) => {
 		tags.push(['payment', method.type, method.details])
 	})
+
+	// Proof-on-request (contract 4.2): advertise the merchant's grin1 proof
+	// address so the watcher learns, from relays alone, which address this
+	// invoice's proof must be signed by.
+	if (data.proofAddress) {
+		tags.push(['proof-address', data.proofAddress])
+	}
 
 	// Optional expiration
 	if (data.expirationTime) {
@@ -1006,6 +1019,7 @@ export async function publishOrderWithDependencies(params: PublishOrderDependenc
 			orderId: orderId,
 			amountNanogrin: data.nanogrinTotal,
 			invoiceNumber,
+			proofAddress: deriveProofAddress(grinAddress) ?? undefined,
 			paymentMethods: grinAddress ? [{ type: 'grin', details: grinAddress }] : [],
 			notes: grinAddress
 				? `Grin payment for order ${orderId} (invoice ${invoiceNumber})`

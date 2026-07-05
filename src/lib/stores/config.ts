@@ -9,6 +9,8 @@ interface ConfigState {
 		appPublicKey?: string
 		cvmServerPubkey?: string
 		needsSetup?: boolean
+		/** Instance watcher npub for proof-on-request confirmation (spec 4.4/4.5). */
+		watcherNpub?: string
 		[key: string]: any
 	}
 	isLoaded: boolean
@@ -41,6 +43,24 @@ export const configActions = {
 
 	getAppPublicKey: () => {
 		return configStore.state.config.appPublicKey
+	},
+
+	/**
+	 * The instance watcher's npub (proof-on-request, spec section 7 + contract 4.4).
+	 * The only new persistent config value the marketplace needs for proofs. It is
+	 * emitted as the pay-URI `notify` param (so the wallet gift-wraps the proof to
+	 * it) and is the ONLY pubkey allowed to flip an order to "paid" (contract 4.5).
+	 * Absent -> proofs run in degraded mode (M4): no auto-flip to paid.
+	 *
+	 * OPERATIONS INVARIANT (relay overlap): the wallet publishes its receipts to
+	 * ITS advertised relay pool. This instance's app relay (config.appRelay) and
+	 * the watcher daemon must listen on at least one relay in that pool, or no
+	 * receipt is ever seen. The live deploy is aligned (its pinned app relay is
+	 * in the wallet's pool); fresh instances must arrange the overlap themselves.
+	 */
+	getWatcherNpub: (): string | undefined => {
+		const npub = configStore.state.config.watcherNpub
+		return typeof npub === 'string' && npub.startsWith('npub1') ? npub : undefined
 	},
 
 	getAppSettings: () => {

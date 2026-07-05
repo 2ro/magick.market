@@ -62,6 +62,27 @@ export interface GoblinPayUriParams {
 	amountNanogrin: number
 	/** Opaque invoice number carried to the seller with the payment. */
 	memo?: string
+	/**
+	 * Proof-on-request (frozen contract 4.1). The merchant's Grin slatepack
+	 * proof address (grin1.../tgrin1...). Presence turns proof mode ON for this
+	 * one transaction: the wallet threads it as `payment_proof_recipient_address`
+	 * so finalize yields a receiver-signed Grin payment proof. Omit for a normal
+	 * proof-free send.
+	 */
+	proofAddress?: string
+	/**
+	 * Machine-readable order handle (contract 4.1). The wallet echoes it verbatim
+	 * into every proof-delivery event; magick sets it to the `MM-<hex>` invoice
+	 * number. Distinct from `memo` (which is user-editable display text): `order`
+	 * is the load-bearing routing key.
+	 */
+	order?: string
+	/**
+	 * The instance watcher's npub (contract 4.1). The wallet gift-wraps the full
+	 * proof delivery to this key. Omit when the instance has no watcher; the
+	 * payment still works, confirmation just falls back to degraded mode.
+	 */
+	notify?: string
 }
 
 /**
@@ -84,7 +105,7 @@ export interface GoblinPayUriParams {
  * The wallet carries `memo` into the payment message so the seller can
  * correlate the payment with the order.
  */
-export function buildGoblinPayUri({ to, amountNanogrin, memo }: GoblinPayUriParams): string {
+export function buildGoblinPayUri({ to, amountNanogrin, memo, proofAddress, order, notify }: GoblinPayUriParams): string {
 	// The wallet parses amounts as decimal GRIN (via Grin's amount_from_hr_string),
 	// so convert from our internal nanogrin and clamp away negatives / non-finite.
 	const amountGrin = formatGrin(Math.max(0, Math.round(amountNanogrin)))
@@ -92,6 +113,12 @@ export function buildGoblinPayUri({ to, amountNanogrin, memo }: GoblinPayUriPara
 	// encodeURIComponent gives RFC-3986 percent-encoding (space -> %20, not `+`)
 	// so the memo round-trips through the wallet's percent-decoder exactly.
 	if (memo) query += `&memo=${encodeURIComponent(memo)}`
+	// Proof-on-request params (frozen contract 4.1). Percent-encoded like memo so
+	// they round-trip through the wallet's decoder; a pre-feature wallet ignores
+	// unknown params (payuri.rs forward-compat) and degrades to a proof-free send.
+	if (proofAddress) query += `&proof=${encodeURIComponent(proofAddress)}`
+	if (order) query += `&order=${encodeURIComponent(order)}`
+	if (notify) query += `&notify=${encodeURIComponent(notify)}`
 	return `nostr:${to}?${query}`
 }
 
@@ -137,15 +164,16 @@ export function isValidGoblinPayAddress(value: string): boolean {
 }
 
 /**
- * Best-effort client-side shape check of a Grin payment proof pasted from
- * Goblin. Real verification (receiver signature + kernel on-chain) is the
- * seller's Goblin wallet's job; the market only carries the proof.
+ * Proof-on-request needs the merchant's Grin SLATEPACK address (a payment proof
+ * binds to a slatepack address, not to a Nostr key). Given a merchant's
+ * advertised payment detail, return the grin1/tgrin1 address to thread as the
+ * pay-URI `proof` param, or null when the merchant advertised only an
+ * nprofile/npub (in which case magick emits a proof-free URI and confirmation
+ * falls back to the degraded mode of spec M4).
  */
-export function looksLikeGrinPaymentProof(value: string): boolean {
-	const v = value.trim()
-	if (v.length < 16) return false
-	// Accept JSON payment proofs, armored proofs, or hex/base64-ish blobs.
-	if (v.startsWith('{') && v.endsWith('}')) return true
-	if (/^[A-Za-z0-9+/=._\-\s]+$/.test(v)) return true
-	return false
+export function deriveProofAddress(address: string | null | undefined): string | null {
+	const v = address?.trim()
+	if (!v) return null
+	if (/^t?grin1[02-9ac-hj-np-z]{20,}$/i.test(v)) return v
+	return null
 }

@@ -1,11 +1,11 @@
 import { getPersistedInvoicesForOrder, persistInvoicesLocally, updatePersistedInvoiceLocally } from '@/lib/utils/invoiceStorage'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
 import type { V4VDTO } from '@/lib/stores/cart'
-import { buildGoblinPayUri } from '@/lib/grin'
+import { buildGoblinPayUri, deriveProofAddress } from '@/lib/grin'
+import { configActions } from '@/lib/stores/config'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useGenerateInvoiceMutation } from '@/queries/payment'
-import { publishPaymentReceipt } from '@/publish/payment'
 import type { PaymentCompletionSource } from '@/components/checkout/PaymentContent'
 import { useQueryClient } from '@tanstack/react-query'
 import { orderKeys } from '@/queries/queryKeyFactory'
@@ -81,11 +81,15 @@ export function useOrderInvoices({ order, sellerV4VShares, userPubkey }: UseOrde
 			const invoiceNumber = getInvoiceNumber(paymentRequest) || paymentRequest.id
 
 			const grinAddress = grinPayment?.details || null
+			const proofAddress = deriveProofAddress(grinAddress) ?? undefined
 			const payUri = grinAddress
 				? buildGoblinPayUri({
 						to: grinAddress,
 						amountNanogrin: amount,
 						memo: invoiceNumber,
+						proofAddress,
+						order: proofAddress ? invoiceNumber : undefined,
+						notify: proofAddress ? configActions.getWatcherNpub() : undefined,
 					})
 				: null
 
@@ -197,41 +201,22 @@ export function useOrderInvoices({ order, sellerV4VShares, userPubkey }: UseOrde
 		[orderId, sellerPubkey, generateInvoice, refreshLocalInvoices],
 	)
 
-	// Handle payment completion (dual confirmation, M5):
-	// - 'receipt': a kind 17 receipt already landed over Nostr, nothing to publish
-	// - 'proof-import': the buyer pasted the Grin payment proof; publish it as a kind 17 receipt
+	// Handle payment completion (proof-on-request, contract 4.5): the watcher's
+	// signed confirmed receipt is the only thing that flips an order to paid, so
+	// there is nothing for the buyer to publish here. We only persist the local
+	// paid marker and refresh.
 	const handlePaymentComplete = useCallback(
-		async (invoiceId: string, proof: string, source: PaymentCompletionSource, dialogInvoices: PaymentInvoiceData[]) => {
-			toast.success('Payment completed successfully!')
-
-			const invoice = enrichedInvoices.find((inv) => inv.id === invoiceId) || dialogInvoices.find((inv) => inv.id === invoiceId)
-
-			if (invoice && source === 'proof-import') {
-				try {
-					await publishPaymentReceipt({
-						invoice: {
-							orderId,
-							recipientPubkey: invoice.recipientPubkey,
-							amount: invoice.amount,
-							description: invoice.description,
-							id: invoice.id,
-						},
-						proof,
-					})
-
-					queryClient.invalidateQueries({ queryKey: orderKeys.details(orderId) })
-				} catch (err) {
-					console.error('Failed to publish payment receipt:', err)
-				}
-			}
+		async (invoiceId: string, proof: string, _source: PaymentCompletionSource, _dialogInvoices: PaymentInvoiceData[]) => {
+			toast.success('Payment confirmed')
 
 			updatePersistedInvoiceLocally(orderId, invoiceId, {
 				status: 'paid',
 				proof,
 			})
 			refreshLocalInvoices()
+			queryClient.invalidateQueries({ queryKey: orderKeys.details(orderId) })
 		},
-		[orderId, enrichedInvoices, queryClient, refreshLocalInvoices],
+		[orderId, queryClient, refreshLocalInvoices],
 	)
 
 	// Handle payment failure

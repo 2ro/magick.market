@@ -1,25 +1,27 @@
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { QRCode } from '@/components/ui/qr-code'
-import { Textarea } from '@/components/ui/textarea'
-import { formatGrinAmount, looksLikeGrinPaymentProof, toGoblinDeeplink } from '@/lib/grin'
+import { formatGrinAmount, toGoblinDeeplink } from '@/lib/grin'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
-import { usePaymentReceiptSubscription } from '@/queries/payment'
+import { useOrderConfirmation } from '@/queries/payment'
 import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-export type PaymentCompletionSource = 'receipt' | 'proof-import'
+/**
+ * Confirmation always arrives as a receipt over Nostr now (proof-on-request):
+ * the buyer never proves anything by hand. The single source is kept as a type
+ * for call-site clarity.
+ */
+export type PaymentCompletionSource = 'receipt'
 
 interface PaymentContentProps {
 	invoices: PaymentInvoiceData[]
 	currentIndex?: number
 	/**
-	 * Called when an invoice is confirmed paid.
-	 * - source 'receipt': a kind 17 receipt for the invoice number arrived over Nostr
-	 *   (the seller-receipt confirmation path) - no further publishing needed.
-	 * - source 'proof-import': the buyer pasted the receiver-signed Grin payment
-	 *   proof from Goblin - the caller should publish it as a kind 17 receipt.
+	 * Called when an invoice is confirmed paid by the instance watcher's signed
+	 * kind-17 receipt (contract 4.5). The buyer takes no action; there is no
+	 * proof to import.
 	 */
 	onPaymentComplete?: (invoiceId: string, proof: string, source: PaymentCompletionSource) => void
 	onSkipPayment?: (invoiceId: string) => void
@@ -74,16 +76,8 @@ export function PaymentContent({
 	const activeIndex = Math.min(Math.max(0, currentIndex), Math.max(0, invoices.length - 1))
 	const currentInvoice = invoices[activeIndex]
 
-	const [proofDraft, setProofDraft] = useState('')
-	const [showProofImport, setShowProofImport] = useState(false)
 	const completedInvoicesRef = useRef<Set<string>>(new Set())
 	const sessionStartRef = useRef(Math.floor(Date.now() / 1000))
-
-	// Reset proof draft when switching invoices
-	useEffect(() => {
-		setProofDraft('')
-		setShowProofImport(false)
-	}, [currentInvoice?.id])
 
 	const isCompletedForProgress = (inv: PaymentInvoiceData) => inv.status === 'paid' || inv.status === 'skipped' || inv.status === 'expired'
 
@@ -102,38 +96,24 @@ export function PaymentContent({
 		[invoices.length, onNavigate],
 	)
 
-	// Seller-receipt confirmation path (M5): watch kind 17 receipts for this
-	// invoice number. When the seller's Goblin publishes a receipt, the order
-	// flips to paid automatically - whichever path lands first wins.
-	const receiptSubscriptionEnabled = !!currentInvoice && currentInvoice.status === 'pending'
-	const { data: receiptProof } = usePaymentReceiptSubscription({
-		orderId: currentInvoice?.orderId || '',
+	// Proof-on-request confirmation (contract 4.5): watch kind-17 events for this
+	// invoice number. The buyer's plain receipt flips the page to "payment
+	// detected"; only the watcher-signed confirmed receipt at depth 10 flips it
+	// to paid. The buyer does nothing by hand.
+	const confirmationEnabled = !!currentInvoice && currentInvoice.status === 'pending'
+	const confirmation = useOrderConfirmation({
 		invoiceId: currentInvoice?.id || '',
 		sessionStartTime: sessionStartRef.current,
-		enabled: receiptSubscriptionEnabled,
+		enabled: confirmationEnabled,
 	})
 
 	useEffect(() => {
-		if (!receiptProof || !currentInvoice) return
+		if (confirmation.state !== 'paid' || !currentInvoice) return
 		if (completedInvoicesRef.current.has(currentInvoice.id)) return
 		completedInvoicesRef.current.add(currentInvoice.id)
-		toast.success('Payment receipt received')
-		onPaymentComplete?.(currentInvoice.id, receiptProof, 'receipt')
-	}, [receiptProof, currentInvoice, onPaymentComplete])
-
-	// Buyer-proof confirmation path (M5): paste the receiver-signed payment
-	// proof Goblin shows after finalize.
-	const handleProofImport = useCallback(() => {
-		if (!currentInvoice) return
-		const proof = proofDraft.trim()
-		if (!looksLikeGrinPaymentProof(proof)) {
-			toast.error('That does not look like a Grin payment proof. Copy it from Goblin after the payment finalizes.')
-			return
-		}
-		if (completedInvoicesRef.current.has(currentInvoice.id)) return
-		completedInvoicesRef.current.add(currentInvoice.id)
-		onPaymentComplete?.(currentInvoice.id, proof, 'proof-import')
-	}, [currentInvoice, proofDraft, onPaymentComplete])
+		toast.success('Payment confirmed')
+		onPaymentComplete?.(currentInvoice.id, confirmation.proof || '', 'receipt')
+	}, [confirmation.state, confirmation.proof, currentInvoice, onPaymentComplete])
 
 	const handleSkipPayment = useCallback(() => {
 		if (!currentInvoice) return
@@ -250,68 +230,41 @@ export function PaymentContent({
 						</Button>
 					</div>
 
-					{/* Invoice number stays visible; the raw payment link tucks behind a
-					    small "Pay manually" disclosure (collapsed by default) but keeps
-					    its copy-ability for anyone pasting it into a wallet by hand. */}
-					<div className="space-y-2">
-						<CopyRow label="Invoice number (payment memo)" value={currentInvoice.id} />
-						<details className="rounded-lg border bg-gray-50">
-							<summary className="cursor-pointer select-none px-3 py-2 text-xs text-gray-500 hover:text-gray-700">Pay manually</summary>
-							<div className="px-2 pb-2">
-								<CopyRow label="Payment link" value={currentInvoice.payUri!} />
-							</div>
-						</details>
-					</div>
+					{/* Invoice number for reference. The payload rides in the QR and the
+					    "Open in Goblin" deep link; there is no copyable pay-URI row to
+					    paste by hand (the last-resort manual path lives inside the
+					    encrypted order conversation, not here). */}
+					<CopyRow label="Invoice number (payment memo)" value={currentInvoice.id} />
 
-					{/* Live status */}
-					<div className="flex items-center justify-center gap-2 text-sm text-gray-600">
-						<div className="animate-spin w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full" />
-						<span>Waiting for payment — settling privately over Nostr</span>
-					</div>
+					{/* Honest live status: waiting -> payment detected, confirming n of 10 -> paid. */}
+					{confirmation.state === 'detected' || confirmation.state === 'confirming' ? (
+						<div className="flex items-center justify-center gap-2 text-sm text-blue-700">
+							<div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full" />
+							<span>
+								{confirmation.confirmations > 0
+									? `Payment detected — confirming ${confirmation.confirmations} of ${confirmation.required}`
+									: 'Payment detected — confirming on chain'}
+							</span>
+						</div>
+					) : (
+						<div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+							<div className="animate-spin w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full" />
+							<span>Waiting for your payment</span>
+						</div>
+					)}
 
 					<p className="text-xs text-gray-500 text-center max-w-md mx-auto">
-						No account needed. Scan or open the link in your Goblin wallet; the invoice number rides along as the payment memo so the seller
-						can match your payment to this order. Grin payments are interactive — if the seller is offline, the payment settles when they
-						come online.
+						No account needed. Scan the QR or open the link in your Goblin wallet. Grin payments are interactive — if the seller&apos;s
+						wallet is offline, your payment settles the moment it comes back online, and this order confirms then.
 					</p>
 
-					{/* Buyer proof import (M5 second confirmation path) */}
-					<div className="border-t pt-4 space-y-3">
-						{!showProofImport ? (
-							<Button variant="outline" className="w-full" onClick={() => setShowProofImport(true)}>
-								I paid — import proof from Goblin
-							</Button>
-						) : (
-							<div className="space-y-2">
-								<label className="text-sm font-medium">Paste the payment proof from Goblin</label>
-								<p className="text-xs text-gray-500">
-									After the payment finalizes, Goblin shows a receiver-signed payment proof. Paste it here to mark the order paid — the
-									seller&apos;s wallet verifies it.
-								</p>
-								<Textarea
-									value={proofDraft}
-									onChange={(e) => setProofDraft(e.target.value)}
-									placeholder="Paste the Grin payment proof here"
-									rows={4}
-									className="font-mono text-xs"
-								/>
-								<div className="flex gap-2">
-									<Button onClick={handleProofImport} disabled={!proofDraft.trim()} className="flex-1 btn-black">
-										Submit proof
-									</Button>
-									<Button variant="ghost" onClick={() => setShowProofImport(false)}>
-										Cancel
-									</Button>
-								</div>
-							</div>
-						)}
-
-						{onSkipPayment && (
+					{onSkipPayment && (
+						<div className="border-t pt-4">
 							<Button variant="ghost" className="w-full text-gray-500" onClick={handleSkipPayment}>
 								Pay later
 							</Button>
-						)}
-					</div>
+						</div>
+					)}
 				</div>
 			)}
 		</div>

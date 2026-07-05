@@ -19,11 +19,12 @@ import { encodeOrderCode, mintGuestOrderSigner, saveGuestOrder } from '@/lib/sto
 import { ndkActions } from '@/lib/stores/ndk'
 import { persistInvoicesLocally, updatePersistedInvoiceLocally } from '@/lib/utils/invoiceStorage'
 import { publishOrderWithDependencies, type CreatedOrderInfo } from '@/publish/orders'
-import { publishPaymentReceipt } from '@/publish/payment'
 import { getShippingEvent, getShippingService } from '@/queries/shipping'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
 import { useGenerateInvoiceMutation, resolveV4VGrinAddress } from '@/queries/payment'
-import { buildGoblinPayUri } from '@/lib/grin'
+import { buildGoblinPayUri, deriveProofAddress } from '@/lib/grin'
+import { configActions } from '@/lib/stores/config'
+import { isSelfPurchase, SELF_PURCHASE_MESSAGE } from '@/lib/checkout/selfPurchase'
 import type { NDKSigner } from '@nostr-dev-kit/ndk'
 import { useAutoAnimate } from '@formkit/auto-animate/react'
 import { useForm } from '@tanstack/react-form'
@@ -374,7 +375,14 @@ function RouteComponent() {
 								amount: recipient.amountNanogrin,
 								description: 'V4V Community Payment',
 								grinAddress,
-								payUri: buildGoblinPayUri({ to: grinAddress, amountNanogrin: recipient.amountNanogrin, memo: invoiceId }),
+								payUri: buildGoblinPayUri({
+									to: grinAddress,
+									amountNanogrin: recipient.amountNanogrin,
+									memo: invoiceId,
+									proofAddress: deriveProofAddress(grinAddress) ?? undefined,
+									order: deriveProofAddress(grinAddress) ? invoiceId : undefined,
+									notify: deriveProofAddress(grinAddress) ? configActions.getWatcherNpub() : undefined,
+								}),
 								status: 'pending',
 								type: 'v4v',
 								createdAt: Date.now(),
@@ -464,36 +472,14 @@ function RouteComponent() {
 	}
 
 	/**
-	 * Dual confirmation (M5): whichever path lands first marks the order paid.
-	 * - 'receipt': a kind 17 receipt for this invoice number arrived over Nostr
-	 *   (published by the seller's Goblin) - nothing more to publish.
-	 * - 'proof-import': the buyer pasted the receiver-signed Grin payment proof
-	 *   from Goblin - publish it as a kind 17 receipt (signed by the guest key
-	 *   for anonymous orders) so the seller sees the proof too.
+	 * Proof-on-request confirmation (contract 4.5): the only event that flips an
+	 * order to paid is the instance watcher's signed kind-17 confirmed receipt,
+	 * surfaced by useOrderConfirmation. The buyer publishes nothing; here we just
+	 * record the local paid marker.
 	 */
-	const handlePaymentComplete = async (invoiceId: string, proof: string, source: PaymentCompletionSource) => {
+	const handlePaymentComplete = async (invoiceId: string, proof: string, _source: PaymentCompletionSource) => {
 		const invoice = invoices.find((inv) => inv.id === invoiceId)
 		if (!invoice) return
-
-		if (source === 'proof-import') {
-			try {
-				const receiptSigner: NDKSigner | undefined = guestSignerRef.current || ndkActions.getSigner() || undefined
-				await publishPaymentReceipt({
-					invoice: {
-						orderId: invoice.orderId,
-						recipientPubkey: invoice.recipientPubkey,
-						amount: invoice.amount,
-						description: invoice.description,
-						id: invoice.id,
-					},
-					proof,
-					signer: receiptSigner,
-				})
-			} catch (error) {
-				console.error('Failed to publish payment receipt:', error)
-				toast.error(`Failed to publish payment proof: ${error instanceof Error ? error.message : 'Unknown error'}`)
-			}
-		}
 
 		updatePersistedInvoiceLocally(invoice.orderId, invoice.id, {
 			status: 'paid',
@@ -590,6 +576,15 @@ function RouteComponent() {
 	const handleContinueToPayment = async () => {
 		if (!canContinueToPayment) {
 			toast.error('Delivery requirements must be completed before payment can be requested.')
+			return
+		}
+
+		// Self-purchase guard (definitive choke point): a Grin payment where
+		// sender == receiver can never settle, so refuse before any order or
+		// payment request is published. Guests always get a fresh key, so only a
+		// logged-in buyer who is also a seller in the cart can trip this.
+		if (isSelfPurchase(authStore.state.user?.pubkey, sellers)) {
+			toast.error(SELF_PURCHASE_MESSAGE)
 			return
 		}
 
