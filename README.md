@@ -23,6 +23,10 @@ single rail:
   the invoice number arrives over Nostr, or the buyer imports the receiver-signed Grin payment proof
   from Goblin (published as a kind 17 receipt carrying the `grin_proof`). Whichever lands first wins.
   Full proof verification (receiver signature + kernel on-chain) is the seller's Goblin wallet's job.
+- **Paid names** - NIP-05 usernames and vanity URLs are bought with real GoblinPay invoices, not an
+  honor-system payment proof. The buyer pays an invoice whose funds land in the marketplace till
+  wallet (wallet-to-wallet, sweepable by the operator), and the name is granted only after the
+  payment confirms on chain (GoblinPay's 10-confirmation house standard).
 
 To install dependencies:
 
