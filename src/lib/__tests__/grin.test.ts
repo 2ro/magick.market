@@ -9,6 +9,7 @@ import {
 	looksLikeGrinPaymentProof,
 	mintInvoiceNumber,
 	nanogrinToGrin,
+	toGoblinDeeplink,
 } from '@/lib/grin'
 
 // Parse a Goblin pay-URI the way the Goblin wallet's payuri.rs does:
@@ -99,6 +100,24 @@ describe('buildGoblinPayUri (canonical Goblin wallet pay-URI, the invoice-number
 		expect(uri).not.toContain('MM AB+CD')
 		expect(uri).toContain('memo=MM%20AB%2BCD')
 		expect(parseGoblinPayUri(uri).memo).toBe('MM AB+CD')
+	})
+})
+
+describe('toGoblinDeeplink (clickable goblin: scheme deeplink)', () => {
+	test('swaps only the scheme, preserving recipient/amount/memo verbatim', () => {
+		const invoice = mintInvoiceNumber()
+		const payUri = buildGoblinPayUri({ to: 'nprofile1abcdef', amountNanogrin: 1_500_000_000, memo: invoice })
+		const deeplink = toGoblinDeeplink(payUri)
+		expect(deeplink.startsWith('goblin:')).toBe(true)
+		expect(deeplink).not.toContain('nostr:')
+		// Everything after the scheme is byte-for-byte identical.
+		expect(deeplink).toBe(payUri.replace(/^nostr:/, 'goblin:'))
+		expect(deeplink).toBe(`goblin:nprofile1abcdef?amount=1.5&memo=${invoice}`)
+	})
+
+	test('is a no-op for anything not on the nostr: scheme', () => {
+		expect(toGoblinDeeplink('goblin:npub1x?amount=1')).toBe('goblin:npub1x?amount=1')
+		expect(toGoblinDeeplink('grin1abc')).toBe('grin1abc')
 	})
 })
 

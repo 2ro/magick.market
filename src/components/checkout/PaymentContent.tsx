@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { QRCode } from '@/components/ui/qr-code'
 import { Textarea } from '@/components/ui/textarea'
-import { formatGrinAmount, looksLikeGrinPaymentProof } from '@/lib/grin'
+import { formatGrinAmount, looksLikeGrinPaymentProof, toGoblinDeeplink } from '@/lib/grin'
 import type { PaymentInvoiceData } from '@/lib/types/invoice'
 import { usePaymentReceiptSubscription } from '@/queries/payment'
 import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink } from 'lucide-react'
@@ -142,8 +142,10 @@ export function PaymentContent({
 
 	const handleOpenInGoblin = useCallback(() => {
 		if (!currentInvoice?.payUri) return
-		// Deeplink into the Goblin wallet; carries to/amount/memo.
-		window.location.href = currentInvoice.payUri
+		// Deeplink into the Goblin wallet on its own `goblin:` scheme (carries the
+		// same recipient/amount/memo as the QR). A clickable `nostr:` link would be
+		// routed by desktop OSes to a social client, not the wallet.
+		window.location.href = toGoblinDeeplink(currentInvoice.payUri)
 	}, [currentInvoice])
 
 	// Early return if no invoice
@@ -248,10 +250,17 @@ export function PaymentContent({
 						</Button>
 					</div>
 
-					{/* Invoice number + raw URI, copyable */}
+					{/* Invoice number stays visible; the raw payment link tucks behind a
+					    small "Pay manually" disclosure (collapsed by default) but keeps
+					    its copy-ability for anyone pasting it into a wallet by hand. */}
 					<div className="space-y-2">
 						<CopyRow label="Invoice number (payment memo)" value={currentInvoice.id} />
-						<CopyRow label="Payment link" value={currentInvoice.payUri!} />
+						<details className="rounded-lg border bg-gray-50">
+							<summary className="cursor-pointer select-none px-3 py-2 text-xs text-gray-500 hover:text-gray-700">Pay manually</summary>
+							<div className="px-2 pb-2">
+								<CopyRow label="Payment link" value={currentInvoice.payUri!} />
+							</div>
+						</details>
 					</div>
 
 					{/* Live status */}
