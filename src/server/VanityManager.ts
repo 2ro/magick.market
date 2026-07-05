@@ -199,7 +199,7 @@ export class VanityManagerImpl extends RegistryManager<VanityEntry> {
 	 * Load existing vanity registry from relay.
 	 * Convenience wrapper over base class loadExistingRegistry.
 	 */
-	public async loadExistingVanityRegistry(appPubkey: string): Promise<void> {
+	public async loadExistingVanityRegistry(appPubkey: string): Promise<boolean> {
 		return this.loadExistingRegistry(appPubkey)
 	}
 
