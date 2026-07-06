@@ -9,6 +9,8 @@ import { getPublicKey, nip19 } from 'nostr-tools'
 import { encrypt } from 'nostr-tools/nip49'
 import { hexToBytes } from 'nostr-tools/utils'
 import { decryptInWorker } from '@/lib/crypto/nip49Async'
+import { goblinSessionActions } from './goblinSession'
+import type { GoblinAuthorizeSigner } from '@/lib/goblin/session/GoblinAuthorizeSigner'
 
 export const NOSTR_CONNECT_KEY = 'nostr_connect_url'
 export const NOSTR_LOCAL_SIGNER_KEY = 'nostr_local_signer_key'
@@ -267,6 +269,35 @@ export const authActions = {
 		return user
 	},
 
+	// "Trust <domain>" session login (Authorize v2): the wallet proved the
+	// identity AND opened a live signing session, so unlike loginWithGoblinPubkey
+	// this attaches a real client-side signer (GoblinAuthorizeSigner) routing each
+	// sign through the wallet channel, and canSign becomes true. The pubkey is
+	// still persisted so a refresh (which loses the in-memory channel) degrades to
+	// a wallet-verified view-only session with a re-login affordance, never a hang.
+	loginWithGoblinTrust: (pubkey: string, signer: GoblinAuthorizeSigner): NDKUser => {
+		const user = new NDKUser({ pubkey })
+		const ndk = ndkActions.getNDK()
+		if (ndk) user.ndk = ndk
+
+		void ndkActions.setSigner(signer)
+
+		localStorage.setItem(NOSTR_GOBLIN_PUBKEY, pubkey)
+		localStorage.setItem(NOSTR_USER_PUBKEY, pubkey)
+		localStorage.setItem(NOSTR_AUTO_LOGIN, 'true')
+
+		authStore.setState((state) => ({
+			...state,
+			user,
+			isAuthenticated: true,
+			canSign: true,
+		}))
+
+		if (ndk) void cartActions.reconcileRemoteCartForUser(user.pubkey, signer, ndk)
+
+		return user
+	},
+
 	// Central "can this session sign client-side right now?" check. False for
 	// wallet-verified Goblin sessions (and any session without a live signer).
 	canSignNow: (): boolean => {
@@ -374,6 +405,9 @@ export const authActions = {
 	logout: () => {
 		const ndk = ndkActions.getNDK()
 		if (!ndk) return
+		// End any live Goblin trust session: send the logout signal on the channel
+		// and tear it down (spec section 6, item 1) before dropping the signer.
+		goblinSessionActions.endActiveSession('logout')
 		ndkActions.removeSigner()
 		localStorage.removeItem(NOSTR_LOCAL_SIGNER_KEY)
 		localStorage.removeItem(NOSTR_CONNECT_KEY)
