@@ -42,8 +42,8 @@ single rail:
   per-seller GoblinPay till is planned but not shipped.
 - **Buyer and seller surfaces** - buying your own product is refused up front, before any order is
   created. Legacy `/product/:id` links permanently redirect to `/products/:id`. The seller (the only
-  party who logs in) signs in with a Nostr browser extension (recommended) or a private key; Nostr Connect
-  has been removed in favour of extension-first login. Relays are operator infrastructure - magick.market
+  party who logs in) signs in with their Goblin wallet (the first and default option), a Nostr browser extension,
+  or a private key; Nostr Connect has been removed. Relays are operator infrastructure - magick.market
   federates with its own relay - and are not something buyers or sellers manage.
 - **Privacy-first contact and delivery** - a digital-goods buyer chooses how the seller reaches them from a
   set of privacy-respecting channels: email, Signal, Telegram, Matrix, Session, or SimpleX. The chosen channel rides
