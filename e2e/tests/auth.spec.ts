@@ -92,7 +92,8 @@ test.describe('Authentication', () => {
 				// Should NOT be auto-logged in
 				await openLoginDialog(page)
 
-				// Extension tab is the default
+				// Goblin is the default tab; switch to Extension
+				await page.locator('[data-testid="extension-tab"]').click()
 				await page.locator('[data-testid="connect-extension-button"]').click()
 
 				// Verify auth succeeds
@@ -327,6 +328,7 @@ test.describe('Authentication', () => {
 
 				// Login via extension dialog
 				await openLoginDialog(page)
+				await page.locator('[data-testid="extension-tab"]').click()
 				await page.locator('[data-testid="connect-extension-button"]').click()
 				await expectAuthenticated(page)
 
@@ -425,6 +427,7 @@ test.describe('Authentication', () => {
 
 				// Login via extension
 				await openLoginDialog(page)
+				await page.locator('[data-testid="extension-tab"]').click()
 				await page.locator('[data-testid="connect-extension-button"]').click()
 				await expectAuthenticated(page)
 
