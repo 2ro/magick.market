@@ -15,9 +15,9 @@ import {
 } from '@/lib/goblin/session/protocol'
 
 /** A minimal wallet counterpart: opens the session and answers sign requests. */
-function makeWallet(sitePubkey: string) {
+function makeWallet(sitePubkey: string, identityPrivOverride?: Uint8Array) {
 	const walletKeys = generateChannelKeypair()
-	const identityPriv = new Uint8Array(32).fill(7)
+	const identityPriv = identityPrivOverride ?? new Uint8Array(32).fill(7)
 	const identityPub = getPublicKey(identityPriv)
 	const convKey = conversationKey(walletKeys.privateKey, sitePubkey)
 
@@ -101,6 +101,15 @@ function makeWallet(sitePubkey: string) {
 		endSession(): Event {
 			return sealEnvelope({
 				payload: { type: 'session-end', id: 'end-1', reason: 'revoked' },
+				senderPrivateKey: walletKeys.privateKey,
+				recipientPublicKey: sitePubkey,
+				convKey,
+			})
+		},
+		/** A wallet that omits the reason field (audit cosmetic: tolerate both). */
+		endSessionWithoutReason(): Event {
+			return sealEnvelope({
+				payload: { type: 'session-end', id: 'end-2' },
 				senderPrivateKey: walletKeys.privateKey,
 				recipientPublicKey: sitePubkey,
 				convKey,
@@ -204,6 +213,74 @@ describe('GoblinSessionChannel', () => {
 		void channel.sign({ pubkey: wallet.identityPub, created_at: unixNow(), kind: 17, tags: [], content: 'pay' }).catch(() => {})
 		await new Promise((r) => setTimeout(r, 20))
 		expect(events.pending.at(-1)).toBe(1) // "confirm in your wallet" is showing
+	})
+
+	test('P2-2: a forged session-open with an unverified identity never binds the channel', async () => {
+		// The verifier stands in for the server login-status check: only the
+		// genuine wallet's identity passes.
+		const genuineIdentity = getPublicKey(new Uint8Array(32).fill(7))
+		const { channel, siteSessionKeys } = makeChannel({
+			verifyIdentity: async (identityPubkey: string) => identityPubkey === genuineIdentity,
+		})
+		const attacker = makeWallet(siteSessionKeys.publicKey, new Uint8Array(32).fill(66))
+		const openPromise = channel.open(100).catch((e) => e)
+
+		channel.handleEnvelope(attacker.sessionOpen())
+		await new Promise((r) => setTimeout(r, 10))
+
+		// The forged open was rejected: nothing bound, no identity adopted.
+		expect(channel.walletPubkey).toBeNull()
+		expect(channel.identity).toBeNull()
+
+		// And the trust flow surfaces an honest timeout, not a hijacked session.
+		const outcome = await openPromise
+		expect(outcome).toBeInstanceOf(GoblinSessionError)
+		expect((outcome as GoblinSessionError).code).toBe('timed_out')
+	})
+
+	test('P2-2: the genuine session-open still binds after a forged attempt', async () => {
+		const genuineIdentity = getPublicKey(new Uint8Array(32).fill(7))
+		const { channel, siteSessionKeys, published } = makeChannel({
+			verifyIdentity: async (identityPubkey: string) => identityPubkey === genuineIdentity,
+		})
+		const attacker = makeWallet(siteSessionKeys.publicKey, new Uint8Array(32).fill(66))
+		const wallet = makeWallet(siteSessionKeys.publicKey) // identity = fill(7), verifiable
+
+		const opened = channel.open(1000)
+		channel.handleEnvelope(attacker.sessionOpen()) // forged, rejected by verify
+		channel.handleEnvelope(wallet.sessionOpen()) // genuine, binds
+		const info = await opened
+		expect(info.identityPubkey).toBe(genuineIdentity)
+		expect(channel.walletPubkey).toBe(wallet.walletKeys.publicKey)
+
+		// The bound channel works end to end: a sign round-trips with the wallet.
+		const signPromise = channel.sign({ pubkey: wallet.identityPub, created_at: unixNow(), kind: 1, tags: [], content: 'hi' })
+		channel.handleEnvelope(wallet.signResult(wallet.readRequest(published[0])))
+		expect((await signPromise).pubkey).toBe(genuineIdentity)
+
+		// And the attacker's key still cannot drive the bound channel.
+		channel.handleEnvelope(attacker.endSession())
+		expect(channel.isClosed).toBe(false)
+	})
+
+	test('P2-2 hardening: pre-bind, a session-end from an arbitrary sender is ignored', async () => {
+		const { channel, siteSessionKeys, events } = makeChannel()
+		const stranger = makeWallet(siteSessionKeys.publicKey)
+		channel.handleEnvelope(stranger.endSession())
+		expect(channel.isClosed).toBe(false)
+		expect(events.ended.length).toBe(0)
+	})
+
+	test('a session-end without a reason field defaults to "ended", never undefined', async () => {
+		const { channel, siteSessionKeys, events } = makeChannel()
+		const wallet = makeWallet(siteSessionKeys.publicKey)
+		const opened = channel.open(1000)
+		channel.handleEnvelope(wallet.sessionOpen())
+		await opened
+
+		channel.handleEnvelope(wallet.endSessionWithoutReason())
+		expect(channel.isClosed).toBe(true)
+		expect(events.ended).toEqual(['ended'])
 	})
 
 	test('the wallet session-end envelope ends the session (spec section 6 item 1)', async () => {

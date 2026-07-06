@@ -133,11 +133,15 @@ export interface SessionOpenPayload {
 	identity_pubkey: string
 }
 
-/** Either side tears the session down (spec section 6, items 1 and 2). */
+/**
+ * Either side tears the session down (spec section 6, items 1 and 2). The site
+ * always sends a reason; the wallet may omit it, so receivers must tolerate an
+ * absent field (the channel defaults the display reason to "ended").
+ */
 export interface SessionEndPayload {
 	type: 'session-end'
 	id: string
-	reason: 'logout' | 'revoked' | 'expired'
+	reason?: 'logout' | 'revoked' | 'expired'
 }
 
 export type ChannelPayload =

@@ -66,9 +66,22 @@ export const goblinSessionActions = {
 		const siteSessionKeys = generateChannelKeypair()
 		const { hint, relays } = resolveChannelRelays()
 
+		// P2-2 (channel hijack race): before the channel binds to a session-open,
+		// cross-check its declared identity against the server login callback the
+		// wallet fired at approval (spec 4.3 step 1 completes before the channel
+		// opens). A forged session-open racing on the relay cannot make the server
+		// report its identity for our challenge nonce, so it never binds.
+		const verifyIdentity = async (identityPubkey: string): Promise<boolean> => {
+			const res = await fetch(`/api/v1/login/status?c=${params.challenge}`)
+			if (!res.ok) return false
+			const data = (await res.json()) as { status: string; pubkey?: string }
+			return data.status === 'ok' && data.pubkey === identityPubkey
+		}
+
 		const channel = new GoblinSessionChannel({
 			siteSessionKeys,
 			relays,
+			verifyIdentity,
 			onPendingChange: (count) => {
 				goblinSessionStore.setState((s) => ({
 					...s,

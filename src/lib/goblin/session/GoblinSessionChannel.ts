@@ -98,6 +98,15 @@ export interface GoblinSessionChannelOptions {
 	confirmHintMs?: number
 	/** Override the per-request timeout (ms). Testability. */
 	requestTimeoutMs?: number
+	/**
+	 * P2-2 (channel hijack race): a session-open only binds the channel if this
+	 * verifier confirms its identity_pubkey against an out-of-band authority (the
+	 * server login callback the wallet already fired). An attacker who races a
+	 * forged session-open cannot pass this check, so it never becomes the channel
+	 * peer; the channel keeps listening for the genuine open until the trust flow
+	 * times out. Defaults to accept (tests); production always supplies one.
+	 */
+	verifyIdentity?: (identityPubkey: string) => Promise<boolean>
 }
 
 export class GoblinSessionChannel {
@@ -108,6 +117,7 @@ export class GoblinSessionChannel {
 	private readonly publishFn: (relays: string[], event: Event) => void
 	private readonly confirmHintMs: number
 	private readonly requestTimeoutMs: number
+	private readonly verifyIdentity?: (identityPubkey: string) => Promise<boolean>
 
 	private pool: SimplePool | null = null
 	private sub: { close: () => void } | null = null
@@ -129,6 +139,7 @@ export class GoblinSessionChannel {
 		this.onSessionEnd = options.onSessionEnd
 		this.confirmHintMs = options.confirmHintMs ?? DEFAULT_CONFIRM_HINT_MS
 		this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+		this.verifyIdentity = options.verifyIdentity
 		this.publishFn =
 			options.publish ??
 			((relays, event) => {
@@ -207,16 +218,22 @@ export class GoblinSessionChannel {
 
 		if (payload.type === 'session-open') {
 			if (this.walletSessionPubkey) return // already open; ignore duplicates
-			this.walletSessionPubkey = event.pubkey
-			this.identityPubkey = payload.identity_pubkey
-			this.convKey = senderConvKey!
-			this.sessionOpenResolve?.({ walletSessionPubkey: event.pubkey, identityPubkey: payload.identity_pubkey })
-			this.sessionOpenResolve = null
+			// P2-2: do NOT bind to the first openable session-open. Verify its
+			// declared identity against the server-confirmed login pubkey first; a
+			// forged open (attacker racing with the site channel pubkey) fails the
+			// check and is dropped, and we keep listening for the genuine one.
+			void this.tryBind(event.pubkey, senderConvKey!, payload.identity_pubkey)
 			return
 		}
 
+		// Pre-bind, only session-open is meaningful: an unbound channel must not
+		// let an arbitrary sender tear it down or answer requests (P2-2 hardening).
+		if (!this.walletSessionPubkey) return
+
 		if (payload.type === 'session-end') {
-			this.teardown(payload.reason)
+			// Tolerate a wallet that omits the reason field (cosmetic audit note):
+			// UI copy must never render "undefined".
+			this.teardown(payload.reason ?? 'ended')
 			return
 		}
 
@@ -232,6 +249,32 @@ export class GoblinSessionChannel {
 				if (error.endsSession) this.teardown(payload.error)
 			}
 		}
+	}
+
+	/**
+	 * Verify a candidate session-open's identity, then bind the channel to that
+	 * wallet session key if (and only if) verification passed and nothing else
+	 * bound first. A rejected or errored verification drops the candidate and
+	 * leaves the channel listening; the open() timeout is the honest failure path
+	 * if a genuine session-open never arrives (P2-2).
+	 */
+	private async tryBind(walletSessionPubkey: string, convKey: Uint8Array, identityPubkey: string): Promise<void> {
+		let verified = true
+		if (this.verifyIdentity) {
+			try {
+				verified = await this.verifyIdentity(identityPubkey)
+			} catch {
+				verified = false // fail closed: an unverifiable open never binds
+			}
+		}
+		if (!verified) return
+		if (this.closed || this.walletSessionPubkey) return // raced by a genuine bind or teardown
+
+		this.walletSessionPubkey = walletSessionPubkey
+		this.identityPubkey = identityPubkey
+		this.convKey = convKey
+		this.sessionOpenResolve?.({ walletSessionPubkey, identityPubkey })
+		this.sessionOpenResolve = null
 	}
 
 	/**
