@@ -54,7 +54,7 @@ function formatDate(timestamp: number): string {
 
 function CommentItem({ comment, onPressReply }: CommentItemProps) {
 	// Get is authenticated for showing/hiding "Reply" button
-	const { user: userSelf, isAuthenticated } = useAuth()
+	const { user: userSelf, isAuthenticated, canSign } = useAuth()
 
 	// Get parent comment author name, if applicable
 	const pubkeyAuthorParentComment = comment?.parentComment?.authorPubkey ?? ''
@@ -82,6 +82,10 @@ function CommentItem({ comment, onPressReply }: CommentItemProps) {
 				onCommentButtonPressed={() => {
 					if (!isAuthenticated) {
 						toast.error('You must be logged in to comment')
+						return
+					}
+					if (!canSign) {
+						toast.error('Commenting needs your key: log in with your extension or private key')
 						return
 					}
 					onPressReply(comment)
@@ -199,7 +203,7 @@ function AddCommentForm({ targetEvent, parentComment, onCancel }: AddCommentProp
 }
 
 export function Comments({ targetEvent }: CommentsProps) {
-	const { isAuthenticated } = useStore(authStore)
+	const { isAuthenticated, canSign } = useStore(authStore)
 	const { data: comments, isLoading, error } = useComments(targetEvent)
 	const [showAll, setShowAll] = useState(false)
 	const [replyingTo, setReplyingTo] = useState<Comment | undefined>(undefined)
@@ -210,12 +214,18 @@ export function Comments({ targetEvent }: CommentsProps) {
 
 	return (
 		<div className="space-y-6" id="comments-section">
-			{/* Add Comment Form - only show for authenticated users */}
-			{isAuthenticated ? (
+			{/* Add Comment Form - only show for sessions that can sign. A
+			    wallet-verified (view only) Goblin session is authenticated but
+			    holds no client-side signer, so posting would fail. */}
+			{isAuthenticated && canSign ? (
 				<AddCommentForm targetEvent={targetEvent} />
 			) : (
 				<div className="bg-gray-50 p-4 rounded-lg text-center">
-					<p className="text-gray-600">Please log in to leave a comment.</p>
+					<p className="text-gray-600">
+						{isAuthenticated
+							? 'Signed in with your Goblin wallet (view only). Commenting needs a login with your key.'
+							: 'Please log in to leave a comment.'}
+					</p>
 				</div>
 			)}
 

@@ -15,6 +15,10 @@ export const NOSTR_LOCAL_SIGNER_KEY = 'nostr_local_signer_key'
 export const NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY = 'nostr_local_encrypted_signer_key'
 export const NOSTR_AUTO_LOGIN = 'nostr_auto_login'
 export const NOSTR_USER_PUBKEY = 'nostr_user_pubkey'
+// Pubkey of a wallet-verified (view only) "Sign in with Goblin" session. The
+// wallet proved control of the key by signing a one-time challenge, but the
+// key itself never left the wallet, so no signer material is stored.
+export const NOSTR_GOBLIN_PUBKEY = 'nostr_goblin_pubkey'
 // Decrypted private key cached for the lifetime of the browser session (tab).
 // Lives in sessionStorage so a page refresh reuses it instead of re-running the
 // expensive NIP-49 scrypt derivation, while a new tab / cold start still
@@ -51,6 +55,10 @@ const clearSessionPrivateKey = () => {
 interface AuthState {
 	user: NDKUser | null
 	isAuthenticated: boolean
+	// True only when the session holds a real client-side signer (extension,
+	// private key, NIP-46). A wallet-verified Goblin session is authenticated
+	// but CANNOT sign: it stays false and signing surfaces must re-prompt.
+	canSign: boolean
 	needsDecryptionPassword: boolean
 	isAuthenticating: boolean
 	needsMigration: boolean
@@ -59,6 +67,7 @@ interface AuthState {
 const initialState: AuthState = {
 	user: null,
 	isAuthenticated: false,
+	canSign: false,
 	needsDecryptionPassword: false,
 	isAuthenticating: false,
 	needsMigration: false,
@@ -111,6 +120,17 @@ export const authActions = {
 					return
 				}
 				authStore.setState((state) => ({ ...state, needsDecryptionPassword: true }))
+				return
+			}
+
+			// Wallet-verified Goblin session (view only): restore from the stored
+			// pubkey. No signer exists client-side, so this never prompts.
+
+			const goblinPubkey = localStorage.getItem(NOSTR_GOBLIN_PUBKEY)
+
+			if (goblinPubkey) {
+				authActions.loginWithGoblinPubkey(goblinPubkey)
+				authActions.checkAndShowTermsDialog()
 				return
 			}
 
@@ -199,10 +219,15 @@ export const authActions = {
 
 			const user = await signer.user()
 
+			// A signer-based login supersedes any wallet-verified Goblin session,
+			// otherwise the stale pubkey would win on the next refresh.
+			localStorage.removeItem(NOSTR_GOBLIN_PUBKEY)
+
 			authStore.setState((state) => ({
 				...state,
 				user,
 				isAuthenticated: true,
+				canSign: true,
 			}))
 
 			void cartActions.reconcileRemoteCartForUser(user.pubkey, signer, ndk)
@@ -217,6 +242,35 @@ export const authActions = {
 		} finally {
 			authStore.setState((state) => ({ ...state, isAuthenticating: false }))
 		}
+	},
+
+	// "Sign in with Goblin": the wallet signed a one-time server challenge, so we
+	// know the user controls this pubkey, but the key never left the wallet. This
+	// creates a wallet-verified (view only) session: NO NDK signer is set, and
+	// canSign stays false so signing surfaces re-prompt via the login dialog.
+	loginWithGoblinPubkey: (pubkey: string): NDKUser => {
+		const user = new NDKUser({ pubkey })
+		const ndk = ndkActions.getNDK()
+		if (ndk) user.ndk = ndk
+
+		localStorage.setItem(NOSTR_GOBLIN_PUBKEY, pubkey)
+		localStorage.setItem(NOSTR_USER_PUBKEY, pubkey)
+		localStorage.setItem(NOSTR_AUTO_LOGIN, 'true')
+
+		authStore.setState((state) => ({
+			...state,
+			user,
+			isAuthenticated: true,
+			canSign: false,
+		}))
+
+		return user
+	},
+
+	// Central "can this session sign client-side right now?" check. False for
+	// wallet-verified Goblin sessions (and any session without a live signer).
+	canSignNow: (): boolean => {
+		return authStore.state.canSign && !!ndkActions.getSigner()
 	},
 
 	getAvailableNostrExtensions: (): string[] => {
@@ -251,14 +305,17 @@ export const authActions = {
 				throw new Error('Failed to authenticate with Nostr extension. Please make sure your extension is unlocked and try again.')
 			}
 
-			// Store user pubkey and enable auto-login for persistence
+			// Store user pubkey and enable auto-login for persistence. A signer
+			// login supersedes any wallet-verified Goblin session.
 			localStorage.setItem(NOSTR_USER_PUBKEY, user.pubkey)
 			localStorage.setItem(NOSTR_AUTO_LOGIN, 'true')
+			localStorage.removeItem(NOSTR_GOBLIN_PUBKEY)
 
 			authStore.setState((state) => ({
 				...state,
 				user,
 				isAuthenticated: true,
+				canSign: true,
 			}))
 
 			void cartActions.reconcileRemoteCartForUser(user.pubkey, signer, ndk)
@@ -290,11 +347,14 @@ export const authActions = {
 
 			localStorage.setItem(NOSTR_LOCAL_SIGNER_KEY, localSigner.privateKey || '')
 			localStorage.setItem(NOSTR_CONNECT_KEY, bunkerUrl)
+			// A signer login supersedes any wallet-verified Goblin session.
+			localStorage.removeItem(NOSTR_GOBLIN_PUBKEY)
 
 			authStore.setState((state) => ({
 				...state,
 				user,
 				isAuthenticated: true,
+				canSign: true,
 			}))
 
 			void cartActions.reconcileRemoteCartForUser(user.pubkey, signer, ndk)
@@ -319,6 +379,7 @@ export const authActions = {
 		localStorage.removeItem(NOSTR_CONNECT_KEY)
 		localStorage.removeItem(NOSTR_LOCAL_ENCRYPTED_SIGNER_KEY)
 		localStorage.removeItem(NOSTR_AUTO_LOGIN)
+		localStorage.removeItem(NOSTR_GOBLIN_PUBKEY)
 		clearSessionPrivateKey()
 		// Clear cart when user logs out
 		cartActions.clear({ publishRemote: false, reason: 'logout' })
