@@ -18,7 +18,7 @@ interface LoginDialogProps {
 }
 
 export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
-	const [activeTab, setActiveTab] = useState('extension')
+	const [activeTab, setActiveTab] = useState('goblin')
 	const [enableAutoLogin, setEnableAutoLogin] = useState(localStorage.getItem(NOSTR_AUTO_LOGIN) === 'true')
 	const [extensionError, setExtensionError] = useState<string | null>(null)
 	const { loginWithExtension } = useAuth()
@@ -76,8 +76,11 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
 					</div>
 				</div>
 				<div className="px-4 sm:px-6 pt-0 pb-6 w-full max-w-full overflow-hidden">
-					<Tabs defaultValue="extension" className="w-full min-w-0 max-w-full" value={activeTab}>
+					<Tabs defaultValue="goblin" className="w-full min-w-0 max-w-full" value={activeTab}>
 						<TabsList className="flex bg-transparent p-0 rounded-none w-full h-auto">
+							<TabsTrigger value="goblin" data-testid="goblin-tab" className={classNameTab} onClick={() => setActiveTab('goblin')}>
+								Goblin
+							</TabsTrigger>
 							<TabsTrigger value="extension" data-testid="extension-tab" className={classNameTab} onClick={() => setActiveTab('extension')}>
 								Extension
 							</TabsTrigger>
@@ -89,10 +92,10 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
 							>
 								Private Key
 							</TabsTrigger>
-							<TabsTrigger value="goblin" data-testid="goblin-tab" className={classNameTab} onClick={() => setActiveTab('goblin')}>
-								Goblin
-							</TabsTrigger>
 						</TabsList>
+						<TabsContent value="goblin" className="w-full max-w-full overflow-hidden">
+							<GoblinLogin onError={handleError} onSuccess={handleLoginSuccess} />
+						</TabsContent>
 						<TabsContent value="extension" className="w-full max-w-full overflow-hidden">
 							<div className="space-y-4 py-4">
 								<p className="text-muted-foreground text-sm">
@@ -123,9 +126,6 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
 						</TabsContent>
 						<TabsContent value="private-key" className="w-full max-w-full overflow-hidden">
 							<PrivateKeyLogin onError={handleError} onSuccess={handleLoginSuccess} />
-						</TabsContent>
-						<TabsContent value="goblin" className="w-full max-w-full overflow-hidden">
-							<GoblinLogin onError={handleError} onSuccess={handleLoginSuccess} />
 						</TabsContent>
 					</Tabs>
 					<div className="flex items-center space-x-2">
