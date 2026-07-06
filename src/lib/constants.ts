@@ -46,6 +46,26 @@ export const defaultRelaysUrls: string[] = DEFAULT_PUBLIC_RELAYS
 // Bug reports relay - always writable even in staging
 export const BUG_RELAY = 'wss://bugs.magick.market/'
 
+/**
+ * Base URL of the default Goblin name authority (goblin-nip05d), used for the
+ * NIP-05 name-transfer marketplace (name-transfer-spec sections 5, 6, 9).
+ *
+ * Two roles:
+ *  - Seller-side detection: GET {NAME_AUTHORITY_URL}/api/v1/by-pubkey/{pubkey}
+ *    to discover whether the logged-in key currently holds a name here.
+ *  - Default authority base when minting a fresh sale offer.
+ *
+ * Once a specific offer is in hand, that offer's authority base is derived from
+ * its own `domain` tag (https://{domain}) per the spec's federation rule; this
+ * constant is only the seller-detection lookup and the default.
+ *
+ * Overridable at build/server time via the NAME_AUTHORITY_URL env var (read
+ * from process.env when present, e.g. a self-hosted authority). For v1 this is
+ * the single documented config point; there is no /api/config threading yet.
+ * No trailing slash.
+ */
+export const NAME_AUTHORITY_URL: string = (typeof process !== 'undefined' && process.env?.NAME_AUTHORITY_URL?.trim()) || 'https://goblin.st'
+
 // GRIN is the only currency on magick.market. 1 GRIN = 10^9 nanogrin (see src/lib/grin.ts).
 export const CURRENCIES = [
 	'GRIN', // Grin

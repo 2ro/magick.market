@@ -47,6 +47,7 @@ import { Route as DashboardLayoutDashboardAccountProfileRouteImport } from './ro
 import { Route as DashboardLayoutDashboardAccountPreferencesRouteImport } from './routes/_dashboard-layout/dashboard/account/preferences'
 import { Route as DashboardLayoutDashboardAccountNostrAddressRouteImport } from './routes/_dashboard-layout/dashboard/account/nostr-address'
 import { Route as DashboardLayoutDashboardSalesMessagesPubkeyRouteImport } from './routes/_dashboard-layout/dashboard/sales/messages/$pubkey'
+import { Route as DashboardLayoutDashboardProductsProductsSellNameRouteImport } from './routes/_dashboard-layout/dashboard/products/products/sell-name'
 import { Route as DashboardLayoutDashboardProductsProductsNewRouteImport } from './routes/_dashboard-layout/dashboard/products/products/new'
 import { Route as DashboardLayoutDashboardProductsProductsProductIdRouteImport } from './routes/_dashboard-layout/dashboard/products/products/$productId'
 import { Route as DashboardLayoutDashboardProductsCollectionsNewRouteImport } from './routes/_dashboard-layout/dashboard/products/collections/new'
@@ -262,6 +263,12 @@ const DashboardLayoutDashboardSalesMessagesPubkeyRoute =
     path: '/$pubkey',
     getParentRoute: () => DashboardLayoutDashboardSalesMessagesRoute,
   } as any)
+const DashboardLayoutDashboardProductsProductsSellNameRoute =
+  DashboardLayoutDashboardProductsProductsSellNameRouteImport.update({
+    id: '/sell-name',
+    path: '/sell-name',
+    getParentRoute: () => DashboardLayoutDashboardProductsProductsRoute,
+  } as any)
 const DashboardLayoutDashboardProductsProductsNewRoute =
   DashboardLayoutDashboardProductsProductsNewRouteImport.update({
     id: '/new',
@@ -328,6 +335,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/products/collections/new': typeof DashboardLayoutDashboardProductsCollectionsNewRoute
   '/dashboard/products/products/$productId': typeof DashboardLayoutDashboardProductsProductsProductIdRoute
   '/dashboard/products/products/new': typeof DashboardLayoutDashboardProductsProductsNewRoute
+  '/dashboard/products/products/sell-name': typeof DashboardLayoutDashboardProductsProductsSellNameRoute
   '/dashboard/sales/messages/$pubkey': typeof DashboardLayoutDashboardSalesMessagesPubkeyRoute
 }
 export interface FileRoutesByTo {
@@ -371,6 +379,7 @@ export interface FileRoutesByTo {
   '/dashboard/products/collections/new': typeof DashboardLayoutDashboardProductsCollectionsNewRoute
   '/dashboard/products/products/$productId': typeof DashboardLayoutDashboardProductsProductsProductIdRoute
   '/dashboard/products/products/new': typeof DashboardLayoutDashboardProductsProductsNewRoute
+  '/dashboard/products/products/sell-name': typeof DashboardLayoutDashboardProductsProductsSellNameRoute
   '/dashboard/sales/messages/$pubkey': typeof DashboardLayoutDashboardSalesMessagesPubkeyRoute
 }
 export interface FileRoutesById {
@@ -416,6 +425,7 @@ export interface FileRoutesById {
   '/_dashboard-layout/dashboard/products/collections/new': typeof DashboardLayoutDashboardProductsCollectionsNewRoute
   '/_dashboard-layout/dashboard/products/products/$productId': typeof DashboardLayoutDashboardProductsProductsProductIdRoute
   '/_dashboard-layout/dashboard/products/products/new': typeof DashboardLayoutDashboardProductsProductsNewRoute
+  '/_dashboard-layout/dashboard/products/products/sell-name': typeof DashboardLayoutDashboardProductsProductsSellNameRoute
   '/_dashboard-layout/dashboard/sales/messages/$pubkey': typeof DashboardLayoutDashboardSalesMessagesPubkeyRoute
 }
 export interface FileRouteTypes {
@@ -461,6 +471,7 @@ export interface FileRouteTypes {
     | '/dashboard/products/collections/new'
     | '/dashboard/products/products/$productId'
     | '/dashboard/products/products/new'
+    | '/dashboard/products/products/sell-name'
     | '/dashboard/sales/messages/$pubkey'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -504,6 +515,7 @@ export interface FileRouteTypes {
     | '/dashboard/products/collections/new'
     | '/dashboard/products/products/$productId'
     | '/dashboard/products/products/new'
+    | '/dashboard/products/products/sell-name'
     | '/dashboard/sales/messages/$pubkey'
   id:
     | '__root__'
@@ -548,6 +560,7 @@ export interface FileRouteTypes {
     | '/_dashboard-layout/dashboard/products/collections/new'
     | '/_dashboard-layout/dashboard/products/products/$productId'
     | '/_dashboard-layout/dashboard/products/products/new'
+    | '/_dashboard-layout/dashboard/products/products/sell-name'
     | '/_dashboard-layout/dashboard/sales/messages/$pubkey'
   fileRoutesById: FileRoutesById
 }
@@ -839,6 +852,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardLayoutDashboardSalesMessagesPubkeyRouteImport
       parentRoute: typeof DashboardLayoutDashboardSalesMessagesRoute
     }
+    '/_dashboard-layout/dashboard/products/products/sell-name': {
+      id: '/_dashboard-layout/dashboard/products/products/sell-name'
+      path: '/sell-name'
+      fullPath: '/dashboard/products/products/sell-name'
+      preLoaderRoute: typeof DashboardLayoutDashboardProductsProductsSellNameRouteImport
+      parentRoute: typeof DashboardLayoutDashboardProductsProductsRoute
+    }
     '/_dashboard-layout/dashboard/products/products/new': {
       id: '/_dashboard-layout/dashboard/products/products/new'
       path: '/new'
@@ -891,6 +911,7 @@ const DashboardLayoutDashboardProductsCollectionsRouteWithChildren =
 interface DashboardLayoutDashboardProductsProductsRouteChildren {
   DashboardLayoutDashboardProductsProductsProductIdRoute: typeof DashboardLayoutDashboardProductsProductsProductIdRoute
   DashboardLayoutDashboardProductsProductsNewRoute: typeof DashboardLayoutDashboardProductsProductsNewRoute
+  DashboardLayoutDashboardProductsProductsSellNameRoute: typeof DashboardLayoutDashboardProductsProductsSellNameRoute
 }
 
 const DashboardLayoutDashboardProductsProductsRouteChildren: DashboardLayoutDashboardProductsProductsRouteChildren =
@@ -899,6 +920,8 @@ const DashboardLayoutDashboardProductsProductsRouteChildren: DashboardLayoutDash
       DashboardLayoutDashboardProductsProductsProductIdRoute,
     DashboardLayoutDashboardProductsProductsNewRoute:
       DashboardLayoutDashboardProductsProductsNewRoute,
+    DashboardLayoutDashboardProductsProductsSellNameRoute:
+      DashboardLayoutDashboardProductsProductsSellNameRoute,
   }
 
 const DashboardLayoutDashboardProductsProductsRouteWithChildren =
