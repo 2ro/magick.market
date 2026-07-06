@@ -276,6 +276,34 @@ describe('GoblinSessionChannel', () => {
 		expect(await decryptPromise).toBe('shipped!')
 	})
 
+	test('a 30402 listing publish (money tier by ruling) shows pending, and a decline is non-fatal with honest copy', async () => {
+		const { channel, siteSessionKeys, published, events } = makeChannel({ confirmHintMs: 5 })
+		const wallet = makeWallet(siteSessionKeys.publicKey)
+		const opened = channel.open(1000)
+		channel.handleEnvelope(wallet.sessionOpen())
+		await opened
+
+		// The listing publish flow signs a kind 30402; the wallet classifies it
+		// money tier and prompts, so the request stalls past the hint delay.
+		const signPromise = channel.sign({
+			pubkey: wallet.identityPub,
+			created_at: unixNow(),
+			kind: 30402,
+			tags: [['d', 'product_1']],
+			content: 'a fine wand',
+		})
+		await new Promise((r) => setTimeout(r, 20))
+		expect(events.pending.at(-1)).toBe(1) // "Confirm in your wallet" is showing
+
+		// The user declines the wallet prompt: per-action refusal with human copy
+		// (this message is what the publish mutation's toast surfaces).
+		const req = wallet.readRequest(published[0])
+		channel.handleEnvelope(wallet.refuse(req.id, 'user_declined'))
+		await expect(signPromise).rejects.toThrow(/declined this action in your wallet/)
+		expect(channel.isClosed).toBe(false) // session stays live
+		expect(events.pending.at(-1)).toBe(0) // indicator cleared
+	})
+
 	test('a declined encrypt (money-tier pause on a pay-committing message) is non-fatal', async () => {
 		const { channel, siteSessionKeys, published, events } = makeChannel({ confirmHintMs: 5 })
 		const wallet = makeWallet(siteSessionKeys.publicKey)

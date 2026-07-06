@@ -33,7 +33,9 @@ export const REQUEST_EXPIRATION_SECONDS = 120
 /**
  * The LOW-tier kinds magick asks to sign silently under a trust grant (spec
  * section 5.5, "the magick low-tier working set from finding B"). Kind 17
- * (payment receipt / value-granting registration) and every other money-tier
+ * (payment receipt / value-granting registration), kind 30402 (product
+ * listing: moved to the MONEY tier by owner ruling, publishing or editing a
+ * listing is the seller's commitment to a price) and every other money-tier
  * kind are DELIBERATELY absent: they belong to the wallet's per-action money
  * prompt, never the silent set. Kind 22242 (login) is never here either.
  */
@@ -51,7 +53,6 @@ export const MAGICK_LOW_TIER_KINDS: readonly number[] = [
 	30000, // follow / people set
 	30003, // bookmark set
 	30078, // app data (cart)
-	30402, // listing (NIP-99 / Gamma)
 	30405, // collection
 	30406, // shipping option
 	31990, // handler advertisement (NIP-89)

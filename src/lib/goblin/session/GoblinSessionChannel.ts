@@ -33,13 +33,30 @@ import {
 	type UnsignedComposedEvent,
 } from './protocol'
 
+/**
+ * Human copy per refusal code (spec section 7's "what the site shows"). These
+ * become Error.message, so surfaces that toast a caught error (e.g. the listing
+ * publish mutation's onError) show honest copy instead of a raw code.
+ */
+const ERROR_COPY: Record<GoblinSessionErrorCode | 'channel_closed', string> = {
+	user_declined: 'You declined this action in your wallet.',
+	kind_not_in_session: 'This action is not covered by your session. Sign in again to extend it.',
+	identity_mismatch: 'Signed-in identity changed. Please sign in again.',
+	stale_request: 'Your device clock looks off, or the request took too long. Retry.',
+	too_large: 'That request was too large to sign.',
+	session_paused: 'Your wallet paused signing for this site. Resume it in the wallet or sign in again.',
+	session_ended: 'Your session ended. Please sign in again.',
+	timed_out: 'Your wallet did not respond in time. Retry.',
+	channel_closed: 'The session channel is not open yet.',
+}
+
 /** A per-action refusal (spec section 7). Non-fatal for `user_declined`. */
 export class GoblinSessionError extends Error {
 	constructor(
 		public readonly code: GoblinSessionErrorCode | 'channel_closed',
 		message?: string,
 	) {
-		super(message ?? code)
+		super(message ?? ERROR_COPY[code] ?? code)
 		this.name = 'GoblinSessionError'
 	}
 

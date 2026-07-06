@@ -25,7 +25,7 @@ describe('goblin session protocol', () => {
 			callbackUrl: 'https://magick.market/api/v1/login/callback',
 			siteSessionPubkey: 'b'.repeat(64),
 			relayHint: 'wss://relay.magick.market/',
-			kinds: [7, 1, 7, 30402],
+			kinds: [7, 1, 7, 30405],
 		})
 		expect(uri.startsWith('goblin:trust?')).toBe(true)
 		const query = new URLSearchParams(uri.slice('goblin:trust?'.length))
@@ -35,17 +35,21 @@ describe('goblin session protocol', () => {
 		expect(query.get('sk')).toBe('b'.repeat(64))
 		expect(query.get('r')).toBe('wss://relay.magick.market/')
 		// dedup preserves first-seen order
-		expect(query.get('k')).toBe('7,1,30402')
+		expect(query.get('k')).toBe('7,1,30405')
 	})
 
-	test('the requested low-tier set excludes money tier (17) and login (22242)', () => {
+	test('the requested low-tier set excludes money tier (17, 30402) and login (22242)', () => {
 		expect(MAGICK_LOW_TIER_KINDS).not.toContain(17)
+		// 30402 listing: money tier by owner ruling (a listing commits a price).
+		expect(MAGICK_LOW_TIER_KINDS).not.toContain(30402)
 		expect(MAGICK_LOW_TIER_KINDS).not.toContain(GOBLIN_LOGIN_EVENT_KIND)
 		// but does carry the HTTP-auth kinds so uploads/name registration work
 		expect(MAGICK_LOW_TIER_KINDS).toContain(24242)
 		expect(MAGICK_LOW_TIER_KINDS).toContain(27235)
 		// and the everyday low-risk kinds
-		for (const k of [0, 1, 5, 7, 13, 14, 16, 1059, 30402]) expect(MAGICK_LOW_TIER_KINDS).toContain(k)
+		for (const k of [0, 1, 5, 7, 13, 14, 16, 1059, 30405, 30406]) expect(MAGICK_LOW_TIER_KINDS).toContain(k)
+		// the silent set is exactly 18 kinds after the 30402 ruling
+		expect(MAGICK_LOW_TIER_KINDS.length).toBe(18)
 	})
 
 	test('toUnsignedComposedEvent strips id and sig, keeps client-pinned created_at', () => {

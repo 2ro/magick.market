@@ -5,11 +5,14 @@ import { Loader2 } from 'lucide-react'
 /**
  * Global "confirm in your wallet" indicator for a live Goblin trust session.
  *
- * When a sign stays outstanding past the hint delay (a money-tier request awaits
- * the wallet's password prompt, or the wallet is backgrounded), the session
- * store's pendingConfirmCount rises and this fixed banner tells the user to look
- * at their wallet, rather than leaving the action silently spinning (spec 5.4,
- * two response timings; section 7 "confirm in your wallet").
+ * When a request stays outstanding past the hint delay (a money-tier sign such
+ * as a payment or a 30402 listing publish awaiting the wallet's password
+ * prompt, a pay-committing encrypt, or a backgrounded wallet), the session
+ * store's pendingConfirmCount rises and this fixed banner tells the user to
+ * look at their wallet, rather than leaving the action silently spinning (spec
+ * 5.4, two response timings; section 7 "confirm in your wallet"). Mounted at
+ * the root layout, so it covers every flow including the dashboard listing
+ * publish form.
  */
 export function GoblinSessionIndicator() {
 	const { status, pendingConfirmCount } = useStore(goblinSessionStore)
@@ -22,7 +25,7 @@ export function GoblinSessionIndicator() {
 			data-testid="goblin-session-confirm"
 		>
 			<Loader2 className="h-4 w-4 animate-spin" />
-			Confirm this payment in your wallet
+			Confirm in your wallet
 			{pendingConfirmCount > 1 ? ` (${pendingConfirmCount})` : ''}
 		</div>
 	)
