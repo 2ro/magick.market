@@ -92,6 +92,38 @@ export type SignResultPayload =
 	| { type: 'sign_result'; id: string; ok: true; event: Event }
 	| { type: 'sign_result'; id: string; ok: false; error: GoblinSessionErrorCode }
 
+/**
+ * NIP-44 encrypt request (site -> wallet), seam extension (coordinator ruling):
+ * the wallet encrypts `plaintext` from the session identity to `peer_pubkey`.
+ * The wallet inspects the plaintext (a kind 14/16 order message can commit a
+ * payment) and MAY answer only after its money-tier password prompt, so an
+ * encrypt, like a sign, can sit in the "confirm in your wallet" state.
+ */
+export interface EncryptRequestPayload {
+	type: 'encrypt'
+	id: string
+	ts: number
+	peer_pubkey: string
+	plaintext: string
+}
+
+export type EncryptResultPayload =
+	| { type: 'encrypt_result'; id: string; ok: true; ciphertext: string }
+	| { type: 'encrypt_result'; id: string; ok: false; error: GoblinSessionErrorCode }
+
+/** NIP-44 decrypt request (site -> wallet): `ciphertext` from `peer_pubkey` to the identity. */
+export interface DecryptRequestPayload {
+	type: 'decrypt'
+	id: string
+	ts: number
+	peer_pubkey: string
+	ciphertext: string
+}
+
+export type DecryptResultPayload =
+	| { type: 'decrypt_result'; id: string; ok: true; plaintext: string }
+	| { type: 'decrypt_result'; id: string; ok: false; error: GoblinSessionErrorCode }
+
 /** Channel opened by the wallet after the trust grant (spec section 5.2 step 3). */
 export interface SessionOpenPayload {
 	type: 'session-open'
@@ -107,7 +139,18 @@ export interface SessionEndPayload {
 	reason: 'logout' | 'revoked' | 'expired'
 }
 
-export type ChannelPayload = SignRequestPayload | SignResultPayload | SessionOpenPayload | SessionEndPayload
+export type ChannelPayload =
+	| SignRequestPayload
+	| SignResultPayload
+	| EncryptRequestPayload
+	| EncryptResultPayload
+	| DecryptRequestPayload
+	| DecryptResultPayload
+	| SessionOpenPayload
+	| SessionEndPayload
+
+/** The wallet -> site answer payloads correlated by request id. */
+export type ChannelResultPayload = SignResultPayload | EncryptResultPayload | DecryptResultPayload
 
 const HEX64_RE = /^[0-9a-f]{64}$/i
 
@@ -233,7 +276,16 @@ export function openEnvelope(event: Pick<Event, 'content'>, convKey: Uint8Array)
 		const parsed = JSON.parse(plaintext) as unknown
 		if (!parsed || typeof parsed !== 'object') return null
 		const type = (parsed as { type?: unknown }).type
-		if (type === 'sign' || type === 'sign_result' || type === 'session-open' || type === 'session-end') {
+		if (
+			type === 'sign' ||
+			type === 'sign_result' ||
+			type === 'encrypt' ||
+			type === 'encrypt_result' ||
+			type === 'decrypt' ||
+			type === 'decrypt_result' ||
+			type === 'session-open' ||
+			type === 'session-end'
+		) {
 			return parsed as ChannelPayload
 		}
 		return null

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { finalizeEvent, getPublicKey } from 'nostr-tools'
+import { NDKUser } from '@nostr-dev-kit/ndk'
+import { finalizeEvent, getPublicKey, nip44 } from 'nostr-tools'
 import type { Event } from 'nostr-tools'
 import { GoblinAuthorizeSigner, type SignChannel } from '@/lib/goblin/session/GoblinAuthorizeSigner'
 import { GoblinSessionError } from '@/lib/goblin/session/GoblinSessionChannel'
@@ -8,7 +9,20 @@ import type { UnsignedComposedEvent } from '@/lib/goblin/session/protocol'
 const identityPriv = new Uint8Array(32).fill(9)
 const identityPub = getPublicKey(identityPriv)
 
-/** A fake channel that signs with the identity key, for signer-only unit tests. */
+/** Channel stub whose ops all throw; spread and override per test. */
+const unusedOps = {
+	async sign(): Promise<Event> {
+		throw new Error('sign not expected in this test')
+	},
+	async encrypt(): Promise<string> {
+		throw new Error('encrypt not expected in this test')
+	},
+	async decrypt(): Promise<string> {
+		throw new Error('decrypt not expected in this test')
+	},
+}
+
+/** A fake channel acting as the wallet: signs and NIP-44s with the identity key. */
 function honestChannel(): SignChannel & { seen: UnsignedComposedEvent[] } {
 	const seen: UnsignedComposedEvent[] = []
 	return {
@@ -21,6 +35,12 @@ function honestChannel(): SignChannel & { seen: UnsignedComposedEvent[] } {
 				{ kind: unsigned.kind, created_at: unsigned.created_at, tags: unsigned.tags, content: unsigned.content },
 				identityPriv,
 			)
+		},
+		async encrypt(peerPubkey, plaintext) {
+			return nip44.v2.encrypt(plaintext, nip44.v2.utils.getConversationKey(identityPriv, peerPubkey))
+		},
+		async decrypt(peerPubkey, ciphertext) {
+			return nip44.v2.decrypt(ciphertext, nip44.v2.utils.getConversationKey(identityPriv, peerPubkey))
 		},
 	}
 }
@@ -57,6 +77,7 @@ describe('GoblinAuthorizeSigner', () => {
 
 	test('sign() rejects a wallet response that altered created_at (id would not verify)', async () => {
 		const cheating: SignChannel = {
+			...unusedOps,
 			identity: identityPub,
 			isClosed: false,
 			async sign(unsigned) {
@@ -75,6 +96,7 @@ describe('GoblinAuthorizeSigner', () => {
 
 	test('sign() rejects an invalid signature from the wallet', async () => {
 		const bad: SignChannel = {
+			...unusedOps,
 			identity: identityPub,
 			isClosed: false,
 			async sign(unsigned) {
@@ -108,6 +130,7 @@ describe('GoblinAuthorizeSigner', () => {
 
 	test('sign() propagates a non-fatal user_declined from the channel', async () => {
 		const declining: SignChannel = {
+			...unusedOps,
 			identity: identityPub,
 			isClosed: false,
 			async sign() {
@@ -121,23 +144,58 @@ describe('GoblinAuthorizeSigner', () => {
 	})
 
 	test('sign() fails fast once the channel is closed', async () => {
-		const closed: SignChannel = {
-			identity: identityPub,
-			isClosed: true,
-			async sign() {
-				throw new Error('nope')
-			},
-		}
+		const closed: SignChannel = { ...unusedOps, identity: identityPub, isClosed: true }
 		const signer = new GoblinAuthorizeSigner(closed, identityPub)
 		await expect(signer.sign({ pubkey: identityPub, created_at: 100, kind: 1, tags: [], content: '' } as never)).rejects.toMatchObject({
 			code: 'session_ended',
 		})
 	})
 
-	test('encryption is not offered by a session (sign-only channel), so callers degrade honestly', async () => {
+	test('encryptionEnabled reports nip44 (and only nip44), lighting up the DM path', async () => {
 		const signer = new GoblinAuthorizeSigner(honestChannel(), identityPub)
-		expect(await signer.encryptionEnabled()).toEqual([])
-		await expect(signer.encrypt()).rejects.toBeInstanceOf(GoblinSessionError)
-		await expect(signer.decrypt()).rejects.toBeInstanceOf(GoblinSessionError)
+		expect(await signer.encryptionEnabled()).toEqual(['nip44'])
+		expect(await signer.encryptionEnabled('nip44')).toEqual(['nip44'])
+		expect(await signer.encryptionEnabled('nip04')).toEqual([])
+	})
+
+	test('encrypt()/decrypt() round-trip through the channel (wallet-held NIP-44)', async () => {
+		const signer = new GoblinAuthorizeSigner(honestChannel(), identityPub)
+		const peerPriv = new Uint8Array(32).fill(4)
+		const peer = new NDKUser({ pubkey: getPublicKey(peerPriv) })
+
+		const ciphertext = await signer.encrypt(peer, 'order: 3 candles', 'nip44')
+		// The peer can decrypt it with their own key (true NIP-44 from the identity).
+		const peerConv = nip44.v2.utils.getConversationKey(peerPriv, identityPub)
+		expect(nip44.v2.decrypt(ciphertext, peerConv)).toBe('order: 3 candles')
+
+		// And the signer can decrypt what the peer sends back.
+		const reply = nip44.v2.encrypt('shipped!', peerConv)
+		expect(await signer.decrypt(peer, reply, 'nip44')).toBe('shipped!')
+	})
+
+	test('encrypt() propagates a non-fatal user_declined (money-tier pause on a pay-committing message)', async () => {
+		const declining: SignChannel = {
+			...unusedOps,
+			identity: identityPub,
+			isClosed: false,
+			async encrypt() {
+				throw new GoblinSessionError('user_declined')
+			},
+		}
+		const signer = new GoblinAuthorizeSigner(declining, identityPub)
+		const peer = new NDKUser({ pubkey: getPublicKey(new Uint8Array(32).fill(4)) })
+		await expect(signer.encrypt(peer, 'I agree to pay 5 grin', 'nip44')).rejects.toMatchObject({ code: 'user_declined' })
+	})
+
+	test('encrypt()/decrypt() refuse nip04 and fail fast on a closed channel', async () => {
+		const signer = new GoblinAuthorizeSigner(honestChannel(), identityPub)
+		const peer = new NDKUser({ pubkey: getPublicKey(new Uint8Array(32).fill(4)) })
+		await expect(signer.encrypt(peer, 'x', 'nip04')).rejects.toThrow(/only NIP-44/)
+		await expect(signer.decrypt(peer, 'x', 'nip04')).rejects.toThrow(/only NIP-44/)
+
+		const closed: SignChannel = { ...unusedOps, identity: identityPub, isClosed: true }
+		const closedSigner = new GoblinAuthorizeSigner(closed, identityPub)
+		await expect(closedSigner.encrypt(peer, 'x', 'nip44')).rejects.toMatchObject({ code: 'session_ended' })
+		await expect(closedSigner.decrypt(peer, 'x', 'nip44')).rejects.toMatchObject({ code: 'session_ended' })
 	})
 })

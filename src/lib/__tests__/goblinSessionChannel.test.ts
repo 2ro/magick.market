@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { finalizeEvent, getEventHash, getPublicKey } from 'nostr-tools'
+import { finalizeEvent, getEventHash, getPublicKey, nip44 } from 'nostr-tools'
 import type { Event } from 'nostr-tools'
 import { GoblinSessionChannel, GoblinSessionError } from '@/lib/goblin/session/GoblinSessionChannel'
 import {
@@ -8,6 +8,8 @@ import {
 	openEnvelope,
 	sealEnvelope,
 	unixNow,
+	type DecryptRequestPayload,
+	type EncryptRequestPayload,
 	type SignRequestPayload,
 	type GoblinSessionErrorCode,
 } from '@/lib/goblin/session/protocol'
@@ -52,6 +54,45 @@ function makeWallet(sitePubkey: string) {
 		refuse(id: string, error: GoblinSessionErrorCode): Event {
 			return sealEnvelope({
 				payload: { type: 'sign_result', id, ok: false, error },
+				senderPrivateKey: walletKeys.privateKey,
+				recipientPublicKey: sitePubkey,
+				convKey,
+			})
+		},
+		/** Read a site->wallet encrypt request envelope. */
+		readEncryptRequest(envelope: Event): EncryptRequestPayload {
+			const payload = openEnvelope(envelope, convKey)
+			if (!payload || payload.type !== 'encrypt') throw new Error('not an encrypt request')
+			return payload
+		},
+		/** NIP-44 encrypt the plaintext from the identity to the peer, seal the ok result. */
+		encryptResult(req: EncryptRequestPayload): Event {
+			const peerConv = nip44.v2.utils.getConversationKey(identityPriv, req.peer_pubkey)
+			return sealEnvelope({
+				payload: { type: 'encrypt_result', id: req.id, ok: true, ciphertext: nip44.v2.encrypt(req.plaintext, peerConv) },
+				senderPrivateKey: walletKeys.privateKey,
+				recipientPublicKey: sitePubkey,
+				convKey,
+			})
+		},
+		refuseEncrypt(id: string, error: GoblinSessionErrorCode): Event {
+			return sealEnvelope({
+				payload: { type: 'encrypt_result', id, ok: false, error },
+				senderPrivateKey: walletKeys.privateKey,
+				recipientPublicKey: sitePubkey,
+				convKey,
+			})
+		},
+		/** Read a site->wallet decrypt request envelope. */
+		readDecryptRequest(envelope: Event): DecryptRequestPayload {
+			const payload = openEnvelope(envelope, convKey)
+			if (!payload || payload.type !== 'decrypt') throw new Error('not a decrypt request')
+			return payload
+		},
+		decryptResult(req: DecryptRequestPayload): Event {
+			const peerConv = nip44.v2.utils.getConversationKey(identityPriv, req.peer_pubkey)
+			return sealEnvelope({
+				payload: { type: 'decrypt_result', id: req.id, ok: true, plaintext: nip44.v2.decrypt(req.ciphertext, peerConv) },
 				senderPrivateKey: walletKeys.privateKey,
 				recipientPublicKey: sitePubkey,
 				convKey,
@@ -192,5 +233,68 @@ describe('GoblinSessionChannel', () => {
 		channel.handleEnvelope(wallet.signResult(req))
 		const signed = await signPromise
 		expect(signed.pubkey).toBe(wallet.identityPub)
+	})
+
+	test('encrypt() round-trips: the wallet NIP-44s the plaintext to the peer, verifiable by the peer', async () => {
+		const { channel, siteSessionKeys, published } = makeChannel()
+		const wallet = makeWallet(siteSessionKeys.publicKey)
+		const opened = channel.open(1000)
+		channel.handleEnvelope(wallet.sessionOpen())
+		await opened
+
+		const peerPriv = new Uint8Array(32).fill(11)
+		const peerPub = getPublicKey(peerPriv)
+		const encryptPromise = channel.encrypt(peerPub, 'order: two wands')
+
+		expect(published.length).toBe(1)
+		const req = wallet.readEncryptRequest(published[0])
+		expect(req.peer_pubkey).toBe(peerPub)
+		expect(req.plaintext).toBe('order: two wands')
+
+		channel.handleEnvelope(wallet.encryptResult(req))
+		const ciphertext = await encryptPromise
+		// The peer decrypts with their own key: real identity-to-peer NIP-44.
+		const peerConv = nip44.v2.utils.getConversationKey(peerPriv, wallet.identityPub)
+		expect(nip44.v2.decrypt(ciphertext, peerConv)).toBe('order: two wands')
+	})
+
+	test('decrypt() round-trips: the wallet opens a peer ciphertext for the site', async () => {
+		const { channel, siteSessionKeys, published } = makeChannel()
+		const wallet = makeWallet(siteSessionKeys.publicKey)
+		const opened = channel.open(1000)
+		channel.handleEnvelope(wallet.sessionOpen())
+		await opened
+
+		const peerPriv = new Uint8Array(32).fill(11)
+		const peerPub = getPublicKey(peerPriv)
+		const peerConv = nip44.v2.utils.getConversationKey(peerPriv, wallet.identityPub)
+		const ciphertext = nip44.v2.encrypt('shipped!', peerConv)
+
+		const decryptPromise = channel.decrypt(peerPub, ciphertext)
+		const req = wallet.readDecryptRequest(published[0])
+		channel.handleEnvelope(wallet.decryptResult(req))
+		expect(await decryptPromise).toBe('shipped!')
+	})
+
+	test('a declined encrypt (money-tier pause on a pay-committing message) is non-fatal', async () => {
+		const { channel, siteSessionKeys, published, events } = makeChannel({ confirmHintMs: 5 })
+		const wallet = makeWallet(siteSessionKeys.publicKey)
+		const opened = channel.open(1000)
+		channel.handleEnvelope(wallet.sessionOpen())
+		await opened
+
+		const peerPub = getPublicKey(new Uint8Array(32).fill(11))
+		const encryptPromise = channel.encrypt(peerPub, 'I agree to pay 5 grin')
+
+		// The wallet is prompting: the request sits outstanding past the hint delay,
+		// so the "confirm in your wallet" state shows for the encrypt too.
+		await new Promise((r) => setTimeout(r, 20))
+		expect(events.pending.at(-1)).toBe(1)
+
+		const req = wallet.readEncryptRequest(published[0])
+		channel.handleEnvelope(wallet.refuseEncrypt(req.id, 'user_declined'))
+		await expect(encryptPromise).rejects.toMatchObject({ code: 'user_declined' })
+		expect(channel.isClosed).toBe(false) // session stays live
+		expect(events.pending.at(-1)).toBe(0) // pending indicator cleared
 	})
 })

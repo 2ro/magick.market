@@ -14,11 +14,13 @@
  * outstanding. A `user_declined` refusal throws a non-fatal GoblinSessionError
  * the caller can catch per action; a session-ending refusal ends the session.
  *
- * IMPORTANT SEAM NOTE: the spec's session channel is SIGN-ONLY (sections 5.4,
- * 5.7). It defines no encrypt/decrypt op. NIP-44 encryption for DM seals
- * (kind 13) is therefore NOT available through a session; encrypt()/decrypt()
- * throw and encryptionEnabled() reports none, so callers degrade honestly rather
- * than hang. See the report's flagged deviations.
+ * SEAM EXTENSION (coordinator ruling, 2026-07-06): the channel also carries
+ * NIP-44 encrypt and decrypt operations, so this signer reports nip44 support
+ * and routes encrypt()/decrypt() through the wallet, un-blocking the NIP-59
+ * gift-wrap DM path (the identity key never leaves the wallet). The wallet
+ * inspects encrypt plaintext for pay-committing order messages and may answer
+ * only after its money-tier password prompt, so an encrypt can also sit in the
+ * "confirm in your wallet" state.
  */
 
 import { NDKUser, type NDKEncryptionScheme, type NDKSigner, type NostrEvent } from '@nostr-dev-kit/ndk'
@@ -32,6 +34,8 @@ export interface SignChannel {
 	readonly identity: string | null
 	readonly isClosed: boolean
 	sign(unsigned: UnsignedComposedEvent): Promise<Event>
+	encrypt(peerPubkey: string, plaintext: string): Promise<string>
+	decrypt(peerPubkey: string, ciphertext: string): Promise<string>
 }
 
 export class GoblinAuthorizeSigner implements NDKSigner {
@@ -113,20 +117,42 @@ export class GoblinAuthorizeSigner implements NDKSigner {
 	}
 
 	/**
-	 * The session channel carries no encryption op (spec is sign-only). Report no
-	 * NIP support so nip59/order-DM helpers degrade to a clear error instead of a
-	 * hang. FLAGGED as a seam gap for the wallet worker + security pass.
+	 * The channel carries NIP-44 encrypt/decrypt (seam extension), and only
+	 * NIP-44: nip04 is legacy and deliberately unsupported, so nip59/order-DM
+	 * helpers (signerSupportsNip44) light up while nip04 callers degrade honestly.
 	 */
-	async encryptionEnabled(): Promise<NDKEncryptionScheme[]> {
-		return []
+	async encryptionEnabled(scheme?: NDKEncryptionScheme): Promise<NDKEncryptionScheme[]> {
+		if (scheme === 'nip04') return []
+		return ['nip44']
 	}
 
-	async encrypt(): Promise<string> {
-		throw new GoblinSessionError('kind_not_in_session', 'Encryption is not available in a Goblin session; open your wallet to send this.')
+	/**
+	 * NIP-44 encrypt via the wallet. Like sign(), this may come back pending the
+	 * wallet's money-tier prompt (the wallet inspects the plaintext), and a
+	 * user_declined is a non-fatal per-action refusal.
+	 */
+	async encrypt(recipient: NDKUser, value: string, scheme?: NDKEncryptionScheme): Promise<string> {
+		this.assertNip44(scheme, 'encryption')
+		if (this.channel.isClosed) {
+			throw new GoblinSessionError('session_ended', 'The Goblin session has ended. Please sign in again.')
+		}
+		return this.channel.encrypt(recipient.pubkey, value)
 	}
 
-	async decrypt(): Promise<string> {
-		throw new GoblinSessionError('kind_not_in_session', 'Decryption is not available in a Goblin session; open your wallet to read this.')
+	/** NIP-44 decrypt via the wallet. */
+	async decrypt(sender: NDKUser, value: string, scheme?: NDKEncryptionScheme): Promise<string> {
+		this.assertNip44(scheme, 'decryption')
+		if (this.channel.isClosed) {
+			throw new GoblinSessionError('session_ended', 'The Goblin session has ended. Please sign in again.')
+		}
+		return this.channel.decrypt(sender.pubkey, value)
+	}
+
+	private assertNip44(scheme: NDKEncryptionScheme | undefined, op: string): void {
+		// NDK passes undefined for the default scheme; only explicit nip04 is refused.
+		if (scheme && scheme !== 'nip44') {
+			throw new Error(`A Goblin session supports only NIP-44 ${op}`)
+		}
 	}
 
 	toPayload(): string {

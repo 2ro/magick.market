@@ -1,11 +1,12 @@
 /**
  * Live encrypted relay channel for a Goblin trust session (spec section 5.1).
  *
- * The browser holds an ephemeral channel keypair; every sign request/response
- * is a NIP-44-encrypted, stored (NIP-40) event addressed between the site and
- * wallet session keys, carried on the hinted relay. This class owns:
+ * The browser holds an ephemeral channel keypair; every request/response (sign,
+ * encrypt, decrypt) is a NIP-44-encrypted, stored (NIP-40) event addressed
+ * between the site and wallet session keys, carried on the hinted relay. This
+ * class owns:
  *   - the SimplePool subscription draining wallet -> site envelopes,
- *   - the pending-request map correlating a sign_result to its request id,
+ *   - the pending-request map correlating each result to its request id,
  *   - the "confirm in your wallet" pending signal (money tier or a backgrounded
  *     wallet keeps a request outstanding; the site must not assume silence),
  *   - the session-open handshake and the session-end teardown.
@@ -26,6 +27,8 @@ import {
 	unixNow,
 	uuid,
 	withinSkew,
+	type ChannelPayload,
+	type ChannelResultPayload,
 	type GoblinSessionErrorCode,
 	type UnsignedComposedEvent,
 } from './protocol'
@@ -52,8 +55,11 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 90_000
 /** Beyond this, a still-outstanding request means the wallet is prompting or asleep. */
 const DEFAULT_CONFIRM_HINT_MS = 1_200
 
+/** An ok answer from the wallet, narrowed by the caller (sign/encrypt/decrypt). */
+type OkResultPayload = Extract<ChannelResultPayload, { ok: true }>
+
 type PendingRequest = {
-	resolve: (event: Event) => void
+	resolve: (result: OkResultPayload) => void
 	reject: (error: GoblinSessionError) => void
 	timeoutTimer: ReturnType<typeof setTimeout>
 	confirmTimer: ReturnType<typeof setTimeout>
@@ -197,12 +203,12 @@ export class GoblinSessionChannel {
 			return
 		}
 
-		if (payload.type === 'sign_result') {
+		if (payload.type === 'sign_result' || payload.type === 'encrypt_result' || payload.type === 'decrypt_result') {
 			const req = this.pending.get(payload.id)
 			if (!req) return // unknown or already-settled id
 			this.settle(payload.id)
 			if (payload.ok) {
-				req.resolve(payload.event)
+				req.resolve(payload)
 			} else {
 				const error = new GoblinSessionError(payload.error)
 				req.reject(error)
@@ -212,11 +218,12 @@ export class GoblinSessionChannel {
 	}
 
 	/**
-	 * Route a client-composed event through the channel and return the wallet's
-	 * signed event. `created_at` is pinned by the caller (NDK), never re-stamped
-	 * here (spec finding A). Rejects with a GoblinSessionError on refusal.
+	 * Publish one request envelope and await the wallet's correlated result. All
+	 * three ops (sign, encrypt, decrypt) share this machinery, including the
+	 * "confirm in your wallet" pending signal: the wallet may pause ANY of them on
+	 * its money-tier prompt (an encrypt's plaintext can commit a payment).
 	 */
-	async sign(unsigned: UnsignedComposedEvent): Promise<Event> {
+	private async request(build: (id: string) => ChannelPayload): Promise<OkResultPayload> {
 		if (this.closed) throw new GoblinSessionError('session_ended', 'The session has ended.')
 		if (!this.walletSessionPubkey || !this.convKey) {
 			throw new GoblinSessionError('channel_closed', 'The session channel is not open yet.')
@@ -224,13 +231,13 @@ export class GoblinSessionChannel {
 
 		const id = uuid()
 		const envelope = sealEnvelope({
-			payload: { type: 'sign', id, ts: unixNow(), event: toUnsignedComposedEvent(unsigned) },
+			payload: build(id),
 			senderPrivateKey: this.siteSessionKeys.privateKey,
 			recipientPublicKey: this.walletSessionPubkey,
 			convKey: this.convKey,
 		})
 
-		return new Promise<Event>((resolve, reject) => {
+		return new Promise<OkResultPayload>((resolve, reject) => {
 			const timeoutTimer = setTimeout(() => {
 				this.settle(id)
 				reject(new GoblinSessionError('timed_out', 'Your wallet did not respond in time.'))
@@ -250,6 +257,43 @@ export class GoblinSessionChannel {
 			this.pending.set(id, { resolve, reject, timeoutTimer, confirmTimer, countedAsPending: false })
 			this.publishFn(this.relays, envelope)
 		})
+	}
+
+	/**
+	 * Route a client-composed event through the channel and return the wallet's
+	 * signed event. `created_at` is pinned by the caller (NDK), never re-stamped
+	 * here (spec finding A). Rejects with a GoblinSessionError on refusal.
+	 */
+	async sign(unsigned: UnsignedComposedEvent): Promise<Event> {
+		const result = await this.request((id) => ({ type: 'sign', id, ts: unixNow(), event: toUnsignedComposedEvent(unsigned) }))
+		if (result.type !== 'sign_result') {
+			throw new GoblinSessionError('stale_request', 'The wallet answered a sign with the wrong result type.')
+		}
+		return result.event
+	}
+
+	/**
+	 * NIP-44 encrypt `plaintext` from the session identity to `peerPubkey`, via
+	 * the wallet (seam extension: the identity key never leaves the wallet, so
+	 * encryption must round-trip too). The wallet inspects the plaintext and may
+	 * raise its money-tier prompt before answering (a pay-committing order DM),
+	 * so this can surface the "confirm in your wallet" state exactly like sign().
+	 */
+	async encrypt(peerPubkey: string, plaintext: string): Promise<string> {
+		const result = await this.request((id) => ({ type: 'encrypt', id, ts: unixNow(), peer_pubkey: peerPubkey, plaintext }))
+		if (result.type !== 'encrypt_result') {
+			throw new GoblinSessionError('stale_request', 'The wallet answered an encrypt with the wrong result type.')
+		}
+		return result.ciphertext
+	}
+
+	/** NIP-44 decrypt `ciphertext` sent from `peerPubkey` to the session identity, via the wallet. */
+	async decrypt(peerPubkey: string, ciphertext: string): Promise<string> {
+		const result = await this.request((id) => ({ type: 'decrypt', id, ts: unixNow(), peer_pubkey: peerPubkey, ciphertext }))
+		if (result.type !== 'decrypt_result') {
+			throw new GoblinSessionError('stale_request', 'The wallet answered a decrypt with the wrong result type.')
+		}
+		return result.plaintext
 	}
 
 	private settle(id: string): void {
