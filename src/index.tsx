@@ -10,6 +10,7 @@ import { join } from 'path'
 import { file } from 'bun'
 import { computeConfigFlags } from './lib/configFlags'
 import { createNameInvoice, fetchNameInvoice } from './server/goblinPayServer'
+import { createGoblinLoginService, resolveExpectedDomain } from './server/goblinLogin'
 
 import.meta.hot.accept()
 
@@ -24,6 +25,11 @@ const APP_PRIVATE_KEY = process.env.APP_PRIVATE_KEY
 // to manual confirmation (client getWatcherNpub() returns undefined).
 const WATCHER_NPUB =
 	typeof process.env.WATCHER_NPUB === 'string' && process.env.WATCHER_NPUB.startsWith('npub1') ? process.env.WATCHER_NPUB : undefined
+
+// "Sign in with Goblin": one service instance holds the pending challenge
+// nonces and the callback rate limiter (in-memory, single-instance server).
+// All verification logic lives in src/server/goblinLogin.ts.
+const goblinLogin = createGoblinLoginService()
 
 let appSettings: Awaited<ReturnType<typeof fetchAppSettings>> = null
 let APP_PUBLIC_KEY: string
@@ -323,6 +329,53 @@ export const server = serve({
 					return jsonError(result.error, result.status)
 				}
 				return Response.json({ vanityName: result.vanityName, validUntil: result.validUntil })
+			},
+		},
+		// "Sign in with Goblin": the user's wallet signs a one-time challenge
+		// (kind 22242) instead of the user pasting an nsec. The browser mints a
+		// challenge here, shows it as a goblin:login QR/deeplink, the wallet
+		// POSTs the signed event to the callback, and the browser polls status.
+		//
+		// Mint a challenge nonce (64-hex, pending for 5 minutes).
+		'/api/v1/login/challenge': {
+			POST: () => Response.json(goblinLogin.createChallenge()),
+		},
+		// Wallet callback. Body: {event}. Verifies kind 22242, signature,
+		// challenge tag against a pending un-used un-expired nonce, domain tag
+		// against the SERVER-derived domain (APP_LOGIN_DOMAIN env falling back
+		// to the request Host header, never the event alone), and created_at
+		// clock skew. Success consumes the nonce and records the pubkey.
+		'/api/v1/login/callback': {
+			POST: async (req, srv) => {
+				const ip = srv?.requestIP?.(req)?.address ?? 'global'
+				if (!goblinLogin.allowCallback(ip)) {
+					return jsonError('Too many login attempts, please slow down', 429)
+				}
+				let body: { event?: unknown }
+				try {
+					body = await req.json()
+				} catch {
+					return jsonError('Invalid JSON body', 400)
+				}
+				const expectedDomain = resolveExpectedDomain(req.headers.get('host'))
+				const result = goblinLogin.handleCallback(body?.event, expectedDomain)
+				if (!result.ok) {
+					return jsonError(result.error, result.status)
+				}
+				return Response.json({ ok: true })
+			},
+		},
+		// Browser poll: {status: 'pending'|'ok', pubkey?}. Unknown or expired
+		// challenges 404 so the client stops polling and offers a retry.
+		'/api/v1/login/status': {
+			GET: (req) => {
+				const url = new URL(req.url)
+				const nonce = url.searchParams.get('c') ?? ''
+				const status = goblinLogin.getStatus(nonce)
+				if (!status) {
+					return jsonError('Unknown or expired challenge', 404)
+				}
+				return Response.json(status)
 			},
 		},
 		'/images/:file': ({ params }) => serveStatic(`images/${params.file}`),

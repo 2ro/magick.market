@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/stores/auth'
 import { NOSTR_AUTO_LOGIN } from '@/lib/stores/auth'
 import { useState } from 'react'
 import { PrivateKeyLogin } from './PrivateKeyLogin'
+import { GoblinLogin } from './GoblinLogin'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { hasAcceptedTerms } from '@/components/dialogs/TermsConditionsDialog'
@@ -88,6 +89,9 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
 							>
 								Private Key
 							</TabsTrigger>
+							<TabsTrigger value="goblin" data-testid="goblin-tab" className={classNameTab} onClick={() => setActiveTab('goblin')}>
+								Goblin
+							</TabsTrigger>
 						</TabsList>
 						<TabsContent value="extension" className="w-full max-w-full overflow-hidden">
 							<div className="space-y-4 py-4">
@@ -119,6 +123,9 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
 						</TabsContent>
 						<TabsContent value="private-key" className="w-full max-w-full overflow-hidden">
 							<PrivateKeyLogin onError={handleError} onSuccess={handleLoginSuccess} />
+						</TabsContent>
+						<TabsContent value="goblin" className="w-full max-w-full overflow-hidden">
+							<GoblinLogin onError={handleError} onSuccess={handleLoginSuccess} />
 						</TabsContent>
 					</Tabs>
 					<div className="flex items-center space-x-2">

@@ -23,6 +23,7 @@ import { productKeys } from '@/queries/queryKeyFactory'
 import { clearProductFormDraft, getProductFormDraft, saveProductFormDraft } from '@/lib/utils/productFormStorage'
 import { normalizeProductShippingSelections, type ProductShippingSelection } from '@/lib/utils/productShippingSelections'
 import { uiActions, uiStore } from '@/lib/stores/ui'
+import { authActions, authStore } from '@/lib/stores/auth'
 import NDK, { type NDKSigner } from '@nostr-dev-kit/ndk'
 import { QueryClient } from '@tanstack/react-query'
 import { Store } from '@tanstack/store'
@@ -186,6 +187,14 @@ export const productFormActions = {
 	},
 
 	openCreateProductDrawer: () => {
+		// Publishing a product needs a client-side signer. A wallet-verified
+		// (view only) Goblin session is authenticated but cannot sign, so send it
+		// back to the login dialog instead of opening a drawer whose publish
+		// would fail. Logged-out visitors keep their existing caller-side gates.
+		if (authStore.state.isAuthenticated && !authActions.canSignNow()) {
+			uiActions.openDialog('login')
+			return
+		}
 		productFormActions.startCreateProductSession()
 		uiActions.openDrawer('createProduct')
 	},
