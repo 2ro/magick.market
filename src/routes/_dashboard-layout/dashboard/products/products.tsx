@@ -22,6 +22,16 @@ import { useStore } from '@tanstack/react-store'
 import { PackageIcon, Trash, EyeOff, Clock, Eye } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { TooltipButton } from '@/components/shared/TooltipButton'
+import { useHeldName } from '@/queries/nameTransfer'
+import { NAME_AUTHORITY_URL } from '@/lib/constants'
+
+const AUTHORITY_DOMAIN = (() => {
+	try {
+		return new URL(NAME_AUTHORITY_URL).host
+	} catch {
+		return 'goblin.st'
+	}
+})()
 
 // Component to show basic product information
 function ProductBasicInfo({ product }: { product: NDKEvent }) {
@@ -224,7 +234,16 @@ function ProductsOverviewComponent() {
 		matchRoute({
 			to: '/dashboard/products/products/new',
 			fuzzy: true,
+		}) ||
+		matchRoute({
+			to: '/dashboard/products/products/sell-name',
+			fuzzy: true,
 		})
+
+	// Seller-side detection: surface the "Sell your name" entry only when the
+	// logged-in key currently holds a name on the authority (name-transfer-spec
+	// sections 5, 9 reuse of GET /api/v1/by-pubkey/{pubkey}).
+	const { data: heldName } = useHeldName(user?.pubkey)
 
 	const {
 		data: products,
@@ -358,6 +377,22 @@ function ProductsOverviewComponent() {
 						<span className="w-5 h-5 i-product" /> Add A Product
 					</Button>
 				</div>
+
+				{heldName?.name && (
+					<Link
+						to="/dashboard/products/products/sell-name"
+						className="block bg-neutral-50 hover:bg-neutral-100 p-4 border rounded-md transition-colors"
+						data-testid="sell-name-card"
+					>
+						<p className="font-semibold">
+							Sell your name{' '}
+							<span className="font-normal text-gray-600">
+								{heldName.name}@{AUTHORITY_DOMAIN}
+							</span>
+						</p>
+						<p className="mt-1 text-gray-500 text-sm">Reassign your NIP-05 name to a buyer, paid wallet to wallet. →</p>
+					</Link>
+				)}
 
 				<div>
 					{isLoading && <div className="mt-4 p-6 text-gray-500 text-center">Loading your products...</div>}

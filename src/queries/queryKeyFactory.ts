@@ -151,6 +151,13 @@ export const reactionKeys = {
 	byUser: (pubkey: string) => [...reactionKeys.all, 'byUser', pubkey] as const,
 } as const
 
+export const nameTransferKeys = {
+	all: ['nameTransfer'] as const,
+	heldName: (pubkey: string) => [...nameTransferKeys.all, 'heldName', pubkey] as const,
+	offer: (base: string, offerId: string) => [...nameTransferKeys.all, 'offer', base, offerId] as const,
+	incomingOffers: (pubkey: string) => [...nameTransferKeys.all, 'incomingOffers', pubkey] as const,
+} as const
+
 export const zapKeys = {
 	all: ['zaps'] as const,
 	byEvent: (eventId: string, recipientPubkey: string) => [...zapKeys.all, 'byEvent', eventId, recipientPubkey] as const,
