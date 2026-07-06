@@ -13,6 +13,11 @@ export interface ShippingFormData {
 	currency: string
 	countries: string[]
 	service: 'standard' | 'express' | 'overnight' | 'pickup' | 'digital'
+	// Seller-controlled: for digital delivery, the secure contact/messaging
+	// methods this seller offers on this product. The buyer picks from this set
+	// at checkout. Known channel ids (email/signal/matrix/session/simplex) plus
+	// any custom free-text entries the seller typed.
+	contactMethods?: string[]
 	carrier?: string
 	region?: string
 	additionalRegions?: string[]
@@ -89,6 +94,18 @@ export const createShippingEvent = (
 		// For non-pickup services, use the countries array if specified
 		// Empty countries array means worldwide shipping - no country tag needed
 		tags.push(['country', ...formData.countries])
+	}
+
+	// Seller-controlled digital delivery contact methods (one tag per method so
+	// custom free-text entries with spaces stay intact). Only meaningful for
+	// digital delivery, so only persisted there.
+	if (formData.service === 'digital' && formData.contactMethods) {
+		for (const rawMethod of formData.contactMethods) {
+			const method = rawMethod.trim()
+			if (method) {
+				tags.push(['delivery-contact-method', method])
+			}
+		}
 	}
 
 	// Add optional tags

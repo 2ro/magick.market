@@ -1,4 +1,4 @@
-import { formatGrinAmount } from '@/lib/grin'
+import { formatGrinAmount, GRIN_CURRENCY } from '@/lib/grin'
 import type { NDKEvent } from '@nostr-dev-kit/ndk'
 import { format } from 'date-fns' // For formatting timestamp
 import {
@@ -272,7 +272,7 @@ const EmbeddedProductMessage = ({ productData }: { productData: EmbeddedProductE
 	const tags = productData.tags || []
 	const title = tags.find((t) => t[0] === 'title')?.[1] || 'Untitled Product'
 	const priceTag = tags.find((t) => t[0] === 'price')
-	const price = priceTag ? `${priceTag[1]} ${priceTag[2] || 'SATS'}` : null
+	const price = priceTag ? `${priceTag[1]} ${priceTag[2] || GRIN_CURRENCY}` : null
 	const images = tags.filter((t) => t[0] === 'image')
 	const imageUrl = images.length > 0 ? images[0][1] : null
 	const productId = tags.find((t) => t[0] === 'd')?.[1]

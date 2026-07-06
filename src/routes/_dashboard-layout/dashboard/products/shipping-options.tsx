@@ -25,12 +25,14 @@ import {
 	getShippingId,
 	getShippingLocation,
 	getShippingPickupAddress,
+	getShippingContactMethods,
 	getShippingPrice,
 	getShippingService,
 	getShippingTitle,
 	getShippingWeightLimits,
 	useShippingOptionsByPubkey,
 } from '@/queries/shipping'
+import { DELIVERY_CONTACT_CHANNEL_LIST, isDeliveryContactType } from '@/lib/checkout/deliveryRequirements'
 import { useDashboardTitle } from '@/routes/_dashboard-layout'
 import type { NDKEvent } from '@nostr-dev-kit/ndk'
 import { createFileRoute } from '@tanstack/react-router'
@@ -70,6 +72,7 @@ function ShippingOptionForm({ shippingOption, isOpen, onOpenChange, onSuccess }:
 	const [isSubmitting, setIsSubmitting] = useState(false)
 	const [isOptionalDetailsOpen, setIsOptionalDetailsOpen] = useState(false)
 	const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+	const [customContactInput, setCustomContactInput] = useState('')
 	const [isWorldwide, setIsWorldwide] = useState(() => {
 		if (shippingOption) {
 			const countryTag = getShippingCountry(shippingOption)
@@ -105,6 +108,7 @@ function ShippingOptionForm({ shippingOption, isOpen, onOpenChange, onSuccess }:
 				currency: priceTag?.[2] || defaultCurrency,
 				countries: countryTag?.slice(1) || [],
 				service: (serviceTag?.[1] as any) || 'standard',
+				contactMethods: getShippingContactMethods(shippingOption),
 				carrier: carrierTag?.[1] || '',
 				location: locationTag?.[1] || '',
 				pickupAddress: pickupAddressTag || {
@@ -138,6 +142,7 @@ function ShippingOptionForm({ shippingOption, isOpen, onOpenChange, onSuccess }:
 			currency: defaultCurrency,
 			countries: [],
 			service: 'standard',
+			contactMethods: [],
 			pickupAddress: {
 				street: '',
 				city: '',
@@ -162,6 +167,7 @@ function ShippingOptionForm({ shippingOption, isOpen, onOpenChange, onSuccess }:
 			currency: defaultCurrency,
 			countries: [],
 			service: 'standard',
+			contactMethods: [],
 			pickupAddress: {
 				street: '',
 				city: '',
@@ -293,6 +299,28 @@ function ShippingOptionForm({ shippingOption, isOpen, onOpenChange, onSuccess }:
 	const getCountryName = (code: string) => {
 		const country = Object.values(COUNTRIES_ISO).find((c) => c.iso3 === code)
 		return country?.name || code
+	}
+
+	const toggleContactMethod = (method: string, enabled: boolean) => {
+		setFormData((prev) => {
+			const current = prev.contactMethods || []
+			if (enabled) {
+				if (current.includes(method)) return prev
+				return { ...prev, contactMethods: [...current, method] }
+			}
+			return { ...prev, contactMethods: current.filter((m) => m !== method) }
+		})
+	}
+
+	const addCustomContactMethod = () => {
+		const value = customContactInput.trim()
+		if (!value) return
+		setFormData((prev) => {
+			const current = prev.contactMethods || []
+			if (current.some((m) => m.toLowerCase() === value.toLowerCase())) return prev
+			return { ...prev, contactMethods: [...current, value] }
+		})
+		setCustomContactInput('')
 	}
 
 	const triggerContent = isEditing ? (
@@ -459,6 +487,87 @@ function ShippingOptionForm({ shippingOption, isOpen, onOpenChange, onSuccess }:
 									</SelectContent>
 								</Select>
 							</div>
+
+							{/*
+							 * Seller-controlled digital delivery contact methods. Rendered inline
+							 * (never in a collapsible), immediately after Service Type and before the
+							 * Description field, and only when Digital Delivery is the selected service.
+							 * The seller enables the methods they offer; the buyer picks from this set.
+							 */}
+							{formData.service === 'digital' && (
+								<div className="space-y-3" data-testid="digital-contact-methods">
+									<div>
+										<Label className="font-medium">Secure contact methods you offer *</Label>
+										<p className="text-sm text-muted-foreground">
+											Buyers pick one of these to receive their digital item after payment. Enable every method you can actually use to
+											reach a buyer.
+										</p>
+									</div>
+									<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+										{DELIVERY_CONTACT_CHANNEL_LIST.map((channel) => {
+											const checked = (formData.contactMethods || []).includes(channel.value)
+											return (
+												<label
+													key={channel.value}
+													className="flex items-center gap-2 rounded-md border p-2 cursor-pointer hover:bg-muted/50"
+												>
+													<Checkbox
+														checked={checked}
+														onCheckedChange={(state) => toggleContactMethod(channel.value, state === true)}
+														data-testid={`contact-method-${channel.value}-checkbox`}
+													/>
+													<span className="text-sm font-normal">{channel.label}</span>
+												</label>
+											)
+										})}
+									</div>
+
+									{/* Custom (free-text) methods the seller can type in */}
+									<div className="space-y-2">
+										<Label htmlFor="custom-contact-method" className="text-sm font-medium">
+											Add another method
+										</Label>
+										<div className="flex gap-2">
+											<Input
+												id="custom-contact-method"
+												value={customContactInput}
+												onChange={(e) => setCustomContactInput(e.target.value)}
+												onKeyDown={(e) => {
+													if (e.key === 'Enter') {
+														e.preventDefault()
+														addCustomContactMethod()
+													}
+												}}
+												placeholder="e.g. Telegram, Briar, keybase"
+												data-testid="custom-contact-method-input"
+											/>
+											<Button type="button" variant="outline" onClick={addCustomContactMethod} data-testid="add-custom-contact-method">
+												Add
+											</Button>
+										</div>
+										<div className="flex flex-wrap gap-2">
+											{(formData.contactMethods || [])
+												.filter((m) => !isDeliveryContactType(m))
+												.map((method) => (
+													<Badge
+														key={method}
+														variant="secondary"
+														className="flex items-center gap-1 bg-black text-white [&>svg]:pointer-events-auto"
+													>
+														{method}
+														<button
+															type="button"
+															className="ml-1 hover:bg-white/20 rounded-full p-0.5"
+															onClick={() => toggleContactMethod(method, false)}
+														>
+															<XIcon className="w-3 h-3" />
+														</button>
+													</Badge>
+												))}
+										</div>
+									</div>
+								</div>
+							)}
 
 							{/* Price - Hide for digital delivery (always free) */}
 							{formData.service !== 'digital' && (

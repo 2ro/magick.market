@@ -37,6 +37,13 @@ export type PrivateOrderDeliveryDetails = {
 		email?: string
 		phone?: string
 		address?: PrivateOrderAddress
+		// Privacy-respecting non-email delivery contact channel. The seller enables
+		// which methods they offer (known channels signal/matrix/session/simplex plus
+		// custom free-text entries) and the buyer picks one. Email keeps its historical
+		// `email` field + `['email', …]` tag; the others ride on `contactType`/
+		// `contactHandle` and a `['contact', type, handle]` tag.
+		contactType?: string
+		contactHandle?: string
 	}
 	orderNotes?: string
 }
@@ -102,6 +109,11 @@ export function createPrivateOrderDetailsRumor(params: CreatePrivateOrderDetails
 
 	const buyerEmail = normalizeOptionalText(details.delivery.email)
 	if (buyerEmail) tags.push(['email', buyerEmail])
+
+	const contactHandle = normalizeOptionalText(details.delivery.contactHandle)
+	if (contactHandle && details.delivery.contactType && details.delivery.contactType !== 'email') {
+		tags.push(['contact', details.delivery.contactType, contactHandle])
+	}
 
 	const buyerPhone = normalizeOptionalText(details.delivery.phone)
 	if (buyerPhone) tags.push(['phone', buyerPhone])
@@ -237,11 +249,19 @@ export function parsePrivateOrderDetailsRumor(
 		throw new Error('Private order shipping ref is invalid')
 	}
 
+	const contactTag = getSingleTag(normalizedRumor.tags, 'contact')
+	// Accept any non-empty contact type: known channels and seller-defined custom
+	// free-text methods both round-trip through the `['contact', type, handle]` tag.
+	const contactType = normalizeOptionalText(contactTag?.[1])
+	const contactHandle = contactType ? normalizeOptionalText(contactTag?.[2]) : undefined
+
 	const delivery = {
 		name: getSingleTagValue(normalizedRumor.tags, 'name'),
 		address: parseBuyerAddress(getSingleTagValue(normalizedRumor.tags, 'address')),
 		email: getSingleTagValue(normalizedRumor.tags, 'email'),
 		phone: getSingleTagValue(normalizedRumor.tags, 'phone'),
+		contactType,
+		contactHandle,
 	}
 
 	return {
@@ -303,9 +323,13 @@ function assertUnsignedPrivateOrderRumor(rumor: UnsignedRumor): void {
 }
 
 function getSingleTagValue(tags: string[][], tagName: string): string | undefined {
+	return getSingleTag(tags, tagName)?.[1]
+}
+
+function getSingleTag(tags: string[][], tagName: string): string[] | undefined {
 	const matches = tags.filter((tag) => tag[0] === tagName)
 	if (matches.length > 1) throw new Error(`Private order ${tagName} tag is duplicated`)
-	return matches[0]?.[1]
+	return matches[0]
 }
 
 function isAddressableRef(value: string, expectedKind: string, expectedPubkey: string): boolean {

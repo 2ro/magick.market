@@ -272,8 +272,17 @@ export function PaymentContent({
 					</div>
 
 					<p className="text-xs text-gray-500 text-center max-w-md mx-auto">
-						No account needed. Scan the QR or open the link in your Goblin wallet. Grin payments are interactive — if the seller&apos;s
-						wallet is offline, your payment settles the moment it comes back online, and this order confirms then.
+						No account needed. Scan the QR or open the link in your{' '}
+						<a
+							href="https://goblin.st"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="font-medium underline decoration-double underline-offset-2"
+						>
+							Goblin
+						</a>{' '}
+						wallet. Grin payments are interactive — if the seller&apos;s wallet is offline, your payment settles the moment it comes back
+						online, and this order confirms then.
 					</p>
 
 					{onSkipPayment && (

@@ -18,15 +18,55 @@ single rail:
   `nostr:<nprofile or slatepack address>?amount=<decimal GRIN>&memo=<invoice number>` (the exact
   shape the wallet's scanner parses; amount is decimal GRIN, converted from the app's internal
   nanogrin). The opaque invoice number bridges the Grin payment to the order: it rides in the pay-URI
-  memo, on the kind 16 order (`invoice` tag), and in kind 17 receipts (`payment-request` tag).
-- **Dual confirmation** - an order flips to paid when either a seller-published kind 17 receipt for
-  the invoice number arrives over Nostr, or the buyer imports the receiver-signed Grin payment proof
-  from Goblin (published as a kind 17 receipt carrying the `grin_proof`). Whichever lands first wins.
-  Full proof verification (receiver signature + kernel on-chain) is the seller's Goblin wallet's job.
+  memo, on the kind 16 order (`invoice` tag), and in kind 17 receipts (`payment-request` tag). When
+  the operator has configured a proof watcher, the pay-URI can additionally carry `proof`/`order`/`notify`
+  params (proofs-on-request) so the buyer's wallet can include a native Grin payment proof; these are
+  off by default and the flagship instance emits a plain, proof-free URI.
+- **True wallet-to-wallet payment** - the payment is a private Grin transfer straight from the buyer's
+  Goblin wallet to the seller's Goblin wallet. The marketplace never touches the money; it only carries
+  the messages that let a page know a payment happened.
+- **Message-driven confirmation, the seller's wallet is the truth** - by default an order is confirmed
+  by a message, not by the marketplace watching a chain. When the buyer pays, their Goblin wallet
+  announces it by publishing a signed kind 17 "payment sent" receipt carrying the invoice number; the
+  order page is subscribed to that receipt and flips live to a calm "payment sent" state the moment it
+  arrives. To the seller this is shown as a claim - "Buyer reports payment sent" - never as settled:
+  the seller checks their own Goblin wallet, confirms the funds actually arrived, and marks the order
+  paid by hand. The seller's wallet is the source of truth for the money. (The payment-sent receipt is
+  a plain public note matched only by invoice number; the buyer's private order details, such as a
+  shipping address, travel separately as an encrypted NIP-17 gift-wrapped message.)
+- **Optional chain-verified attestation (a shelf component)** - an operator MAY run a separate watcher
+  daemon (the `grin-proof-watcher` component) that verifies a Grin payment proof and its on-chain
+  kernel and republishes a watcher-signed `confirmed` receipt; only that watcher-signed receipt can
+  flip an order to a hard `paid` state automatically. The watcher is optional and is **not** running on
+  the flagship instance, where confirmation is the manual, message-driven model above. A future opt-in,
+  per-seller GoblinPay till is planned but not shipped.
+- **Buyer and seller surfaces** - buying your own product is refused up front, before any order is
+  created. Legacy `/product/:id` links permanently redirect to `/products/:id`. The seller (the only
+  party who logs in) signs in with a Nostr browser extension (recommended) or a private key; Nostr Connect
+  has been removed in favour of extension-first login. Relays are operator infrastructure - magick.market
+  federates with its own relay - and are not something buyers or sellers manage.
+- **Privacy-first contact and delivery** - a digital-goods buyer chooses how the seller reaches them from a
+  set of privacy-respecting channels: email, Signal, Matrix, Session, or SimpleX. The chosen channel rides
+  the same encrypted NIP-17 gift-wrapped order message as the rest of the private order details, so the
+  marketplace never sees it; the seller reads it off the private order card.
 - **Paid names** - NIP-05 usernames and vanity URLs are bought with real GoblinPay invoices, not an
   honor-system payment proof. The buyer pays an invoice whose funds land in the marketplace till
   wallet (wallet-to-wallet, sweepable by the operator), and the name is granted only after the
   payment confirms on chain (GoblinPay's 10-confirmation house standard).
+
+### Why the seller confirms payment by hand
+
+Product sales use a rudimentary, non-custodial P2P model: the buyer pays the seller's Goblin wallet
+directly, wallet to wallet, and the seller confirms the payment by hand once they watch the Grin arrive
+in their own wallet. This manual step is intentional, not a missing feature or a broken flow. The
+marketplace never holds the money and, by design, cannot see inside an encrypted, private Grin payment,
+so it has no honest way to auto-confirm a product sale on its own; only the seller, looking at their own
+wallet, knows the funds actually landed. Paid names are different because they are paid to the
+marketplace's own till with a GoblinPay invoice, which the marketplace can watch and confirm
+automatically once it reaches GoblinPay's 10-confirmation house standard. The planned per-seller GoblinPay
+till is the future path that brings that same automatic confirmation to products too: a seller could opt
+in to an invoice-backed till and have product sales auto-confirm, while the funds stay non-custodial and
+land straight in their wallet.
 
 To install dependencies:
 

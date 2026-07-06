@@ -5,15 +5,23 @@ import { Textarea } from '@/components/ui/textarea'
 import { CountryCombobox, isValidCountry } from '@/components/checkout/CountryCombobox'
 import { CityCombobox } from '@/components/checkout/CityCombobox'
 import { PhoneInput } from '@/components/checkout/PhoneInput'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { CheckoutDeliveryRequirements } from '@/lib/checkout/deliveryRequirements'
-import { isValidDigitalDeliveryContact } from '@/lib/checkout/deliveryRequirements'
+import {
+	getDeliveryContactOptions,
+	isValidResolvedDeliveryContact,
+	resolveDeliveryContactOption,
+} from '@/lib/checkout/deliveryRequirements'
 import { cartStore } from '@/lib/stores/cart'
 import { useStore } from '@tanstack/react-store'
 import { getShippingEvent, getShippingPickupAddressString, getShippingService, getShippingTitle } from '@/queries/shipping'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 export interface CheckoutFormData {
 	name: string
+	// The seller-enabled contact method the buyer picked: a known channel id
+	// (email/signal/matrix/session/simplex) or a seller's custom free-text entry.
+	contactType: string
 	email: string
 	phone: string
 	firstLineOfAddress: string
@@ -55,6 +63,26 @@ export function ShippingAddressForm({
 	const needsPhysicalAddress = deliveryRequirements.isResolved ? deliveryRequirements.needsPhysicalAddress : true
 	const needsDigitalDeliveryContact = deliveryRequirements.isResolved && deliveryRequirements.needsDigitalDeliveryContact
 	const hasDigitalDelivery = deliveryRequirements.hasDigitalDelivery
+
+	// Seller-controlled: the buyer picks from the methods the seller enabled for the
+	// cart's digital product(s). Empty seller set (older products) falls back to the
+	// full default channel list so checkout never breaks.
+	const contactOptions = useMemo(
+		() => getDeliveryContactOptions(deliveryRequirements.digitalDeliveryContactMethods),
+		[deliveryRequirements.digitalDeliveryContactMethods],
+	)
+
+	// Keep the selected contact method inside the seller-enabled set. If the current
+	// value is not offered (e.g. default 'email' but the seller only offers Signal),
+	// snap to the first allowed option.
+	useEffect(() => {
+		const allowed = contactOptions.map((option) => option.value)
+		if (allowed.length === 0) return
+		const current = form.getFieldValue?.('contactType')
+		if (!allowed.includes(current)) {
+			form.setFieldValue?.('contactType', allowed[0])
+		}
+	}, [contactOptions, form])
 	const deliveryRequirementsBlocked =
 		isDeliveryRequirementsLoading || !!deliveryRequirementsError || (hasAllShippingMethods && !deliveryRequirements.isResolved)
 
@@ -153,46 +181,83 @@ export function ShippingAddressForm({
 						/>
 
 						<form.Field
-							name="email"
-							validators={{
-								onChange: ({ value }: { value: string }) => {
-									if (needsDigitalDeliveryContact && !value.trim()) {
-										return 'Digital delivery contact is required'
-									}
-									if (value.trim() && !isValidDigitalDeliveryContact(value)) return 'Please enter a valid email address'
-									return undefined
-								},
-							}}
+							name="contactType"
 							children={(field: any) => (
 								<div>
 									<Label htmlFor={field.name} className="text-sm font-medium">
-										{hasDigitalDelivery ? 'Digital Delivery Contact (Email)' : 'Email Address'}{' '}
-										{needsDigitalDeliveryContact && <span className="text-red-500">*</span>}
+										{hasDigitalDelivery ? 'Digital Delivery Contact' : 'Contact Method'}
 									</Label>
-									<Input
-										id={field.name}
-										type="email"
-										placeholder="e.g. satoshi@example.com"
+									<Select
 										value={field.state.value}
-										onChange={(e) => field.handleChange(e.target.value)}
-										onBlur={field.handleBlur}
-										required={needsDigitalDeliveryContact}
-									/>
-									{hasDigitalDelivery && (
-										<div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-											<p className="font-medium">Digital delivery contact</p>
-											<p className="mt-1">The seller will use this contact to deliver your digital item after payment settles.</p>
-											<p className="mt-1">
-												Privacy note: this contact will be shared with the seller and may be visible according to the app's current public
-												order metadata model.
-											</p>
-										</div>
-									)}
-									{field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
-										<p className="text-xs text-red-500 mt-1">{field.state.meta.errors[0]}</p>
-									)}
+										onValueChange={(value) => {
+											field.handleChange(value)
+											// Re-run the handle field's validator against the newly selected channel.
+											form.validateField?.('email', 'change')
+										}}
+									>
+										<SelectTrigger id={field.name} data-testid="contact-method-select">
+											<SelectValue placeholder="Select a contact method" />
+										</SelectTrigger>
+										<SelectContent>
+											{contactOptions.map((channel) => (
+												<SelectItem key={channel.value} value={channel.value} data-testid={`contact-method-${channel.value}`}>
+													{channel.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								</div>
 							)}
+						/>
+
+						<form.Subscribe
+							selector={(state: any) => (state.values.contactType || contactOptions[0]?.value || 'email') as string}
+							children={(contactType: string) => {
+								const channel = resolveDeliveryContactOption(contactType)
+								return (
+									<form.Field
+										name="email"
+										validators={{
+											onChange: ({ value }: { value: string }) => {
+												if (needsDigitalDeliveryContact && !value.trim()) {
+													return 'Digital delivery contact is required'
+												}
+												if (value.trim() && !isValidResolvedDeliveryContact(contactType, value))
+													return `Please enter a valid ${channel.label} contact`
+												return undefined
+											},
+										}}
+										children={(field: any) => (
+											<div>
+												<Label htmlFor={field.name} className="text-sm font-medium">
+													{channel.fieldLabel} {needsDigitalDeliveryContact && <span className="text-red-500">*</span>}
+												</Label>
+												<Input
+													id={field.name}
+													type={contactType === 'email' ? 'email' : 'text'}
+													placeholder={channel.placeholder}
+													value={field.state.value}
+													onChange={(e) => field.handleChange(e.target.value)}
+													onBlur={field.handleBlur}
+													required={needsDigitalDeliveryContact}
+												/>
+												{hasDigitalDelivery && (
+													<div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+														<p className="font-medium">Digital delivery contact</p>
+														<p className="mt-1">
+															The seller will use this {channel.label} contact to deliver your digital item after payment settles.
+														</p>
+														<p className="mt-1">Privacy note: this contact is shared with the seller so they can reach you.</p>
+													</div>
+												)}
+												{field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
+													<p className="text-xs text-red-500 mt-1">{field.state.meta.errors[0]}</p>
+												)}
+											</div>
+										)}
+									/>
+								)
+							}}
 						/>
 					</div>
 

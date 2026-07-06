@@ -255,6 +255,16 @@ export const getShippingService = (event: NDKEvent) => {
 }
 
 /**
+ * Gets the seller-enabled digital delivery contact methods from a shipping event.
+ * Each method is stored in its own `['delivery-contact-method', method]` tag.
+ * @param event The shipping event
+ * @returns Array of method ids (known channel ids and/or custom free-text entries)
+ */
+export const getShippingContactMethods = (event: NDKEvent): string[] => {
+	return event.tags.filter((t) => t[0] === 'delivery-contact-method' && typeof t[1] === 'string' && t[1].trim()).map((t) => t[1].trim())
+}
+
+/**
  * Gets the carrier tag from a shipping event
  * @param event The shipping event
  * @returns The carrier name
