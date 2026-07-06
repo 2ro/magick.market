@@ -1,13 +1,16 @@
 import { describe, test, expect } from 'bun:test'
 import {
+	MAX_INVOICE_BATCH_COUNT,
 	NANOGRIN_PER_GRIN,
 	buildGoblinPayUri,
+	clampInvoiceBatchCount,
 	deriveProofAddress,
 	formatGrin,
 	formatGrinAmount,
 	grinToNanogrin,
 	isValidGoblinPayAddress,
 	mintInvoiceNumber,
+	mintInvoiceNumbers,
 	nanogrinToGrin,
 	toGoblinDeeplink,
 } from '@/lib/grin'
@@ -70,6 +73,54 @@ describe('mintInvoiceNumber', () => {
 		const seen = new Set<string>()
 		for (let i = 0; i < 2000; i++) seen.add(mintInvoiceNumber())
 		expect(seen.size).toBe(2000)
+	})
+})
+
+describe('grin invoice batch cap (Goblin wallet MAX_BATCH_COUNT)', () => {
+	test('MAX_INVOICE_BATCH_COUNT mirrors the wallet cap of 20', () => {
+		expect(MAX_INVOICE_BATCH_COUNT).toBe(20)
+	})
+
+	test('clampInvoiceBatchCount passes 1..20 through unchanged', () => {
+		expect(clampInvoiceBatchCount(1)).toBe(1)
+		expect(clampInvoiceBatchCount(5)).toBe(5)
+		expect(clampInvoiceBatchCount(20)).toBe(20)
+	})
+
+	test('clampInvoiceBatchCount floors values below 1 up to 1', () => {
+		expect(clampInvoiceBatchCount(0)).toBe(1)
+		expect(clampInvoiceBatchCount(-3)).toBe(1)
+	})
+
+	test('clampInvoiceBatchCount caps values above 20 at 20', () => {
+		expect(clampInvoiceBatchCount(21)).toBe(20)
+		expect(clampInvoiceBatchCount(1000)).toBe(20)
+	})
+
+	test('clampInvoiceBatchCount treats non-finite as 1', () => {
+		expect(clampInvoiceBatchCount(NaN)).toBe(1)
+		expect(clampInvoiceBatchCount(Infinity)).toBe(1)
+		expect(clampInvoiceBatchCount(-Infinity)).toBe(1)
+	})
+
+	test('clampInvoiceBatchCount floors non-integers', () => {
+		expect(clampInvoiceBatchCount(7.9)).toBe(7)
+		expect(clampInvoiceBatchCount(20.5)).toBe(20)
+	})
+
+	test('mintInvoiceNumbers(5) returns 5 unique MM-<24 hex> ids', () => {
+		const ids = mintInvoiceNumbers(5)
+		expect(ids.length).toBe(5)
+		for (const id of ids) expect(id).toMatch(/^MM-[0-9A-F]{24}$/)
+		expect(new Set(ids).size).toBe(5)
+	})
+
+	test('mintInvoiceNumbers clamps an over-cap request down to 20', () => {
+		expect(mintInvoiceNumbers(100).length).toBe(20)
+	})
+
+	test('mintInvoiceNumbers clamps a zero request up to 1', () => {
+		expect(mintInvoiceNumbers(0).length).toBe(1)
 	})
 })
 

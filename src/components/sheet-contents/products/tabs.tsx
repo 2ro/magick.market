@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PRODUCT_CATEGORIES } from '@/lib/constants'
+import { MAX_INVOICE_BATCH_COUNT } from '@/lib/grin'
 import type { RichShippingInfo } from '@/lib/stores/cart'
 import { useNDK } from '@/lib/stores/ndk'
 import { productFormActions, productFormStore, type ProductShippingForm } from '@/lib/stores/product'
@@ -97,6 +98,11 @@ export function DetailTab() {
 						{field.state.meta.errors?.length > 0 && field.state.meta.isTouched && (
 							<div className="text-red-500 text-sm mt-1">{field.state.meta.errors.join(', ')}</div>
 						)}
+						{/* GRIN is the sole payment method here, so every listing uses the Grin-invoice flow and this note always applies. */}
+						<p className="text-xs text-muted-foreground" data-testid="product-quantity-batch-note">
+							Grin invoices are batched at most {MAX_INVOICE_BATCH_COUNT} per wallet approval. Larger stock is fine and is invoiced per
+							order.
+						</p>
 					</div>
 				)}
 			</form.Field>

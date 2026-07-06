@@ -55,6 +55,37 @@ export function mintInvoiceNumber(): string {
 	return `MM-${hex.toUpperCase()}`
 }
 
+/**
+ * Mirrors the Goblin wallet's MAX_BATCH_COUNT: the wallet approves at most 20
+ * Grin invoices per single approval, so magick never requests a larger batch;
+ * larger stock is simply invoiced per order.
+ */
+export const MAX_INVOICE_BATCH_COUNT = 20
+
+/**
+ * Clamp a requested invoice batch size into [1, MAX_INVOICE_BATCH_COUNT].
+ * Non-finite (NaN/Infinity) becomes 1, non-integers are floored, values below 1
+ * become 1, and values above 20 are capped at 20.
+ */
+export function clampInvoiceBatchCount(count: number): number {
+	if (!Number.isFinite(count)) return 1
+	const floored = Math.floor(count)
+	if (floored < 1) return 1
+	if (floored > MAX_INVOICE_BATCH_COUNT) return MAX_INVOICE_BATCH_COUNT
+	return floored
+}
+
+/**
+ * The sanctioned batch entry point: any code that requests a batch of Grin
+ * invoices must go through this so the wallet's 20-per-approval cap can never
+ * be exceeded. Returns clampInvoiceBatchCount(count) invoice numbers, each
+ * minted via mintInvoiceNumber().
+ */
+export function mintInvoiceNumbers(count: number): string[] {
+	const clamped = clampInvoiceBatchCount(count)
+	return Array.from({ length: clamped }, () => mintInvoiceNumber())
+}
+
 export interface GoblinPayUriParams {
 	/** Recipient: a Goblin nprofile (nprofile1...), npub, or Grin slatepack address (grin1.../tgrin1...). */
 	to: string
