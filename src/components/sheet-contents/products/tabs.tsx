@@ -234,7 +234,7 @@ export function CategoryTab() {
 									value={categories[0]?.name || ''}
 									onChange={(e) => updateCategoryName(0, e.target.value)}
 									className="flex-1 border-2 pr-10"
-									placeholder="e.g Bitcoin Miners"
+									placeholder="e.g Grin Miners"
 								/>
 								{categories.length > 0 && (
 									<Button
@@ -257,7 +257,7 @@ export function CategoryTab() {
 										value={category.name}
 										onChange={(e) => updateCategoryName(index + 1, e.target.value)}
 										className="flex-1 border-2 pr-10"
-										placeholder="e.g Bitcoin Miners"
+										placeholder="e.g Grin Miners"
 									/>
 									<Button
 										type="button"
