@@ -167,7 +167,7 @@ export function ShippingAddressForm({
 									<Input
 										id={field.name}
 										type="text"
-										placeholder="e.g. Satoshi Nakamoto"
+										placeholder="e.g. John Doe"
 										value={field.state.value}
 										onChange={(e) => field.handleChange(e.target.value)}
 										onBlur={field.handleBlur}
