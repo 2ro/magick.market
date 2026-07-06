@@ -240,7 +240,7 @@ function ProfileComponent() {
 									name="displayName"
 									value={formData.displayName}
 									onChange={(e) => setFormData((prev) => ({ ...prev, displayName: e.target.value }))}
-									placeholder="e.g Bitcoin Merchant"
+									placeholder="e.g Grin Merchant"
 									required
 								/>
 							</div>
