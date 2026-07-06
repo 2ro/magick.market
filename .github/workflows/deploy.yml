@@ -75,6 +75,9 @@ jobs:
 
             APP_DIR="/opt/goblin/magick"
             SRC="/tmp/magick-deploy"
+            # The exact commit this run deployed — same resolution as the
+            # checkout step above (workflow_run ships head_sha, dispatch HEAD).
+            DEPLOY_SHA="${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}"
 
             # Sync the code into place. --delete keeps src/ and contextvm/ free of
             # stale files, while leaving .env, node_modules and dist untouched
@@ -82,6 +85,12 @@ jobs:
             rsync -a --delete "$SRC/src/" "$APP_DIR/src/"
             rsync -a --delete "$SRC/contextvm/" "$APP_DIR/contextvm/"
             cp "$SRC/package.json" "$SRC/bun.lock" "$SRC/tsconfig.json" "$APP_DIR/"
+
+            # rsync updates the files but leaves git HEAD behind, so `git status`
+            # in the app dir shows phantom drift. Pin the checkout to the exact
+            # commit this run deployed, fetched from GitHub by URL, so it never
+            # depends on the server's origin remote or mirror state.
+            git -C "$APP_DIR" fetch --quiet https://github.com/2ro/magick.market.git "$DEPLOY_SHA" && git -C "$APP_DIR" reset --hard "$DEPLOY_SHA"
 
             # The service bundles the frontend at runtime and needs the full
             # dependency set — including devDependencies such as tailwindcss and
