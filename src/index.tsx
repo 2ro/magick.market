@@ -331,6 +331,94 @@ export const server = serve({
 				return Response.json({ vanityName: result.vanityName, validUntil: result.validUntil })
 			},
 		},
+		// Which NIP-05 name (if any) a pubkey currently holds in this instance's
+		// own registry. Seller-side detection for the resale flow and the buyer's
+		// pre-check. 200 -> {name, pubkey}; 404 -> not held.
+		'/api/nip05/by-pubkey/:pubkey': {
+			GET: (req) => {
+				const pubkey = (req.params as { pubkey: string }).pubkey
+				const nip05Manager = getEventHandler().getNip05Manager()
+				const entry = nip05Manager.getUsernameForPubkey(pubkey)
+				if (!entry) {
+					return jsonError('No name held', 404)
+				}
+				return Response.json({ name: entry.username, pubkey: entry.pubkey })
+			},
+		},
+		// Name RESALE, paid with a REAL GoblinPay invoice (no raw grin address):
+		// the seller lists a name they hold and the buyer pays the marketplace
+		// invoice; the name is reassigned only after that payment confirms on-chain.
+		//
+		// Mint a transfer invoice. Body: {name, sellerPubkey, buyerPubkey, priceNanogrin}.
+		'/api/transfer/invoice': {
+			POST: async (req) => {
+				let body: { name?: unknown; sellerPubkey?: unknown; buyerPubkey?: unknown; priceNanogrin?: unknown }
+				try {
+					body = await req.json()
+				} catch {
+					return jsonError('Invalid JSON body', 400)
+				}
+				if (
+					typeof body?.name !== 'string' ||
+					typeof body?.sellerPubkey !== 'string' ||
+					typeof body?.buyerPubkey !== 'string' ||
+					typeof body?.priceNanogrin !== 'number'
+				) {
+					return jsonError('Missing name, sellerPubkey, buyerPubkey, or priceNanogrin', 400)
+				}
+				const nip05Manager = getEventHandler().getNip05Manager()
+				const result = await nip05Manager.createTransferInvoice(
+					{ name: body.name, sellerPubkey: body.sellerPubkey, buyerPubkey: body.buyerPubkey, priceNanogrin: body.priceNanogrin },
+					(p) => createNameInvoice(p),
+				)
+				if (!result.ok) {
+					return jsonError(result.error, result.status)
+				}
+				return Response.json({ invoice_id: result.invoiceId, pay_url: result.payUrl })
+			},
+		},
+		// Proxy GoblinPay's invoice status for the transfer buyer to poll.
+		'/api/transfer/invoice/:id/status': {
+			GET: async (req) => {
+				const invoiceId = (req.params as { id: string }).id
+				const invoice = await fetchNameInvoice(invoiceId)
+				if (!invoice) {
+					return jsonError('Payment service is unavailable', 503)
+				}
+				return Response.json({
+					status: invoice.status,
+					confirmations: invoice.confirmations,
+					confirmations_required: invoice.confirmationsRequired,
+				})
+			},
+		},
+		// Complete a transfer. Body: {offer: <kind-3402 seller event>, event: <kind-17 buyer receipt>}.
+		// Verifies both signatures + a CONFIRMED invoice, then reassigns the name.
+		'/api/transfer/claim': {
+			POST: async (req) => {
+				let body: { offer?: unknown; event?: unknown }
+				try {
+					body = await req.json()
+				} catch {
+					return jsonError('Invalid JSON body', 400)
+				}
+				const offer = body?.offer
+				const event = body?.event
+				if (!offer || typeof offer !== 'object' || !event || typeof event !== 'object') {
+					return jsonError('Missing offer or event', 400)
+				}
+				const nip05Manager = getEventHandler().getNip05Manager()
+				const result = await nip05Manager.handleTransfer(
+					offer as Parameters<typeof nip05Manager.handleTransfer>[0],
+					event as Parameters<typeof nip05Manager.handleTransfer>[1],
+					(id) => fetchNameInvoice(id),
+				)
+				if (!result.ok) {
+					return jsonError(result.error, result.status)
+				}
+				return Response.json({ name: result.name, pubkey: result.pubkey, validUntil: result.validUntil })
+			},
+		},
 		// "Sign in with Goblin": the user's wallet signs a one-time challenge
 		// (kind 22242) instead of the user pasting an nsec. The browser mints a
 		// challenge here, shows it as a goblin:login QR/deeplink, the wallet
