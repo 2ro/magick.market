@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { QRCode } from '@/components/ui/qr-code'
+import { withReturnFlag } from '@/lib/goblin/session/protocol'
 import { authActions } from '@/lib/stores/auth'
 import { goblinSessionActions, goblinSessionStore } from '@/lib/stores/goblinSession'
 import { useStore } from '@tanstack/react-store'
@@ -193,7 +194,8 @@ export function GoblinLogin({ onError, onSuccess }: GoblinLoginProps) {
 			) : (
 				<>
 					<Button asChild className="w-full" data-testid="goblin-login-deeplink">
-						<a href={loginUri}>{mode === 'trust' ? 'Trust for this session' : 'Log in with Goblin'}</a>
+						{/* Same-device tap: keep return-to-caller (flag absent) so the wallet bounces back here. */}
+						<a href={withReturnFlag(loginUri, true)}>{mode === 'trust' ? 'Trust for this session' : 'Log in with Goblin'}</a>
 					</Button>
 					<Button variant="outline" className="w-full" onClick={() => setShowQr((visible) => !visible)} data-testid="goblin-login-show-qr">
 						{showQr ? 'Hide QR code' : 'Scan from another device'}
@@ -202,7 +204,8 @@ export function GoblinLogin({ onError, onSuccess }: GoblinLoginProps) {
 						<div className="space-y-2">
 							<p className="text-center text-xs text-muted-foreground">Scan with your Goblin wallet to approve.</p>
 							<div className="flex justify-center" data-testid="goblin-login-qr">
-								<QRCode value={loginUri} size={200} logo showBorder={false} />
+								{/* Scanned from another screen/device: no caller to return to, so suppress the bounce. */}
+								<QRCode value={withReturnFlag(loginUri, false)} size={200} showBorder={false} />
 							</div>
 						</div>
 					)}
