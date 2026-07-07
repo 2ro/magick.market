@@ -91,7 +91,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  * keeps its historical on-order wire shape; the others are messenger handles or
  * invite links validated only loosely (they have no single canonical format).
  */
-export const DELIVERY_CONTACT_TYPES = ['email', 'signal', 'matrix', 'session', 'simplex'] as const
+export const DELIVERY_CONTACT_TYPES = ['email', 'signal', 'telegram', 'matrix', 'session', 'simplex'] as const
 
 export type DeliveryContactType = (typeof DELIVERY_CONTACT_TYPES)[number]
 
@@ -111,6 +111,7 @@ type DeliveryContactChannelMeta = {
 export const DELIVERY_CONTACT_CHANNELS: Record<DeliveryContactType, DeliveryContactChannelMeta> = {
 	email: { value: 'email', label: 'Email', fieldLabel: 'Email address', placeholder: 'e.g. name@example.com' },
 	signal: { value: 'signal', label: 'Signal', fieldLabel: 'Signal number or username', placeholder: 'e.g. +15551234567 or user.01' },
+	telegram: { value: 'telegram', label: 'Telegram', fieldLabel: 'Telegram username', placeholder: 'e.g. @username' },
 	matrix: { value: 'matrix', label: 'Matrix', fieldLabel: 'Matrix ID', placeholder: 'e.g. @name:matrix.org' },
 	session: { value: 'session', label: 'Session', fieldLabel: 'Session ID', placeholder: 'e.g. 05abc… Session ID' },
 	simplex: {

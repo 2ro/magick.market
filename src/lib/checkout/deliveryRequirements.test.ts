@@ -166,7 +166,7 @@ describe('isValidDigitalDeliveryContact', () => {
 
 describe('delivery contact channels', () => {
 	test('exposes the five privacy-respecting channels', () => {
-		expect(DELIVERY_CONTACT_TYPES).toEqual(['email', 'signal', 'matrix', 'session', 'simplex'])
+		expect(DELIVERY_CONTACT_TYPES).toEqual(['email', 'signal', 'telegram', 'matrix', 'session', 'simplex'])
 	})
 
 	test('isDeliveryContactType narrows only to known channels', () => {

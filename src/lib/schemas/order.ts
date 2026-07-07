@@ -65,7 +65,7 @@ export const AddressTagSchema = z.tuple([z.literal('address'), z.string()]) // S
 export const EmailTagSchema = z.tuple([z.literal('email'), z.string().email()]) // Customer email
 export const PhoneTagSchema = z.tuple([z.literal('phone'), z.string()]) // Customer phone
 // Privacy-respecting non-email delivery contact channel: ['contact', <channel>, <handle>]
-export const ContactTagSchema = z.tuple([z.literal('contact'), z.enum(['signal', 'matrix', 'session', 'simplex']), z.string()])
+export const ContactTagSchema = z.tuple([z.literal('contact'), z.enum(['signal', 'telegram', 'matrix', 'session', 'simplex']), z.string()])
 
 // Complete Order Creation Schema
 export const OrderCreationSchema = z.object({

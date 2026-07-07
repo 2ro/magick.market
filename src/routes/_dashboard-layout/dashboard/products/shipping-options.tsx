@@ -538,7 +538,7 @@ function ShippingOptionForm({ shippingOption, isOpen, onOpenChange, onSuccess }:
 														addCustomContactMethod()
 													}
 												}}
-												placeholder="e.g. Telegram, Briar, keybase"
+												placeholder="e.g. Briar, Keybase, Threema"
 												data-testid="custom-contact-method-input"
 											/>
 											<Button type="button" variant="outline" onClick={addCustomContactMethod} data-testid="add-custom-contact-method">
