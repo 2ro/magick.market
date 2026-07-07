@@ -40,9 +40,10 @@ const NANOGRIN_INT = /^\d+$/
 const RawTagSchema = z.array(z.string()).min(1)
 
 /**
- * Validate the six required tags of a kind-3402 offer, in the spec's order:
- * name, domain, p, price, proof_address, expiration. This checks presence and
- * value shape; the authority verifies ownership, signature, and freshness.
+ * Validate the required tags of a kind-3402 offer, in order: name, domain, p,
+ * price, invoice, expiration. This checks presence and value shape; the
+ * marketplace server verifies ownership, signature, freshness, and the confirmed
+ * GoblinPay invoice.
  */
 export const TransferOfferTagsSchema = z.array(RawTagSchema).superRefine((tags, ctx) => {
 	const find = (k: string) => tags.find((t) => t[0] === k)
@@ -60,8 +61,8 @@ export const TransferOfferTagsSchema = z.array(RawTagSchema).superRefine((tags, 
 	if (!price || !NANOGRIN_INT.test(price[1] ?? ''))
 		ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'price tag must be integer nanogrin as a string' })
 
-	const proofAddress = find('proof_address')
-	if (!proofAddress || !proofAddress[1]) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'missing proof_address tag' })
+	const invoice = find('invoice')
+	if (!invoice || !invoice[1]) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'missing invoice tag' })
 
 	const expiration = find('expiration')
 	if (!expiration || !NANOGRIN_INT.test(expiration[1] ?? ''))
