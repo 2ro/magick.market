@@ -15,7 +15,7 @@ export interface ShippingFormData {
 	service: 'standard' | 'express' | 'overnight' | 'pickup' | 'digital'
 	// Seller-controlled: for digital delivery, the secure contact/messaging
 	// methods this seller offers on this product. The buyer picks from this set
-	// at checkout. Known channel ids (email/signal/matrix/session/simplex) plus
+	// at checkout. Known channel ids (email/signal/telegram/matrix/session/simplex) plus
 	// any custom free-text entries the seller typed.
 	contactMethods?: string[]
 	carrier?: string

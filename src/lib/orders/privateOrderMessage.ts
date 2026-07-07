@@ -38,7 +38,7 @@ export type PrivateOrderDeliveryDetails = {
 		phone?: string
 		address?: PrivateOrderAddress
 		// Privacy-respecting non-email delivery contact channel. The seller enables
-		// which methods they offer (known channels signal/matrix/session/simplex plus
+		// which methods they offer (known channels signal/telegram/matrix/session/simplex plus
 		// custom free-text entries) and the buyer picks one. Email keeps its historical
 		// `email` field + `['email', …]` tag; the others ride on `contactType`/
 		// `contactHandle` and a `['contact', type, handle]` tag.

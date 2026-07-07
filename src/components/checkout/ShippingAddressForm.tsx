@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState } from 'react'
 export interface CheckoutFormData {
 	name: string
 	// The seller-enabled contact method the buyer picked: a known channel id
-	// (email/signal/matrix/session/simplex) or a seller's custom free-text entry.
+	// (email/signal/telegram/matrix/session/simplex) or a seller's custom free-text entry.
 	contactType: string
 	email: string
 	phone: string
