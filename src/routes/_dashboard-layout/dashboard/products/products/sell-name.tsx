@@ -3,54 +3,36 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { QRCode } from '@/components/ui/qr-code'
-import { Textarea } from '@/components/ui/textarea'
-import { NAME_AUTHORITY_URL } from '@/lib/constants'
-import { toGoblinDeeplink } from '@/lib/grin'
-import { AuthorityError } from '@/lib/nameAuthority'
 import {
-	buildTransferPayUri,
 	buyerToPubkeyHex,
-	claimErrorMessage,
 	grinStringToNanogrinString,
-	isRetryableClaimError,
-	lodgeErrorMessage,
 	nanogrinStringToGrinString,
-	offerAuthorityBase,
 	offerNip05,
-	parsePaymentProofJson,
 	validateExpiration,
-	validateProofAddress,
-	type TransferOfferView,
 } from '@/lib/nameTransfer'
 import { authStore } from '@/lib/stores/auth'
-import { useHeldName, useIncomingOffers, useLodgeOffer, useRevokeOffer, useSubmitClaim, useTransferOffer } from '@/queries/nameTransfer'
+import { useCreateTransferOffer, useHeldName, useIncomingOffers, useSubmitTransfer, type IncomingOffer } from '@/queries/nameTransfer'
 import { useDashboardTitle } from '@/routes/_dashboard-layout'
 import { createFileRoute } from '@tanstack/react-router'
 import { useStore } from '@tanstack/react-store'
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/_dashboard-layout/dashboard/products/products/sell-name')({
 	component: SellNameComponent,
 })
 
-/** Domain of the default authority, derived from NAME_AUTHORITY_URL (e.g. "goblin.st"). */
-const AUTHORITY_DOMAIN = (() => {
-	try {
-		return new URL(NAME_AUTHORITY_URL).host
-	} catch {
-		return 'goblin.st'
-	}
-})()
+/** The NIP-05 domain names are served under: this instance's own host. */
+const NAME_DOMAIN = typeof window !== 'undefined' ? window.location.host : 'magick.market'
 
 const OFFERS_STORAGE_KEY = 'mm-name-sale-offers'
 
 interface StoredOffer {
 	offerId: string
-	base: string
 	nip05: string
 	priceNanogrin: string
 	buyerPubkeyHex: string
+	payUrl: string
 	expiration: number
 }
 
@@ -69,7 +51,7 @@ function saveStoredOffers(offers: StoredOffer[]) {
 	try {
 		localStorage.setItem(OFFERS_STORAGE_KEY, JSON.stringify(offers))
 	} catch {
-		// storage unavailable; the authority read remains the source of truth
+		// storage unavailable; Nostr remains the source of truth for the buyer
 	}
 }
 
@@ -80,12 +62,12 @@ function copyToClipboard(value: string, label: string) {
 		.catch(() => toast.error('Could not copy to clipboard'))
 }
 
-/** Short, plain non-custodial note shown on both sides. */
-function NonCustodialNote() {
+/** Short note: the buyer pays a marketplace GoblinPay invoice, not a raw address. */
+function GoblinPayNote() {
 	return (
 		<p className="text-muted-foreground text-xs leading-relaxed">
-			magick never touches the money. The payment goes directly from the buyer's wallet to the seller's wallet. magick only helps create,
-			publish, and read offers and submit the claim to the name authority.
+			The buyer pays a Goblin invoice, the same way names are bought here. You never paste a grin address. The name moves to the buyer only
+			after the payment confirms on chain.
 		</p>
 	)
 }
@@ -95,14 +77,13 @@ function NonCustodialNote() {
 // =============================================================================
 
 function SellPanel({ heldName, sellerPubkey }: { heldName: string; sellerPubkey: string }) {
-	const nip05 = `${heldName}@${AUTHORITY_DOMAIN}`
+	const nip05 = offerNip05({ name: heldName, domain: NAME_DOMAIN })
 	const [priceGrin, setPriceGrin] = useState('')
 	const [buyer, setBuyer] = useState('')
-	const [proofAddress, setProofAddress] = useState('')
 	const [validityDays, setValidityDays] = useState('7')
 	const [offers, setOffers] = useState<StoredOffer[]>(() => loadStoredOffers().filter((o) => o.nip05 === nip05))
 
-	const lodge = useLodgeOffer()
+	const createOffer = useCreateTransferOffer()
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault()
@@ -110,26 +91,24 @@ function SellPanel({ heldName, sellerPubkey }: { heldName: string; sellerPubkey:
 			const buyerPubkeyHex = buyerToPubkeyHex(buyer)
 			const priceNanogrin = grinStringToNanogrinString(priceGrin)
 			if (priceNanogrin === '0') throw new Error('Enter a price greater than zero')
-			const address = validateProofAddress(proofAddress)
 			const days = Math.min(30, Math.max(1, Math.floor(Number(validityDays) || 0)))
 			const expiration = validateExpiration(Math.floor(Date.now() / 1000) + days * 86400)
 
-			const result = await lodge.mutateAsync({
+			const result = await createOffer.mutateAsync({
 				name: heldName,
-				domain: AUTHORITY_DOMAIN,
+				domain: NAME_DOMAIN,
 				buyerPubkeyHex,
 				priceNanogrin,
-				proofAddress: address,
 				expiration,
-				base: NAME_AUTHORITY_URL,
+				sellerPubkey,
 			})
 
 			const stored: StoredOffer = {
 				offerId: result.offerId,
-				base: result.base,
 				nip05,
 				priceNanogrin,
 				buyerPubkeyHex,
+				payUrl: result.payUrl,
 				expiration,
 			}
 			const next = [stored, ...loadStoredOffers().filter((o) => o.offerId !== result.offerId)]
@@ -137,11 +116,9 @@ function SellPanel({ heldName, sellerPubkey }: { heldName: string; sellerPubkey:
 			setOffers(next.filter((o) => o.nip05 === nip05))
 			setPriceGrin('')
 			setBuyer('')
-			setProofAddress('')
-			toast.success(`Offer lodged for ${nip05}`)
+			toast.success(`Offer created for ${nip05}`)
 		} catch (err) {
-			if (err instanceof AuthorityError) toast.error(lodgeErrorMessage(err.status, err.errorCode))
-			else toast.error(err instanceof Error ? err.message : 'Could not lodge the offer')
+			toast.error(err instanceof Error ? err.message : 'Could not create the offer')
 		}
 	}
 
@@ -175,16 +152,7 @@ function SellPanel({ heldName, sellerPubkey }: { heldName: string; sellerPubkey:
 				<div className="space-y-1">
 					<Label htmlFor="buyer">Buyer npub</Label>
 					<Input id="buyer" placeholder="npub1..." value={buyer} onChange={(e) => setBuyer(e.target.value)} required />
-					<p className="text-muted-foreground text-xs">Offers are targeted: only this key can claim the name.</p>
-				</div>
-
-				<div className="space-y-1">
-					<Label htmlFor="proof">One-time proof address</Label>
-					<Input id="proof" placeholder="grin1..." value={proofAddress} onChange={(e) => setProofAddress(e.target.value)} required />
-					<p className="text-muted-foreground text-xs">
-						Paste a fresh grin1 slatepack address generated in your Goblin wallet for this sale only. Never reuse an address from another
-						sale or your default receive address.
-					</p>
+					<p className="text-muted-foreground text-xs">Offers are targeted: only this key can pay for and claim the name.</p>
 				</div>
 
 				<div className="space-y-1">
@@ -200,67 +168,46 @@ function SellPanel({ heldName, sellerPubkey }: { heldName: string; sellerPubkey:
 					/>
 				</div>
 
-				<Button type="submit" disabled={lodge.isPending}>
-					{lodge.isPending ? 'Lodging offer...' : 'Create sale offer'}
+				<Button type="submit" disabled={createOffer.isPending}>
+					{createOffer.isPending ? 'Creating offer...' : 'Create sale offer'}
 				</Button>
 			</form>
 
-			<NonCustodialNote />
+			<GoblinPayNote />
 
 			{offers.length > 0 && (
 				<div className="space-y-3 pt-2 border-t">
 					<h3 className="font-medium text-sm">Your offers</h3>
 					{offers.map((o) => (
-						<SellerOfferRow
-							key={o.offerId}
-							offer={o}
-							onRevoked={() => {
-								const next = loadStoredOffers().filter((x) => x.offerId !== o.offerId)
-								saveStoredOffers(next)
-								setOffers(next.filter((x) => x.nip05 === nip05))
-							}}
-						/>
+						<div key={o.offerId} className="space-y-1 bg-muted/40 p-3 rounded-md text-sm">
+							<div className="flex justify-between gap-2">
+								<span className="font-medium">{o.nip05}</span>
+								<span className="text-muted-foreground">{nanogrinStringToGrinString(o.priceNanogrin)} GRIN</span>
+							</div>
+							<p className="text-muted-foreground text-xs break-all">Buyer: {o.buyerPubkeyHex}</p>
+							<p className="text-muted-foreground text-xs">Expires: {new Date(o.expiration * 1000).toLocaleString()}</p>
+							<div className="flex flex-wrap gap-2 pt-1">
+								<Button type="button" variant="outline" size="sm" onClick={() => copyToClipboard(o.payUrl, 'Payment link')}>
+									Copy buyer payment link
+								</Button>
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									onClick={() => {
+										const next = loadStoredOffers().filter((x) => x.offerId !== o.offerId)
+										saveStoredOffers(next)
+										setOffers(next.filter((x) => x.nip05 === nip05))
+									}}
+								>
+									Remove from list
+								</Button>
+							</div>
+						</div>
 					))}
 				</div>
 			)}
 		</Card>
-	)
-}
-
-function SellerOfferRow({ offer, onRevoked }: { offer: StoredOffer; onRevoked: () => void }) {
-	const { data, isLoading } = useTransferOffer(offer.offerId, offer.base, 30000)
-	const revoke = useRevokeOffer()
-	const status = data?.status
-	const priceGrin = nanogrinStringToGrinString(offer.priceNanogrin)
-
-	const handleRevoke = async () => {
-		try {
-			await revoke.mutateAsync({ base: offer.base, offerId: offer.offerId })
-			toast.success('Offer revoked')
-			onRevoked()
-		} catch (err) {
-			if (err instanceof AuthorityError) toast.error(lodgeErrorMessage(err.status, err.errorCode))
-			else toast.error(err instanceof Error ? err.message : 'Could not revoke the offer')
-		}
-	}
-
-	return (
-		<div className="space-y-1 bg-muted/40 p-3 rounded-md text-sm">
-			<div className="flex justify-between gap-2">
-				<span className="font-medium">{offer.nip05}</span>
-				<span className="text-muted-foreground">{priceGrin} GRIN</span>
-			</div>
-			<p className="text-muted-foreground text-xs break-all">Buyer: {offer.buyerPubkeyHex}</p>
-			<p className="text-muted-foreground text-xs">Expires: {new Date(offer.expiration * 1000).toLocaleString()}</p>
-			<p className="text-xs">
-				Status: <span className="font-medium">{isLoading ? 'checking...' : (status ?? 'unknown')}</span>
-			</p>
-			{status === 'live' && (
-				<Button variant="destructive" size="sm" onClick={handleRevoke} disabled={revoke.isPending}>
-					{revoke.isPending ? 'Revoking...' : 'Revoke'}
-				</Button>
-			)}
-		</div>
 	)
 }
 
@@ -275,7 +222,9 @@ function BuyPanel({ buyerPubkey }: { buyerPubkey: string }) {
 		<Card className="space-y-4 p-4">
 			<div>
 				<h2 className="font-semibold text-lg">Buy a name</h2>
-				<p className="text-muted-foreground text-sm">Offers sent to your key appear here. Pay the seller directly, then claim the name.</p>
+				<p className="text-muted-foreground text-sm">
+					Offers sent to your key appear here. Pay the Goblin invoice; the name is yours once it confirms.
+				</p>
 			</div>
 
 			{isLoading && <p className="text-muted-foreground text-sm">Looking for offers sent to your key...</p>}
@@ -285,112 +234,148 @@ function BuyPanel({ buyerPubkey }: { buyerPubkey: string }) {
 
 			<div className="space-y-4">
 				{offers?.map((offer) => (
-					<IncomingOfferCard key={offer.offerId} offer={offer} buyerPubkey={buyerPubkey} />
+					<IncomingOfferCard key={offer.view.offerId} offer={offer} />
 				))}
 			</div>
 
-			<NonCustodialNote />
+			<GoblinPayNote />
 		</Card>
 	)
 }
 
-function IncomingOfferCard({ offer, buyerPubkey }: { offer: TransferOfferView; buyerPubkey: string }) {
-	const base = offerAuthorityBase(offer)
-	const nip05 = offerNip05(offer)
-	const priceGrin = nanogrinStringToGrinString(offer.priceNanogrin)
-	const payUri = buildTransferPayUri(offer)
+type BuyStatus = 'live' | 'waiting' | 'confirming' | 'confirmed' | 'granting' | 'done' | 'error'
 
-	const { data: offerStatus } = useTransferOffer(offer.offerId, base, 30000)
-	const { data: heldName } = useHeldName(buyerPubkey, base)
-	const submitClaim = useSubmitClaim()
+function IncomingOfferCard({ offer }: { offer: IncomingOffer }) {
+	const view = offer.view
+	const nip05 = offerNip05(view)
+	const priceGrin = nanogrinStringToGrinString(view.priceNanogrin)
+	const submit = useSubmitTransfer()
 
-	const [proofText, setProofText] = useState('')
-	const [result, setResult] = useState<string | null>(null)
+	const [status, setStatus] = useState<BuyStatus>('live')
+	const [confirmations, setConfirmations] = useState({ n: 0, required: 10 })
+	const [message, setMessage] = useState<string | null>(null)
+	const claimedRef = useRef(false)
 
-	const status = offerStatus?.status
-	const alreadyHoldsName = !!heldName
+	const expired = view.expiration <= Math.floor(Date.now() / 1000)
 
-	const handleClaim = async (e: React.FormEvent) => {
-		e.preventDefault()
-		setResult(null)
+	const openInGoblin = () => {
+		if (view.payUrl) window.location.href = view.payUrl
+	}
+
+	const doClaim = useCallback(async () => {
+		if (claimedRef.current) return
+		claimedRef.current = true
+		setStatus('granting')
 		try {
-			const proof = parsePaymentProofJson(proofText)
-			const claim = await submitClaim.mutateAsync({ base, offerId: offer.offerId, proof })
-			setResult(`${claim.nip05} now resolves to your key.`)
-			toast.success(`You now own ${claim.nip05}`)
+			const result = await submit.mutateAsync({ offer })
+			setStatus('done')
+			setMessage(`${result.name}@${view.domain} now resolves to your key.`)
+			toast.success(`You now own ${result.name}@${view.domain}`)
 		} catch (err) {
-			if (err instanceof AuthorityError) {
-				const message = claimErrorMessage(err.status, err.errorCode)
-				toast[isRetryableClaimError(err.status, err.errorCode) ? 'message' : 'error'](message)
-				setResult(message)
-			} else {
-				const message = err instanceof Error ? err.message : 'Could not complete the claim'
-				toast.error(message)
-				setResult(message)
+			claimedRef.current = false
+			setStatus('error')
+			const msg = err instanceof Error ? err.message : 'Could not complete the transfer'
+			setMessage(msg)
+			toast.error(msg)
+		}
+	}, [offer, submit, view.domain])
+
+	// Poll the invoice while the buyer is paying, then auto-claim on confirmation.
+	useEffect(() => {
+		if (status === 'live' || status === 'confirmed' || status === 'done' || status === 'granting' || status === 'error') return
+		let cancelled = false
+		const poll = async () => {
+			try {
+				const res = await fetch(`/api/transfer/invoice/${encodeURIComponent(view.invoiceId)}/status`)
+				if (!res.ok || cancelled) return
+				const data = await res.json()
+				if (cancelled) return
+				if (data.status === 'confirmed') {
+					setConfirmations({ n: data.confirmations ?? 10, required: data.confirmations_required ?? 10 })
+					setStatus('confirmed')
+				} else if (data.status === 'paid') {
+					setConfirmations({ n: data.confirmations ?? 0, required: data.confirmations_required ?? 10 })
+					setStatus('confirming')
+				} else {
+					setStatus('waiting')
+				}
+			} catch {
+				// transient; keep polling
 			}
 		}
-	}
+		poll()
+		const timer = setInterval(poll, 5000)
+		return () => {
+			cancelled = true
+			clearInterval(timer)
+		}
+	}, [status, view.invoiceId])
+
+	// Fire the claim once when the invoice reaches confirmed.
+	useEffect(() => {
+		if (status === 'confirmed') void doClaim()
+	}, [status, doClaim])
 
 	return (
 		<div className="space-y-3 p-3 border rounded-md">
 			<div className="flex justify-between gap-2">
 				<div>
 					<p className="font-medium">{nip05}</p>
-					<p className="text-muted-foreground text-xs break-all">Seller: {offer.sellerPubkeyHex}</p>
+					<p className="text-muted-foreground text-xs break-all">Seller: {view.sellerPubkeyHex}</p>
 				</div>
 				<div className="text-right">
 					<p className="font-semibold">{priceGrin} GRIN</p>
-					<p className="text-muted-foreground text-xs">{status ? `Status: ${status}` : 'Status: checking...'}</p>
 				</div>
 			</div>
-			<p className="text-muted-foreground text-xs">Expires: {new Date(offer.expiration * 1000).toLocaleString()}</p>
+			<p className="text-muted-foreground text-xs">Expires: {new Date(view.expiration * 1000).toLocaleString()}</p>
 
-			{alreadyHoldsName && (
-				<div className="bg-amber-50 p-2 border border-amber-300 rounded text-amber-900 text-xs">
-					Your key already holds <span className="font-medium">{heldName?.name}</span> on {offer.domain}. Release it before you pay, or the
-					claim will be rejected. The offer and your proof stay valid after you release.
-				</div>
-			)}
-
-			{status === 'live' ? (
+			{expired ? (
+				<p className="text-muted-foreground text-sm">This offer has expired.</p>
+			) : status === 'done' ? (
+				<p className="text-sm text-green-700">{message}</p>
+			) : (
 				<>
-					<div className="space-y-2">
-						<p className="text-sm">
-							Pay the seller exactly <span className="font-medium">{priceGrin} GRIN</span> peer to peer from your Goblin wallet, with
-							payment proof enabled.
-						</p>
-						<div className="flex flex-col items-center gap-2">
-							<QRCode value={payUri} size={180} logo />
-							<div className="flex flex-wrap justify-center gap-2">
-								<Button type="button" variant="outline" size="sm" onClick={() => copyToClipboard(payUri, 'Pay URI')}>
-									Copy pay URI
-								</Button>
-								<Button type="button" variant="outline" size="sm" asChild>
-									<a href={toGoblinDeeplink(payUri)}>Open in Goblin</a>
-								</Button>
+					{(status === 'live' || status === 'waiting' || status === 'confirming' || status === 'error') && (
+						<div className="space-y-2">
+							<p className="text-sm">
+								Pay <span className="font-medium">{priceGrin} GRIN</span> with your Goblin wallet.
+							</p>
+							<div className="flex flex-col items-center gap-2">
+								<QRCode value={view.payUrl} size={180} />
+								<div className="flex flex-wrap justify-center gap-2">
+									<Button type="button" variant="outline" size="sm" onClick={() => copyToClipboard(view.payUrl, 'Payment link')}>
+										Copy pay link
+									</Button>
+									<Button type="button" size="sm" onClick={openInGoblin}>
+										Open in Goblin
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onClick={() => {
+											setMessage(null)
+											setStatus('waiting')
+										}}
+									>
+										I have paid
+									</Button>
+								</div>
 							</div>
 						</div>
-					</div>
+					)}
 
-					<form onSubmit={handleClaim} className="space-y-2">
-						<Label htmlFor={`proof-${offer.offerId}`}>Payment proof</Label>
-						<Textarea
-							id={`proof-${offer.offerId}`}
-							placeholder="Paste the six-field payment proof JSON exported by your wallet"
-							value={proofText}
-							onChange={(e) => setProofText(e.target.value)}
-							rows={5}
-						/>
-						<Button type="submit" disabled={submitClaim.isPending}>
-							{submitClaim.isPending ? 'Verifying payment on chain...' : 'Claim name'}
-						</Button>
-					</form>
+					{status === 'confirming' && (
+						<p className="text-sm text-yellow-700">
+							Payment received, confirming on chain ({confirmations.n} of {confirmations.required}).
+						</p>
+					)}
+					{(status === 'confirmed' || status === 'granting') && (
+						<p className="text-sm text-green-700">Payment confirmed, transferring the name...</p>
+					)}
+					{status === 'error' && message && <p className="text-sm text-red-600">{message}</p>}
 				</>
-			) : (
-				<p className="text-muted-foreground text-sm">This offer is not live ({status ?? 'unknown'}), so it cannot be claimed.</p>
 			)}
-
-			{result && <p className="text-sm">{result}</p>}
 		</div>
 	)
 }
@@ -413,7 +398,9 @@ function SellNameComponent() {
 		<div className="space-y-6 p-4 lg:p-6">
 			<div>
 				<h1 className="font-bold text-2xl">Names</h1>
-				<p className="text-muted-foreground text-sm">Buy or sell a NIP-05 name. Payment is wallet to wallet; magick never holds funds.</p>
+				<p className="text-muted-foreground text-sm">
+					Buy or sell a NIP-05 name. The buyer pays a Goblin invoice; no grin address is entered.
+				</p>
 			</div>
 
 			{isLoading && <p className="text-muted-foreground text-sm">Checking whether you hold a name...</p>}

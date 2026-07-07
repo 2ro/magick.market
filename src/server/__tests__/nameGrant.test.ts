@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { buildNameOrderRef, decideNameGrant, type GoblinPayInvoiceView } from '../nameGrant'
+import { buildNameOrderRef, decideNameGrant, decideNameTransfer, type GoblinPayInvoiceView } from '../nameGrant'
 import { grinToNanogrin } from '@/lib/grin'
 
 const SIX_MONTHS = 180 * 24 * 60 * 60
@@ -114,5 +114,100 @@ describe('decideNameGrant', () => {
 	test('grants when the amount exceeds the tier floor', () => {
 		const d = decide({ invoice: invoice({ amountNanogrin: grinToNanogrin(800) }) })
 		expect(d.ok).toBe(true)
+	})
+})
+
+describe('decideNameTransfer', () => {
+	const SELLER = 'c'.repeat(64)
+	const PRICE = grinToNanogrin(42)
+
+	function transferInvoice(overrides: Partial<GoblinPayInvoiceView> = {}): GoblinPayInvoiceView {
+		return {
+			invoiceId: 'inv-t',
+			status: 'confirmed',
+			confirmations: 10,
+			confirmationsRequired: 10,
+			orderRef: buildNameOrderRef('transfer', 'alice', PK),
+			amountNanogrin: PRICE,
+			...overrides,
+		}
+	}
+
+	function decideT(overrides: {
+		invoice?: GoblinPayInvoiceView | null
+		invoiceId?: string
+		buyerPubkey?: string
+		sellerPubkey?: string
+		expectedAmountNanogrin?: number
+		consumed?: Set<string>
+	}) {
+		return decideNameTransfer({
+			invoice: overrides.invoice === undefined ? transferInvoice() : overrides.invoice,
+			invoiceId: overrides.invoiceId ?? 'inv-t',
+			name: 'alice',
+			buyerPubkey: overrides.buyerPubkey ?? PK,
+			sellerPubkey: overrides.sellerPubkey ?? SELLER,
+			expectedAmountNanogrin: overrides.expectedAmountNanogrin ?? PRICE,
+			isConsumed: (id) => (overrides.consumed ?? new Set<string>()).has(id),
+		})
+	}
+
+	test('completes a confirmed transfer bound to name+buyer at the listed price', () => {
+		const d = decideT({})
+		expect(d.ok).toBe(true)
+		if (d.ok) expect(d.amountNanogrin).toBe(PRICE)
+	})
+
+	test('accepts an overpayment above the listed price', () => {
+		const d = decideT({ invoice: transferInvoice({ amountNanogrin: PRICE + grinToNanogrin(1) }) })
+		expect(d.ok).toBe(true)
+	})
+
+	test('rejects a missing invoice id', () => {
+		const d = decideT({ invoiceId: '' })
+		expect(d.ok).toBe(false)
+		if (!d.ok) expect(d.status).toBe(400)
+	})
+
+	test('rejects a reused invoice before anything else', () => {
+		const d = decideT({ consumed: new Set(['inv-t']) })
+		expect(d.ok).toBe(false)
+		if (!d.ok) expect(d.status).toBe(409)
+	})
+
+	test('rejects a self-transfer (buyer equals seller)', () => {
+		const d = decideT({ sellerPubkey: PK })
+		expect(d.ok).toBe(false)
+		if (!d.ok) expect(d.error).toMatch(/current holder/i)
+	})
+
+	test('fails closed when GoblinPay is unreachable', () => {
+		const d = decideT({ invoice: null })
+		expect(d.ok).toBe(false)
+		if (!d.ok) expect(d.status).toBe(503)
+	})
+
+	test('rejects an unconfirmed payment', () => {
+		const d = decideT({ invoice: transferInvoice({ status: 'paid' }) })
+		expect(d.ok).toBe(false)
+		if (!d.ok) expect(d.status).toBe(402)
+	})
+
+	test('rejects an order_ref for a different buyer or name', () => {
+		const d = decideT({ invoice: transferInvoice({ orderRef: buildNameOrderRef('transfer', 'alice', 'd'.repeat(64)) }) })
+		expect(d.ok).toBe(false)
+		if (!d.ok) expect(d.error).toMatch(/does not match/i)
+	})
+
+	test('rejects a payment below the listed price', () => {
+		const d = decideT({ invoice: transferInvoice({ amountNanogrin: PRICE - 1 }) })
+		expect(d.ok).toBe(false)
+		if (!d.ok) expect(d.error).toMatch(/listed price/i)
+	})
+
+	test('rejects a non-positive listed price', () => {
+		const d = decideT({ expectedAmountNanogrin: 0 })
+		expect(d.ok).toBe(false)
+		if (!d.ok) expect(d.status).toBe(400)
 	})
 })
