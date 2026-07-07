@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button'
-import { QRCode } from '@/components/ui/qr-code'
+import { GOBLIN_EMBLEM_DATA_URI, QRCode } from '@/components/ui/qr-code'
 import { withReturnFlag } from '@/lib/goblin/session/protocol'
 import { authActions } from '@/lib/stores/auth'
 import { goblinSessionActions, goblinSessionStore } from '@/lib/stores/goblinSession'
@@ -205,7 +205,8 @@ export function GoblinLogin({ onError, onSuccess }: GoblinLoginProps) {
 							<p className="text-center text-xs text-muted-foreground">Scan with your Goblin wallet to approve.</p>
 							<div className="flex justify-center" data-testid="goblin-login-qr">
 								{/* Scanned from another screen/device: no caller to return to, so suppress the bounce. */}
-								<QRCode value={withReturnFlag(loginUri, false)} size={200} showBorder={false} />
+								{/* Owner ruling: center the Goblin emblem (padded, no backing tile) — level H via the logo path. */}
+								<QRCode value={withReturnFlag(loginUri, false)} size={200} logo={GOBLIN_EMBLEM_DATA_URI} showBorder={false} />
 							</div>
 						</div>
 					)}
