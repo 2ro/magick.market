@@ -212,6 +212,31 @@ export function buildTrustUri(params: {
 }
 
 /**
+ * Query-param name that tells the wallet whether to bounce back to the caller
+ * after it finishes login/trust:
+ *   - flag OFF (`rt=0`): the wallet completes and does NOT return to the caller.
+ *     Right for a QR scanned from another screen/device — there is nothing to
+ *     return to on the scanning device.
+ *   - flag ABSENT (or on): keep the current return-to-caller behavior. Right for
+ *     the same-device "Open in Goblin" deep-link tap.
+ * NOTE: `rt` is a PLACEHOLDER — the FINAL param name MUST match the Goblin
+ * wallet's URI parser (coordinated separately). Kept as a one-line constant so a
+ * rename is a single-line change. It does not affect cb/domain validation.
+ */
+export const RETURN_FLAG_PARAM = 'rt'
+
+/**
+ * Derive the login/trust URI variant for a given surface from the base URI.
+ * `returnToCaller` true  -> same-device deep-link: base URI unchanged (flag absent).
+ * `returnToCaller` false -> QR-displayed: append `rt=0` so the wallet does not bounce back.
+ * The two variants differ ONLY by the appended return flag.
+ */
+export function withReturnFlag(uri: string, returnToCaller: boolean): string {
+	if (returnToCaller) return uri
+	return `${uri}${uri.includes('?') ? '&' : '?'}${RETURN_FLAG_PARAM}=0`
+}
+
+/**
  * Strip id and sig from an event NDK composed, keeping exactly the fields the
  * wallet needs to recompute the NIP-01 id and sign (spec section 5.4 finding A):
  * pubkey, created_at, kind, tags, content. The wallet owns id and sig; the
