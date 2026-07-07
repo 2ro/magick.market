@@ -8,6 +8,7 @@ import { useAmIAdmin } from '@/queries/app-settings'
 import { createRootRoute, Outlet, useNavigate, useLocation } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { DecryptPasswordDialog } from '@/components/auth/DecryptPasswordDialog'
+import { GoblinSessionIndicator } from '@/components/auth/GoblinSessionIndicator'
 import { Toaster } from 'sonner'
 import { useBlacklistSync } from '@/hooks/useBlacklistSync'
 import { useVanitySync } from '@/hooks/useVanitySync'
@@ -116,6 +117,7 @@ function RootLayout() {
 				<DecryptPasswordDialog />
 				<SheetRegistry />
 				<DialogRegistry />
+				<GoblinSessionIndicator />
 				<Toaster />
 			</div>
 		</TooltipProvider>
