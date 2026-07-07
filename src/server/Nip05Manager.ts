@@ -4,7 +4,8 @@ import { nip19 } from 'nostr-tools'
 import { RegistryManager, type RegistryEntry } from './RegistryManager'
 import type { EventSigner } from './EventSigner'
 import { grinToNanogrin } from '@/lib/grin'
-import { buildNameOrderRef, decideNameGrant, type GoblinPayInvoiceView } from './nameGrant'
+import { buildNameOrderRef, decideNameGrant, decideNameTransfer, type GoblinPayInvoiceView } from './nameGrant'
+import { TRANSFER_OFFER_KIND } from '@/lib/schemas/nameTransfer'
 import type { CreatedNameInvoice } from './goblinPayServer'
 
 // Reserved NIP-05 names that cannot be registered
@@ -341,5 +342,173 @@ export class Nip05ManagerImpl extends RegistryManager<Nip05Entry> {
 		// Allow alphanumeric, hyphens, underscores, dots, 1-30 characters
 		const regex = /^[a-z0-9][a-z0-9._-]{0,28}[a-z0-9]$|^[a-z0-9]$/
 		return regex.test(name.toLowerCase())
+	}
+
+	// --- Name transfer (resale) ---------------------------------------------
+
+	/**
+	 * Mint a REAL GoblinPay invoice for the RESALE of a name the seller currently
+	 * holds. Mirrors createPurchaseInvoice, but binds the invoice to
+	 * `transfer:<name>:<buyerPubkey>` and prices it at the seller's own listed
+	 * amount (there is no platform tier for a resale). The seller drives this from
+	 * their own client, then signs the resulting invoice id + price into the
+	 * kind-3402 offer; that signature is their consent to the transfer.
+	 *
+	 * Minting an invoice is itself harmless: the name only moves on a claim that
+	 * presents BOTH the seller-signed offer and a confirmed invoice.
+	 */
+	public async createTransferInvoice(
+		params: { name: string; sellerPubkey: string; buyerPubkey: string; priceNanogrin: number },
+		createInvoiceFn: (p: { amountNanogrin: number; orderRef: string; memo: string }) => Promise<CreatedNameInvoice>,
+	): Promise<{ ok: true; invoiceId: string; payUrl: string } | { ok: false; error: string; status: number }> {
+		const name = params.name?.toLowerCase()
+		if (!name) {
+			return { ok: false, error: 'Missing name', status: 400 }
+		}
+		if (!Number.isInteger(params.priceNanogrin) || params.priceNanogrin <= 0) {
+			return { ok: false, error: 'Enter a price greater than zero', status: 400 }
+		}
+		if (params.sellerPubkey === params.buyerPubkey) {
+			return { ok: false, error: 'You cannot sell a name to yourself', status: 400 }
+		}
+		const now = Math.floor(Date.now() / 1000)
+		const existing = this.registry.get(name)
+		if (!existing || existing.validUntil <= now) {
+			return { ok: false, error: `You do not hold an active NIP-05 name: ${name}`, status: 403 }
+		}
+		if (existing.pubkey !== params.sellerPubkey) {
+			return { ok: false, error: 'You are not the current holder of this name', status: 403 }
+		}
+		try {
+			const invoice = await createInvoiceFn({
+				amountNanogrin: params.priceNanogrin,
+				orderRef: buildNameOrderRef('transfer', name, params.buyerPubkey),
+				memo: `magick.market name transfer ${name}`,
+			})
+			return { ok: true, invoiceId: invoice.invoiceId, payUrl: invoice.payUrl }
+		} catch (error) {
+			console.error('[nip05] GoblinPay transfer invoice creation failed:', error)
+			return { ok: false, error: 'Could not create a payment invoice', status: 502 }
+		}
+	}
+
+	/**
+	 * Complete a name transfer from a seller-signed kind-3402 offer and a
+	 * buyer-signed kind-17 receipt, gated by a CONFIRMED GoblinPay invoice.
+	 *
+	 * Trust model (mirrors handleGrinPurchase; no raw grin address anywhere):
+	 *  - the offer's signature proves the SELLER consented to sell `name` to the
+	 *    buyer `p` at `price`, and references the `invoice`,
+	 *  - the receipt's signature proves the BUYER controls the key being granted,
+	 *    and the receipt echoes the same name + invoice and is addressed to the
+	 *    platform till,
+	 *  - the seller must still be the current holder (owner-changed guard),
+	 *  - the invoice must be confirmed on-chain, bound to `transfer:<name>:<buyer>`,
+	 *    and clear the listed price; consumed invoices are refused and an
+	 *    unreachable GoblinPay fails closed.
+	 *
+	 * The buyer inherits the seller's remaining validity (a transfer, not a
+	 * renewal). Funds land in the marketplace till, exactly as a first purchase.
+	 */
+	public async handleTransfer(
+		offerEvent: Event,
+		claimEvent: Event,
+		fetchInvoice: (invoiceId: string) => Promise<GoblinPayInvoiceView | null>,
+	): Promise<{ ok: true; name: string; pubkey: string; validUntil: number } | { ok: false; error: string; status: number }> {
+		// --- Seller-signed offer (kind 3402) ---
+		if (offerEvent?.kind !== TRANSFER_OFFER_KIND) {
+			return { ok: false, error: 'Not a transfer offer (kind 3402)', status: 400 }
+		}
+		if (!verifyEvent(offerEvent)) {
+			return { ok: false, error: 'Invalid offer signature', status: 400 }
+		}
+		const offerTag = (k: string) => offerEvent.tags.find((t) => t[0] === k)?.[1]
+		const name = offerTag('name')?.toLowerCase()
+		const priceRaw = offerTag('price')
+		const offerBuyer = offerTag('p')?.toLowerCase()
+		const offerInvoiceId = offerTag('invoice')
+		const expirationRaw = offerTag('expiration')
+		if (!name || !priceRaw || !offerBuyer || !offerInvoiceId || !expirationRaw) {
+			return { ok: false, error: 'Offer is missing required tags', status: 400 }
+		}
+		if (!/^\d+$/.test(priceRaw) || !/^\d+$/.test(expirationRaw)) {
+			return { ok: false, error: 'Offer has a malformed price or expiration', status: 400 }
+		}
+		const sellerPubkey = offerEvent.pubkey
+		const now = Math.floor(Date.now() / 1000)
+		if (Number(expirationRaw) <= now) {
+			return { ok: false, error: 'This offer has expired', status: 410 }
+		}
+
+		// --- Buyer-signed receipt (kind 17) ---
+		if (claimEvent?.kind !== 17) {
+			return { ok: false, error: 'Not a payment receipt (kind 17)', status: 400 }
+		}
+		if (!claimEvent.id || this.processedGrinClaims.has(claimEvent.id)) {
+			return { ok: false, error: 'Receipt already processed', status: 409 }
+		}
+		if (!verifyEvent(claimEvent)) {
+			return { ok: false, error: 'Invalid event signature', status: 400 }
+		}
+		const recipientTag = claimEvent.tags.find((t) => t[0] === 'p')?.[1]
+		if (recipientTag !== NIP05_GRIN_RECIPIENT_PUBKEY) {
+			return { ok: false, error: 'Receipt is not addressed to the name payment recipient', status: 400 }
+		}
+		const claimName = claimEvent.tags.find((t) => t[0] === 'nip05')?.[1]?.toLowerCase()
+		if (claimName !== name) {
+			return { ok: false, error: 'Receipt does not name the offer name', status: 400 }
+		}
+		const claimInvoiceId = claimEvent.tags.find((t) => t[0] === 'invoice')?.[1]
+		if (!claimInvoiceId || claimInvoiceId !== offerInvoiceId) {
+			return { ok: false, error: 'Receipt invoice does not match the offer', status: 400 }
+		}
+		const buyerPubkey = claimEvent.pubkey
+		if (buyerPubkey !== offerBuyer) {
+			return { ok: false, error: 'The offer is for a different buyer key', status: 400 }
+		}
+
+		// --- Owner-changed guard: the seller must still hold the name ---
+		const held = this.registry.get(name)
+		if (!held || held.validUntil <= now) {
+			return { ok: false, error: 'The name is no longer registered to the seller', status: 409 }
+		}
+		if (held.pubkey !== sellerPubkey) {
+			return { ok: false, error: 'The name is no longer owned by the seller', status: 409 }
+		}
+		const inheritedValidUntil = held.validUntil
+
+		// --- Confirmed GoblinPay invoice is the grant gate ---
+		const invoice = await fetchInvoice(claimInvoiceId)
+		const decision = decideNameTransfer({
+			invoice,
+			invoiceId: claimInvoiceId,
+			name,
+			buyerPubkey,
+			sellerPubkey,
+			expectedAmountNanogrin: Number(priceRaw),
+			isConsumed: (id) => this.consumedInvoiceIds.has(id),
+		})
+		if (!decision.ok) {
+			return decision
+		}
+
+		this.processedGrinClaims.add(claimEvent.id)
+		if (this.processedGrinClaims.size > 2000) {
+			this.processedGrinClaims.clear()
+			this.processedGrinClaims.add(claimEvent.id)
+		}
+
+		// Reassign the name to the buyer, preserving the remaining validity.
+		if (this.pubkeyToUsername.get(sellerPubkey) === name) {
+			this.pubkeyToUsername.delete(sellerPubkey)
+		}
+		const entry = this.createEntry(name, buyerPubkey, inheritedValidUntil)
+		entry.invoiceId = claimInvoiceId
+		this.registry.set(name, entry)
+		this.consumedInvoiceIds.add(claimInvoiceId)
+		this.onEntryRegistered?.(name, entry)
+		await this.publishRegistry()
+
+		return { ok: true, name, pubkey: buyerPubkey, validUntil: inheritedValidUntil }
 	}
 }
