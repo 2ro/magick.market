@@ -203,7 +203,17 @@ User's NIP-78 event with shares:
 - `l: "v4v_share"`
 - `p: "<app's pubkey>"`
 
-Use the same convention as in NIP-57 using `zap` tags for global V4V shares. For future per-product shares, use the `zap` tag in the product event as described in NIP-57.
+Global V4V shares are stored in the event content as an array of `split` share
+tuples: `["split", "<pubkey of the profile to share>", "<weight>"]`. This is a
+GRIN-native revenue split, not a Lightning zap; the tag was formerly `zap`
+(NIP-57 style) and readers still accept that legacy name (read-both / write-new),
+but new events are always written with `split`.
+
+For per-product shares, put the `split` tuple in the product (kind 30402) event.
+Do NOT use the `zap` tag on a product: `zap` is in `BITCOIN_RAIL_TAGS`
+(`src/lib/market-scope.ts`), so a `zap`-tagged product would be dropped from every
+public browse/search/detail surface. `split` is deliberately excluded from that
+drop-list precisely so per-product V4V splits are never silently hidden.
 
 Example event:
 
@@ -214,9 +224,9 @@ Example event:
 "kind": 30078,
 "content": JSON.strigify({
 	[
-		["zap", "<pubkey of the profile to share>", "<weight>"],
-		["zap", "<pubkey of the profile to share>", "<weight>"],
-		["zap", "<pubkey of the profile to share>", "<weight>"],
+		["split", "<pubkey of the profile to share>", "<weight>"],
+		["split", "<pubkey of the profile to share>", "<weight>"],
+		["split", "<pubkey of the profile to share>", "<weight>"],
 		// All the shares
 	]
 }),
