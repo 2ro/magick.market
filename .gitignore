@@ -47,8 +47,8 @@ contextvm/data/
 playwright-report
 test-results
 
-# Claude Code local settings (user-specific)
-.claude/settings.local.json
+# Local agent tooling (user-specific) — never commit
+.claude/
 __pycache__/
 
 .opencode/
