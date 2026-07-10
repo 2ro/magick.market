@@ -81,9 +81,6 @@ export interface ProductFormState {
 	shippings: ProductShippingForm[]
 	weight: ProductWeight | null
 	dimensions: ProductDimensions | null
-	// Currency system state
-	bitcoinUnit: 'SATS' | 'BTC'
-	currencyMode: 'sats' | 'fiat'
 	// Content warning
 	isNSFW: boolean
 }
@@ -110,9 +107,6 @@ export const DEFAULT_FORM_STATE: ProductFormState = {
 	shippings: [],
 	weight: null,
 	dimensions: null,
-	// Currency system defaults
-	bitcoinUnit: 'SATS',
-	currencyMode: 'sats',
 	// Content warning
 	isNSFW: false,
 }

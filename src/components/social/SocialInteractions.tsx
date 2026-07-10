@@ -16,7 +16,7 @@ interface SocialInteractionsProps extends React.ComponentProps<'div'> {
 	showCommentAsReplyIcon?: boolean
 	hideShareButton?: boolean
 	buttonVariant?: ButtonVariant
-	combineZapsAndReactions?: boolean
+	combineReactions?: boolean
 }
 
 const SocialInteractions = ({
@@ -25,7 +25,7 @@ const SocialInteractions = ({
 	showCommentAsReplyIcon = false,
 	hideShareButton = false,
 	buttonVariant,
-	combineZapsAndReactions = false,
+	combineReactions = false,
 	className,
 	...props
 }: SocialInteractionsProps) => {
@@ -42,7 +42,7 @@ const SocialInteractions = ({
 				/>
 				{!hideShareButton && <ShareButton event={event} variant={buttonVariant} />}
 			</div>
-			{combineZapsAndReactions ? (
+			{combineReactions ? (
 				<div className="flex flex-wrap gap-2">
 					<ReactionsList event={event} asChildren />
 				</div>

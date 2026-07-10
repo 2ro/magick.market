@@ -57,8 +57,7 @@ export interface VanityGrinTier {
 }
 
 // Pricing tiers: amount in GRIN -> validity in days (or seconds for dev).
-// Same amounts as NIP05_PRICING: both are platform name fees (the old sats
-// pricing was identical between the two as well).
+// Same amounts as NIP05_PRICING: both are platform name fees.
 export const VANITY_PRICING: Record<string, VanityGrinTier> = {
 	...(process.env.NODE_ENV === 'development'
 		? {
