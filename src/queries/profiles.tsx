@@ -100,7 +100,11 @@ export const nip05ValidationQueryOptions = (pubkey: string) =>
 
 export const getProfileName = ({ profile }: { profile: NDKUserProfile | null }): string => {
 	if (!profile) return ''
-	return profile.name || profile.displayName || ''
+	// Read both the standard NIP-24 key (display_name) and NDK's camelCase
+	// (displayName). NDK's profileFromEvent normalizes standard events onto
+	// displayName, but reading both keeps legacy magick.market profiles (written
+	// with camelCase before the write-path fix) rendering until they republish.
+	return profile.name || profile.displayName || (profile as { display_name?: string }).display_name || ''
 }
 
 export const getProfileNip05 = ({ profile }: { profile: NDKUserProfile | null }): string | undefined => {
