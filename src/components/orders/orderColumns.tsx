@@ -1,6 +1,6 @@
 import { ndkActions } from '@/lib/stores/ndk'
 import type { OrderWithRelatedEvents } from '@/queries/orders'
-import { formatSats, getBuyerPubkey, getEventDate, getOrderAmount, getOrderId, getSellerPubkey } from '@/queries/orders'
+import { formatOrderAmount, getBuyerPubkey, getEventDate, getOrderAmount, getOrderId, getSellerPubkey } from '@/queries/orders'
 import { Link } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { OrderActions } from './OrderActions'
@@ -35,7 +35,7 @@ export const baseOrderColumns: ColumnDef<OrderWithRelatedEvents>[] = [
 		header: () => <div className="text-right">Amount</div>,
 		cell: ({ row }) => {
 			const amount = getOrderAmount(row.original.order)
-			return <div className="text-right font-medium">{formatSats(amount)}</div>
+			return <div className="text-right font-medium">{formatOrderAmount(amount)}</div>
 		},
 	},
 ]

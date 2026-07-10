@@ -60,7 +60,7 @@ const normalizeEmoji = (emoji: string): string => {
 		return CUSTOM_EMOJI_MAP[emoji]
 	}
 
-	// 2. Handle custom emojis that use colon syntax (e.g. `:zapstore:`)
+	// 2. Handle custom emojis that use colon syntax (e.g. `:custom-emoji:`)
 	// Note that we can add custom emoji support in the future.
 	if (emoji.startsWith(':')) {
 		return '❤️' // Default fallback for colon syntax if not mapped
@@ -98,7 +98,7 @@ export const groupReactionsByContent = (reactions: Reaction[]): Map<string, Reac
 	const grouped = new Map<string, Reaction[]>()
 
 	reactions.forEach((reaction) => {
-		// NOTE: For now, we're not supporting custom/external reactions (e.g. `:zapstore:`).
+		// NOTE: For now, we're not supporting custom/external reactions (e.g. `:custom-emoji:`).
 		// We instead transform custom/external reactions and "+" reactions into "❤️".
 		const emoji = normalizeEmoji(reaction.emoji)
 

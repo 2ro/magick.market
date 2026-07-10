@@ -644,14 +644,7 @@ function RouteComponent() {
 								</div>
 							</div>
 
-							<PriceDisplay
-								priceValue={price}
-								originalCurrency={priceTag?.[2] || 'SATS'}
-								className="space-y-1"
-								showSatsPrice={true}
-								showOriginalPrice={true}
-								showRootCurrency={true}
-							/>
+							<PriceDisplay priceValue={price} originalCurrency={priceTag?.[2] || 'GRIN'} className="space-y-1" showRootCurrency={true} />
 
 							{visibility === 'pre-order' ? (
 								<Badge className="bg-blue-500">Pre-order</Badge>
