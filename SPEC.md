@@ -116,8 +116,8 @@ Payment details should be in the event's content, encrypted to the app's and use
 
 content(stringified json):
 
-- `payment_method`: `"<ln | on-chain | cashu> | ..."`
-- `payment_detail`: `"<string(bolt11 or 12 | xpub | btc address | cashu pay req | ...>"`
+- `payment_method`: `"grin"` (magick.market is GRIN-only; Lightning / on-chain BTC / Cashu are not supported)
+- `payment_detail`: `"<Grin slatepack address or nprofile pay target>"`
 
 One event per payment detail
 

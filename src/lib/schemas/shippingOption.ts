@@ -1,6 +1,6 @@
 import type { NDKKind } from '@nostr-dev-kit/ndk'
 import { z } from 'zod'
-import { geohash, iso3166Country, iso3166Region, iso4217Currency, iso8601Duration } from './common'
+import { geohash, grinCurrency, iso3166Country, iso3166Region, iso8601Duration } from './common'
 
 // Define shipping kind
 export const SHIPPING_KIND = 30406 as NDKKind
@@ -15,7 +15,7 @@ export const ShippingTitleTagSchema = z.tuple([z.literal('title'), z.string()])
 export const ShippingPriceTagSchema = z.tuple([
 	z.literal('price'),
 	z.string().regex(/^\d+(\.\d+)?$/, 'Must be a valid decimal number'),
-	iso4217Currency,
+	grinCurrency,
 ])
 export const ShippingCountryTagSchema = z.tuple([z.literal('country'), iso3166Country, z.array(iso3166Country).optional()])
 export const ShippingServiceTagSchema = z.tuple([z.literal('service'), z.enum(['standard', 'express', 'overnight', 'pickup', 'digital'])])

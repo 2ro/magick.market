@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { addressableFormat, geohash, iso4217Currency, iso8601Duration } from './common'
+import { addressableFormat, geohash, grinCurrency, iso8601Duration } from './common'
 
 // ===============================
 // Product Listing (Kind: 30402)
@@ -12,12 +12,12 @@ export const ProductTitleTagSchema = z.tuple([z.literal('title'), z.string()])
 // Price tag with optional frequency
 export const ProductPriceTagSchema = z.union([
 	// Three-element array, sans-frequency
-	z.tuple([z.literal('price'), z.string().regex(/^\d+(\.\d+)?$/, 'Must be a valid decimal number'), iso4217Currency]),
+	z.tuple([z.literal('price'), z.string().regex(/^\d+(\.\d+)?$/, 'Must be a valid decimal number'), grinCurrency]),
 	// Three-element array, with frequency
 	z.tuple([
 		z.literal('price'),
 		z.string().regex(/^\d+(\.\d+)?$/, 'Must be a valid decimal number'),
-		iso4217Currency,
+		grinCurrency,
 		iso8601Duration.optional(),
 	]),
 ])
