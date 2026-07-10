@@ -7,6 +7,7 @@ import type { NDKTag } from '@nostr-dev-kit/ndk'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { v4 as uuidv4 } from 'uuid'
+import { ensureCanSign, isSigningCancelled } from '@/lib/goblin/signGate'
 import type { CheckoutFormData } from '@/components/checkout/ShippingAddressForm'
 import {
 	DEFAULT_DELIVERY_CONTACT_TYPE,
@@ -102,6 +103,8 @@ export const createOrder = async (params: OrderCreateParams): Promise<string> =>
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// Re-authorize with the wallet if this session can't sign yet.
+	await ensureCanSign()
 	const signer = ndkActions.getSigner()
 	if (!signer) throw new Error('No active user')
 
@@ -165,6 +168,7 @@ export const useCreateOrderMutation = () => {
 			return orderId
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to create order:', error)
 			toast.error('Failed to create order')
 		},
@@ -186,6 +190,8 @@ export const updateOrderStatus = async (params: OrderStatusUpdateParams): Promis
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// Re-authorize with the wallet if this session can't sign yet.
+	await ensureCanSign()
 	const signer = ndkActions.getSigner()
 	if (!signer) throw new Error('No active user')
 
@@ -276,6 +282,7 @@ export const useUpdateOrderStatusMutation = () => {
 			await queryClient.refetchQueries({ queryKey: orderKeys.details(params.orderEventId) })
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to update order status:', error)
 			toast.error('Failed to update order status')
 		},
@@ -298,6 +305,8 @@ export const createPaymentReceipt = async (params: PaymentReceiptParams): Promis
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// Re-authorize with the wallet if this session can't sign yet.
+	await ensureCanSign()
 	const signer = ndkActions.getSigner()
 	if (!signer) throw new Error('No active user')
 
@@ -367,6 +376,7 @@ export const useCreatePaymentReceiptMutation = () => {
 			toast.success('Payment receipt created')
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to create payment receipt:', error)
 			toast.error('Failed to create payment receipt')
 		},

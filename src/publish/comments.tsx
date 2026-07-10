@@ -5,6 +5,7 @@ import { NDKEvent } from '@nostr-dev-kit/ndk'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { isAddressableKind } from 'nostr-tools/kinds'
+import { ensureCanSign, isSigningCancelled } from '@/lib/goblin/signGate'
 
 // NIP-22 Comment kind
 const COMMENT_KIND = 1111
@@ -22,6 +23,8 @@ interface PublishCommentParams {
 export const publishComment = async ({ content, targetEvent, parentComment }: PublishCommentParams): Promise<NDKEvent> => {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
+	// Re-authorize with the wallet if this session can't sign yet.
+	await ensureCanSign()
 	if (!ndk.signer) throw new Error('No signer available')
 
 	const user = await ndk.signer.user()
@@ -120,6 +123,7 @@ export const usePublishCommentMutation = () => {
 			toast.success('Comment posted!')
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to publish comment:', error)
 			toast.error('Failed to post comment')
 		},
