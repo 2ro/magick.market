@@ -5,6 +5,7 @@ import { NDKEvent, NDKRelaySet } from '@nostr-dev-kit/ndk'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isAddressableKind } from 'nostr-tools/kinds'
 import { toast } from 'sonner'
+import { ensureCanSign, isSigningCancelled } from '@/lib/goblin/signGate'
 
 // NIP-25 Reaction kind
 const REACTION_KIND = 7
@@ -28,6 +29,8 @@ interface PublishDeletionParams {
 export const publishReaction = async ({ emoji, event }: PublishReactionParams): Promise<NDKEvent> => {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
+	// Re-authorize with the wallet if this session can't sign yet.
+	await ensureCanSign()
 	if (!ndk.signer) throw new Error('No signer available')
 
 	const user = await ndk.signer.user()
@@ -95,6 +98,8 @@ export const publishDeletionEvent = async ({ reactionEvent }: PublishDeletionPar
 
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
+	// Re-authorize with the wallet if this session can't sign yet.
+	await ensureCanSign()
 	if (!ndk.signer) throw new Error('No signer available')
 
 	const user = await ndk.signer.user()
@@ -151,6 +156,7 @@ export const usePublishReactionMutation = () => {
 			toast.success('Reaction posted!')
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to publish reaction:', error)
 			toast.error('Failed to post reaction')
 		},
@@ -172,6 +178,7 @@ export const usePublishDeletionMutation = () => {
 			})
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to publish deletion event:', error)
 			toast.error('Failed to remove reaction')
 		},

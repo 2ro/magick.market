@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { v4 as uuidv4 } from 'uuid'
 import { paymentDetailsKeys } from './queryKeyFactory'
+import { ensureCanSign, isSigningCancelled } from '@/lib/goblin/signGate'
 
 /**
  * Resolve the instance watcher's pubkey (hex) from the configured npub, or null.
@@ -393,6 +394,8 @@ export const publishPaymentDetail = async (params: PublishPaymentDetailParams): 
 		const ndk = ndkActions.getNDK()
 		if (!ndk) throw new Error('NDK not initialized')
 
+		// Re-authorize with the wallet if this session can't sign yet.
+		await ensureCanSign()
 		const signer = ndkActions.getSigner()
 		if (!signer) throw new Error('No signer available to publish payment details')
 
@@ -456,6 +459,7 @@ export const usePublishPaymentDetail = () => {
 			return eventId
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to publish payment details:', error)
 			toast.error('Failed to save payment details')
 		},
@@ -670,6 +674,7 @@ export const usePublishRichPaymentDetail = () => {
 			return eventId
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to publish payment details:', error)
 			toast.error('Failed to save payment details')
 		},
@@ -756,6 +761,7 @@ export const useUpdatePaymentDetail = () => {
 			return eventId
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to update payment details:', error)
 			toast.error('Failed to update payment details')
 		},
@@ -771,6 +777,8 @@ export const deletePaymentDetail = async (params: DeletePaymentDetailParams): Pr
 		const ndk = ndkActions.getNDK()
 		if (!ndk) throw new Error('NDK not initialized')
 
+		// Re-authorize with the wallet if this session can't sign yet.
+		await ensureCanSign()
 		const signer = ndkActions.getSigner()
 		if (!signer) throw new Error('No signer available')
 
@@ -811,6 +819,7 @@ export const useDeletePaymentDetail = () => {
 			return eventId
 		},
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to delete payment details:', error)
 			toast.error('Failed to delete payment details')
 		},

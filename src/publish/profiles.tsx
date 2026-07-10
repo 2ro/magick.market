@@ -3,6 +3,7 @@ import { profileKeys } from '@/queries/queryKeyFactory'
 import { NDKEvent, type NDKUserProfile } from '@nostr-dev-kit/ndk'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { ensureCanSign, isSigningCancelled } from '@/lib/goblin/signGate'
 
 /**
  * Updates the user's profile on the Nostr network.
@@ -14,12 +15,20 @@ export const updateProfile = async (profile: NDKUserProfile): Promise<void> => {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	if (!profile) throw new Error('Profile data is required')
+
+	// Owner expectation: if this session can't sign (a wallet-verified view-only
+	// Goblin login, an expired session window, or a session the wallet ended), take
+	// the user back to their wallet to authorize instead of throwing. Resolves once a
+	// signer exists, so we continue below with the form data intact; a cancel throws
+	// SigningCancelledError, which the mutation's onError treats as a benign no-op.
+	await ensureCanSign()
+
 	if (!ndk.signer) throw new Error('No signer available')
 
 	const user = await ndk.signer.user()
 	if (!user) throw new Error('No active user')
 
-	if (!profile) throw new Error('Profile data is required')
 	const connectedRelays = ndk.pool?.connectedRelays() || []
 	if (connectedRelays.length === 0) {
 		throw new Error('No connected relays. Please check your relay connections and try again.')
@@ -69,6 +78,8 @@ export const useUpdateProfileMutation = () => {
 			}
 		},
 		onError: (error) => {
+			// User dismissed the wallet re-authorization prompt: not a failure.
+			if (isSigningCancelled(error)) return
 			console.error('Failed to update profile:', error)
 			toast.error('Failed to update profile')
 		},

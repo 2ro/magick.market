@@ -7,6 +7,7 @@ import NDK, { NDKEvent, type NDKSigner, type NDKTag } from '@nostr-dev-kit/ndk'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createClientTag } from './nip89'
+import { ensureCanSign, isSigningCancelled } from '@/lib/goblin/signGate'
 
 export interface ProductFormData {
 	name: string
@@ -236,9 +237,13 @@ export const usePublishProductMutation = () => {
 	return useMutation({
 		mutationFn: async (formData: ProductFormData) => {
 			if (!ndk) throw new Error('NDK not initialized')
-			if (!signer) throw new Error('No signer available')
+			// Re-authorize with the wallet if this session can't sign, then re-read the
+			// signer (a view-only session had none when the hook first rendered).
+			await ensureCanSign()
+			const activeSigner = ndkActions.getSigner()
+			if (!activeSigner) throw new Error('No signer available')
 
-			return publishProduct(formData, signer, ndk)
+			return publishProduct(formData, activeSigner, ndk)
 		},
 
 		onSuccess: async (eventId) => {
@@ -262,6 +267,7 @@ export const usePublishProductMutation = () => {
 		},
 
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to publish product:', error)
 			toast.error(`Failed to publish product: ${error instanceof Error ? error.message : String(error)}`)
 		},
@@ -279,9 +285,11 @@ export const useUpdateProductMutation = () => {
 	return useMutation({
 		mutationFn: async ({ productDTag, formData }: { productDTag: string; formData: ProductFormData }) => {
 			if (!ndk) throw new Error('NDK not initialized')
-			if (!signer) throw new Error('No signer available')
+			await ensureCanSign()
+			const activeSigner = ndkActions.getSigner()
+			if (!activeSigner) throw new Error('No signer available')
 
-			return updateProduct(productDTag, formData, signer, ndk)
+			return updateProduct(productDTag, formData, activeSigner, ndk)
 		},
 
 		onSuccess: async (eventId, { productDTag }) => {
@@ -310,6 +318,7 @@ export const useUpdateProductMutation = () => {
 		},
 
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to update product:', error)
 			toast.error(`Failed to update product: ${error instanceof Error ? error.message : String(error)}`)
 		},
@@ -327,9 +336,11 @@ export const useDeleteProductMutation = () => {
 	return useMutation({
 		mutationFn: async (productDTag: string) => {
 			if (!ndk) throw new Error('NDK not initialized')
-			if (!signer) throw new Error('No signer available')
+			await ensureCanSign()
+			const activeSigner = ndkActions.getSigner()
+			if (!activeSigner) throw new Error('No signer available')
 
-			return deleteProduct(productDTag, signer, ndk)
+			return deleteProduct(productDTag, activeSigner, ndk)
 		},
 
 		onSuccess: async (success, productDTag) => {
@@ -357,6 +368,7 @@ export const useDeleteProductMutation = () => {
 		},
 
 		onError: (error) => {
+			if (isSigningCancelled(error)) return
 			console.error('Failed to delete product:', error)
 			toast.error(`Failed to delete product: ${error instanceof Error ? error.message : String(error)}`)
 		},
