@@ -4,15 +4,33 @@
  * Holds the browser-visible session state the UI renders: whether a session is
  * being established, live, waiting on a wallet money-tier confirm, or ended (so
  * the UI can offer a clear re-login affordance rather than a silent hang). The
- * live channel and signer instances are module singletons (not serializable, and
- * in-memory only: restart equals end, spec section 6).
+ * live channel and signer instances are module singletons (not serializable).
+ *
+ * Refresh survival (owner-finalised, 2026-07-09): the MINIMAL channel state (the
+ * ephemeral channel key, the wallet session pubkey, the identity, the relays) is
+ * persisted CLIENT-SIDE in localStorage alongside a dual clock (60-minute rolling
+ * idle timeout + 8-hour absolute cap). On boot, restore() rebinds the channel if
+ * BOTH clocks still pass; an expired record is wiped, never used. Nothing is ever
+ * written to a relay or server. See sessionWindow.ts for the clock + storage.
  */
 
 import { Store } from '@tanstack/store'
+import { bytesToHex } from '@noble/hashes/utils.js'
+import { getPublicKey } from 'nostr-tools'
+import { hexToBytes } from 'nostr-tools/utils'
 import { getMainRelay } from './ndk'
 import { GoblinSessionChannel } from '@/lib/goblin/session/GoblinSessionChannel'
 import { GoblinAuthorizeSigner } from '@/lib/goblin/session/GoblinAuthorizeSigner'
 import { buildTrustUri, generateChannelKeypair, MAGICK_LOW_TIER_KINDS } from '@/lib/goblin/session/protocol'
+import {
+	clearPersistedSession,
+	isSessionLive,
+	loadPersistedSession,
+	savePersistedSession,
+	sessionDeadlines,
+	touchActivity,
+	type PersistedGoblinSession,
+} from '@/lib/goblin/session/sessionWindow'
 
 export type GoblinSessionStatus =
 	| 'idle' // no session
@@ -99,10 +117,106 @@ function clearResyncWiring(): void {
 	stopResyncWiring = null
 }
 
+// The persisted window record backing the live channel (source of truth for the
+// two clocks). Kept in memory so activity can roll the idle clock without a read.
+let activeWindow: PersistedGoblinSession | null = null
+
+/** Fires when the earlier of the two clocks elapses; ends signing (spec: window). */
+let expiryTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Throttle idle-clock writes: at most one persisted bump per interval. */
+const ACTIVITY_THROTTLE_MS = 30_000
+let lastActivityWrite = 0
+let activityTracking = false
+
+const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'visibilitychange'] as const
+
 /** Resolve the relay(s) the channel runs on: the app main relay is the hint. */
 function resolveChannelRelays(): { hint: string; relays: string[] } {
 	const hint = getMainRelay() ?? 'ws://localhost:10547'
 	return { hint, relays: [hint] }
+}
+
+/** Shared "confirm in your wallet" pending handler for begin and restore. */
+function handlePendingChange(count: number): void {
+	goblinSessionStore.setState((s) => ({
+		...s,
+		pendingConfirmCount: count,
+		status: s.status === 'ended' || s.status === 'error' ? s.status : count > 0 ? 'confirm' : 'active',
+	}))
+}
+
+/** Shared session-end handler: the wallet (or a fatal error) ended it. Wipe and mark ended. */
+function handleSessionEnd(reason: string): void {
+	clearResyncWiring()
+	activeChannel = null
+	activeSigner = null
+	activeWindow = null
+	stopActivityTracking()
+	clearExpiryTimer()
+	clearPersistedSession()
+	goblinSessionStore.setState((s) => ({ ...s, status: 'ended', endedReason: reason, pendingConfirmCount: 0 }))
+}
+
+function clearExpiryTimer(): void {
+	if (expiryTimer) {
+		clearTimeout(expiryTimer)
+		expiryTimer = null
+	}
+}
+
+/**
+ * Arm the expiry timer at the EARLIER of the idle deadline and the absolute cap.
+ * On fire we re-check both clocks (guards a clock jump / a since-refreshed idle)
+ * before ending: a live session just re-arms, an expired one degrades to view-only.
+ */
+function scheduleExpiry(): void {
+	clearExpiryTimer()
+	if (!activeWindow) return
+	const now = Date.now()
+	const { expiresAt } = sessionDeadlines(activeWindow)
+	const delay = Math.max(0, expiresAt - now)
+	expiryTimer = setTimeout(() => {
+		expiryTimer = null
+		if (activeWindow && isSessionLive(activeWindow, Date.now())) {
+			scheduleExpiry() // idle rolled forward under us; re-arm for the new deadline
+			return
+		}
+		goblinSessionActions.endActiveSession('expired')
+	}, delay)
+}
+
+/** Roll the idle clock on meaningful activity (throttled), then re-arm expiry. */
+function noteActivity(): void {
+	if (!activeWindow) return
+	const now = Date.now()
+	// If the session already lapsed (e.g. tab slept past a clock), don't resurrect
+	// it: let the expiry path degrade to view-only.
+	if (!isSessionLive(activeWindow, now)) {
+		goblinSessionActions.endActiveSession('expired')
+		return
+	}
+	if (now - lastActivityWrite < ACTIVITY_THROTTLE_MS) return
+	lastActivityWrite = now
+	activeWindow = touchActivity(activeWindow, now)
+	savePersistedSession(activeWindow)
+	scheduleExpiry()
+}
+
+function startActivityTracking(): void {
+	if (activityTracking || typeof window === 'undefined') return
+	activityTracking = true
+	for (const evt of ACTIVITY_EVENTS) {
+		window.addEventListener(evt, noteActivity, { passive: true })
+	}
+}
+
+function stopActivityTracking(): void {
+	if (!activityTracking || typeof window === 'undefined') return
+	activityTracking = false
+	for (const evt of ACTIVITY_EVENTS) {
+		window.removeEventListener(evt, noteActivity)
+	}
 }
 
 export const goblinSessionActions = {
@@ -137,19 +251,8 @@ export const goblinSessionActions = {
 			siteSessionKeys,
 			relays,
 			verifyIdentity,
-			onPendingChange: (count) => {
-				goblinSessionStore.setState((s) => ({
-					...s,
-					pendingConfirmCount: count,
-					status: s.status === 'ended' || s.status === 'error' ? s.status : count > 0 ? 'confirm' : 'active',
-				}))
-			},
-			onSessionEnd: (reason) => {
-				clearResyncWiring()
-				activeChannel = null
-				activeSigner = null
-				goblinSessionStore.setState((s) => ({ ...s, status: 'ended', endedReason: reason, pendingConfirmCount: 0 }))
-			},
+			onPendingChange: handlePendingChange,
+			onSessionEnd: handleSessionEnd,
 		})
 		activeChannel = channel
 
@@ -173,10 +276,29 @@ export const goblinSessionActions = {
 			kinds: MAGICK_LOW_TIER_KINDS,
 		})
 
-		const ready = channel.open().then(({ identityPubkey }) => {
+		const ready = channel.open().then(({ walletSessionPubkey, identityPubkey }) => {
 			clearResyncWiring() // bound: stop foreground resyncing
 			const signer = new GoblinAuthorizeSigner(channel, identityPubkey)
 			activeSigner = signer
+
+			// Persist the resumable window: the ephemeral channel key (NOT the
+			// identity key), the wallet session pubkey, the identity, and the relays,
+			// with both clocks started now. This is what a refresh restores.
+			const now = Date.now()
+			activeWindow = {
+				v: 1,
+				siteSessionPrivateKey: bytesToHex(siteSessionKeys.privateKey),
+				walletSessionPubkey,
+				identityPubkey,
+				relays,
+				authorizedAt: now,
+				lastActivityAt: now,
+			}
+			lastActivityWrite = now
+			savePersistedSession(activeWindow)
+			startActivityTracking()
+			scheduleExpiry()
+
 			goblinSessionStore.setState((s) => ({ ...s, status: 'active', identityPubkey }))
 			return { identityPubkey }
 		})
@@ -188,6 +310,65 @@ export const goblinSessionActions = {
 		})
 
 		return { uri, ready }
+	},
+
+	/**
+	 * Restore a signing session from persisted state after a refresh (spec: client
+	 * session window). Returns the identity + a live signer ONLY if BOTH clocks
+	 * still pass; otherwise the record is wiped and null is returned so the caller
+	 * degrades to a view-only wallet session (canSign stays false). Rebinds the
+	 * channel directly to the persisted wallet session key (no fresh handshake):
+	 * the wallet's Authorize Sessions is still holding it open.
+	 */
+	restore(): { identityPubkey: string; signer: GoblinAuthorizeSigner } | null {
+		const persisted = loadPersistedSession()
+		if (!persisted) return null
+
+		// Expired by EITHER clock: wipe completely and do not resume.
+		if (!isSessionLive(persisted, Date.now())) {
+			clearPersistedSession()
+			return null
+		}
+
+		goblinSessionActions.teardownLocal()
+
+		let siteSessionPrivateKey: Uint8Array
+		let publicKey: string
+		try {
+			siteSessionPrivateKey = hexToBytes(persisted.siteSessionPrivateKey)
+			publicKey = getPublicKey(siteSessionPrivateKey)
+		} catch {
+			clearPersistedSession()
+			return null
+		}
+
+		const channel = new GoblinSessionChannel({
+			siteSessionKeys: { privateKey: siteSessionPrivateKey, publicKey },
+			relays: persisted.relays,
+			onPendingChange: handlePendingChange,
+			onSessionEnd: handleSessionEnd,
+		})
+		channel.resume({ walletSessionPubkey: persisted.walletSessionPubkey, identityPubkey: persisted.identityPubkey })
+		activeChannel = channel
+
+		const signer = new GoblinAuthorizeSigner(channel, persisted.identityPubkey)
+		activeSigner = signer
+
+		// Keep the persisted clocks as-is (the absolute cap never moves; the idle
+		// clock resumes where it left off and only rolls on fresh activity).
+		activeWindow = persisted
+		lastActivityWrite = persisted.lastActivityAt
+		startActivityTracking()
+		scheduleExpiry()
+
+		goblinSessionStore.setState(() => ({
+			...initialState,
+			status: 'active',
+			domain: null,
+			identityPubkey: persisted.identityPubkey,
+		}))
+
+		return { identityPubkey: persisted.identityPubkey, signer }
 	},
 
 	/** The live signer, once the session is active (for auth wiring). */
@@ -211,6 +392,10 @@ export const goblinSessionActions = {
 		}
 		activeChannel = null
 		activeSigner = null
+		activeWindow = null
+		stopActivityTracking()
+		clearExpiryTimer()
+		clearPersistedSession()
 		goblinSessionStore.setState(() => ({ ...initialState }))
 	},
 
@@ -226,11 +411,23 @@ export const goblinSessionActions = {
 		}
 		activeChannel = null
 		activeSigner = null
+		activeWindow = null
+		stopActivityTracking()
+		clearExpiryTimer()
+	},
+
+	/** Wipe any persisted window (e.g. a real signer login supersedes the wallet session). */
+	clearPersisted(): void {
+		activeWindow = null
+		stopActivityTracking()
+		clearExpiryTimer()
+		clearPersistedSession()
 	},
 
 	/** Reset to idle after the user acknowledges an ended session (re-login flow). */
 	reset(): void {
 		goblinSessionActions.teardownLocal()
+		clearPersistedSession()
 		goblinSessionStore.setState(() => ({ ...initialState }))
 	},
 }

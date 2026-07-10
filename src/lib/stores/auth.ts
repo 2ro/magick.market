@@ -131,7 +131,18 @@ export const authActions = {
 			const goblinPubkey = localStorage.getItem(NOSTR_GOBLIN_PUBKEY)
 
 			if (goblinPubkey) {
-				authActions.loginWithGoblinPubkey(goblinPubkey)
+				// First try to resume a full SIGNING session from the persisted client
+				// window (spec: 60m idle / 8h cap). restore() rebinds the wallet channel
+				// only if both clocks still pass and the identity matches; an expired or
+				// mismatched window is wiped and we fall through to view-only (canSign
+				// stays false), exactly as a refresh degraded before.
+				const restored = goblinSessionActions.restore()
+				if (restored && restored.identityPubkey === goblinPubkey) {
+					authActions.loginWithGoblinTrust(restored.identityPubkey, restored.signer)
+				} else {
+					if (restored) goblinSessionActions.endActiveSession('logout')
+					authActions.loginWithGoblinPubkey(goblinPubkey)
+				}
 				authActions.checkAndShowTermsDialog()
 				return
 			}
@@ -222,8 +233,10 @@ export const authActions = {
 			const user = await signer.user()
 
 			// A signer-based login supersedes any wallet-verified Goblin session,
-			// otherwise the stale pubkey would win on the next refresh.
+			// otherwise the stale pubkey would win on the next refresh. Also wipe the
+			// persisted trust window so a resumable wallet session can't shadow it.
 			localStorage.removeItem(NOSTR_GOBLIN_PUBKEY)
+			goblinSessionActions.clearPersisted()
 
 			authStore.setState((state) => ({
 				...state,
@@ -341,6 +354,7 @@ export const authActions = {
 			localStorage.setItem(NOSTR_USER_PUBKEY, user.pubkey)
 			localStorage.setItem(NOSTR_AUTO_LOGIN, 'true')
 			localStorage.removeItem(NOSTR_GOBLIN_PUBKEY)
+			goblinSessionActions.clearPersisted()
 
 			authStore.setState((state) => ({
 				...state,
@@ -380,6 +394,7 @@ export const authActions = {
 			localStorage.setItem(NOSTR_CONNECT_KEY, bunkerUrl)
 			// A signer login supersedes any wallet-verified Goblin session.
 			localStorage.removeItem(NOSTR_GOBLIN_PUBKEY)
+			goblinSessionActions.clearPersisted()
 
 			authStore.setState((state) => ({
 				...state,
