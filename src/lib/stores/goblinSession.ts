@@ -44,6 +44,61 @@ export const goblinSessionStore = new Store<GoblinSessionState>(initialState)
 let activeChannel: GoblinSessionChannel | null = null
 let activeSigner: GoblinAuthorizeSigner | null = null
 
+// Tears down the foreground/reconnect resync wiring for the current establishing
+// channel (listeners + poll). Set while status is 'establishing', cleared on bind,
+// timeout, or any local teardown so listeners never leak across sessions.
+let stopResyncWiring: (() => void) | null = null
+
+/** How often the foreground poll re-pulls the stored session-open while establishing. */
+const RESYNC_POLL_MS = 2_000
+
+/**
+ * While the trust channel is still establishing, drive channel.resync() whenever
+ * the page returns to the foreground or the network reconnects. This is the
+ * same-device mobile fix: tapping "Open in Goblin" suspends the browser tab and
+ * tears down its relay socket; the wallet publishes session-open into that gap,
+ * and on resume nostr-tools never re-issues the REQ. Each trigger does a fresh
+ * one-shot pull that reconnects the relay and drains the stored open. DOM-only, so
+ * it lives here (the channel stays DOM-free for its in-memory tests). Returns a
+ * cleanup that removes every listener and stops the poll; idempotent.
+ */
+function startResyncWiring(channel: GoblinSessionChannel): () => void {
+	if (typeof document === 'undefined' || typeof window === 'undefined') return () => {}
+
+	const fire = () => {
+		if (channel.isClosed) return
+		void channel.resync().catch(() => {})
+	}
+	const onVisible = () => {
+		if (document.visibilityState === 'visible') fire()
+	}
+
+	document.addEventListener('visibilitychange', onVisible)
+	window.addEventListener('online', fire)
+	window.addEventListener('focus', fire)
+
+	// A foreground poll backstops any SimplePool reconnect quirk: even if no
+	// visibility/focus/online event fires, we keep re-pulling until bound. The
+	// open() timeout ends the establishing state, and teardown clears this poll.
+	const poll = setInterval(fire, RESYNC_POLL_MS)
+
+	let stopped = false
+	return () => {
+		if (stopped) return
+		stopped = true
+		clearInterval(poll)
+		document.removeEventListener('visibilitychange', onVisible)
+		window.removeEventListener('online', fire)
+		window.removeEventListener('focus', fire)
+	}
+}
+
+/** Tear down any live resync wiring (safe to call when none is active). */
+function clearResyncWiring(): void {
+	stopResyncWiring?.()
+	stopResyncWiring = null
+}
+
 /** Resolve the relay(s) the channel runs on: the app main relay is the hint. */
 function resolveChannelRelays(): { hint: string; relays: string[] } {
 	const hint = getMainRelay() ?? 'ws://localhost:10547'
@@ -90,12 +145,18 @@ export const goblinSessionActions = {
 				}))
 			},
 			onSessionEnd: (reason) => {
+				clearResyncWiring()
 				activeChannel = null
 				activeSigner = null
 				goblinSessionStore.setState((s) => ({ ...s, status: 'ended', endedReason: reason, pendingConfirmCount: 0 }))
 			},
 		})
 		activeChannel = channel
+
+		// Drive resync on foreground/reconnect while we wait for session-open (mobile
+		// same-device fix). Torn down the moment the channel binds, times out, or is
+		// replaced, so listeners never outlive the establishing window.
+		stopResyncWiring = startResyncWiring(channel)
 
 		goblinSessionStore.setState(() => ({
 			...initialState,
@@ -113,6 +174,7 @@ export const goblinSessionActions = {
 		})
 
 		const ready = channel.open().then(({ identityPubkey }) => {
+			clearResyncWiring() // bound: stop foreground resyncing
 			const signer = new GoblinAuthorizeSigner(channel, identityPubkey)
 			activeSigner = signer
 			goblinSessionStore.setState((s) => ({ ...s, status: 'active', identityPubkey }))
@@ -121,6 +183,7 @@ export const goblinSessionActions = {
 
 		// A failed / timed-out open surfaces as an error state, not an unhandled reject.
 		ready.catch(() => {
+			clearResyncWiring() // timed out / errored: stop foreground resyncing
 			goblinSessionStore.setState((s) => (s.status === 'establishing' ? { ...s, status: 'error' } : s))
 		})
 
@@ -142,6 +205,7 @@ export const goblinSessionActions = {
 
 	/** Send the logout signal and tear the channel down (spec section 6, item 1). */
 	endActiveSession(reason: 'logout' | 'revoked' | 'expired' = 'logout'): void {
+		clearResyncWiring()
 		if (activeChannel && !activeChannel.isClosed) {
 			activeChannel.end(reason)
 		}
@@ -152,6 +216,7 @@ export const goblinSessionActions = {
 
 	/** Drop local channel/signer without a logout signal (e.g. before a fresh grant). */
 	teardownLocal(): void {
+		clearResyncWiring()
 		if (activeChannel && !activeChannel.isClosed) {
 			try {
 				activeChannel.end('logout')
