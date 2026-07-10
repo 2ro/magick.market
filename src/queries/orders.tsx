@@ -27,11 +27,6 @@ export type OrderWithRelatedEvents = {
 	privateOrderDetailsEvent?: NDKEvent
 }
 
-type FetchOrdersBySellerOptions = {
-	includePrivateOrderDetails?: boolean
-	signer?: NDKSigner | null
-}
-
 type UseOrdersBySellerOptions = {
 	includePrivateOrderDetails?: boolean
 }
@@ -64,6 +59,23 @@ const SHIPPING_REF_KIND = '30406'
 const ORDER_CREATION_SUBJECT = 'order-info'
 const HEX_PUBKEY_RE = /^[0-9a-f]{64}$/i
 
+// Relay reads are bounded so a single slow/never-EOSE relay can't hang the UI. Without an
+// explicit budget these queries only settle on the library's long internal timeout, which is
+// what made the Sales view take ~30s to load. fetchEventsWithTimeout resolves on EOSE OR the
+// deadline, whichever comes first, returning whatever events arrived so far.
+const ORDER_FETCH_TIMEOUT_MS = 6000
+const RELATED_EVENTS_FETCH_TIMEOUT_MS = 6000
+const GIFT_WRAP_FETCH_TIMEOUT_MS = 6000
+
+// NIP-44 gift-wrap decryption is CPU-bound; decrypt in small concurrent batches instead of a
+// fully sequential loop so a large backlog doesn't serialize hundreds of operations end to end.
+const GIFT_WRAP_DECRYPT_CONCURRENCY = 8
+
+// Cache of gift-wrap decryption results, keyed by `${sellerPubkey}:${giftWrapId}`. Results are
+// immutable, so we never re-decrypt a wrap already seen for this seller. A `null` entry records
+// a wrap this seller can't decrypt (wrong recipient / malformed) so refetches skip it too.
+const giftWrapDecryptCache = new Map<string, SellerPrivateOrderDetailsCandidate | null>()
+
 export const fetchSellerPrivateOrderGiftWraps = async (sellerPubkey: string): Promise<NDKEvent[]> => {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
@@ -74,7 +86,25 @@ export const fetchSellerPrivateOrderGiftWraps = async (sellerPubkey: string): Pr
 		limit: 500,
 	}
 
-	return Array.from(await ndk.fetchEvents(giftWrapFilter))
+	const events = await ndkActions.fetchEventsWithTimeout(giftWrapFilter, { timeoutMs: GIFT_WRAP_FETCH_TIMEOUT_MS })
+	return Array.from(events)
+}
+
+/**
+ * Fetch + decrypt a seller's private order gift wraps in one step. Used as the background
+ * enrichment query for the seller (Sales) view so it can run independently of, and in parallel
+ * with, the fast public-order list.
+ */
+export const fetchSellerPrivateOrderDetailCandidates = async (
+	sellerPubkey: string,
+	signer?: NDKSigner | null,
+): Promise<SellerPrivateOrderDetailsCandidate[]> => {
+	const giftWrapEvents = await fetchSellerPrivateOrderGiftWraps(sellerPubkey)
+	return decryptSellerPrivateOrderGiftWraps({
+		giftWrapEvents,
+		sellerPubkey,
+		signer: signer ?? ndkActions.getSigner(),
+	})
 }
 
 export const decryptSellerPrivateOrderGiftWraps = async (params: {
@@ -91,7 +121,14 @@ export const decryptSellerPrivateOrderGiftWraps = async (params: {
 	if (!(await signerSupportsNip44(signer, 'decrypt'))) return []
 
 	const decryptedCandidates: SellerPrivateOrderDetailsCandidate[] = []
-	for (const giftWrapEvent of giftWrapEvents) {
+
+	const decryptOne = async (giftWrapEvent: NDKEvent): Promise<void> => {
+		const cacheKey = `${sellerPubkey}:${giftWrapEvent.id}`
+		if (giftWrapDecryptCache.has(cacheKey)) {
+			const cached = giftWrapDecryptCache.get(cacheKey)
+			if (cached) decryptedCandidates.push(cached)
+			return
+		}
 		try {
 			const giftWrap = ndkEventToRawEvent(giftWrapEvent)
 			const decrypted = await decryptPrivateOrderMessageWithSigner({
@@ -99,10 +136,21 @@ export const decryptSellerPrivateOrderGiftWraps = async (params: {
 				signer,
 				expectedSellerPubkey: sellerPubkey,
 			})
-			decryptedCandidates.push({ details: decrypted.details, event: giftWrapEvent })
+			const candidate: SellerPrivateOrderDetailsCandidate = { details: decrypted.details, event: giftWrapEvent }
+			giftWrapDecryptCache.set(cacheKey, candidate)
+			decryptedCandidates.push(candidate)
 		} catch {
 			// Private delivery details are best-effort seller enrichment. Keep public orders usable.
+			giftWrapDecryptCache.set(cacheKey, null)
 		}
+	}
+
+	// Batch the decryption so a large gift-wrap backlog pipelines instead of running strictly
+	// one at a time. Ordering of results doesn't matter: attachPrivateOrderDetailsToOrders sorts
+	// candidates before matching, so the outcome is identical to the previous sequential loop.
+	for (let i = 0; i < giftWrapEvents.length; i += GIFT_WRAP_DECRYPT_CONCURRENCY) {
+		const batch = giftWrapEvents.slice(i, i + GIFT_WRAP_DECRYPT_CONCURRENCY)
+		await Promise.all(batch.map(decryptOne))
 	}
 
 	return decryptedCandidates
@@ -205,8 +253,10 @@ export const fetchOrders = async (): Promise<OrderWithRelatedEvents[]> => {
 		limit: 100,
 	}
 
-	const ordersSent = await ndk.fetchEvents(orderCreationFilter)
-	const ordersReceived = await ndk.fetchEvents(orderReceivedFilter)
+	const [ordersSent, ordersReceived] = await Promise.all([
+		ndkActions.fetchEventsWithTimeout(orderCreationFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS }),
+		ndkActions.fetchEventsWithTimeout(orderReceivedFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS }),
+	])
 
 	// Filter for ORDER_CREATION type programmatically (since relays reject multi-character tags)
 	const filterByType = (events: Set<NDKEvent>, messageType: string) => {
@@ -259,8 +309,8 @@ export const fetchOrders = async (): Promise<OrderWithRelatedEvents[]> => {
 
 	// Fetch events from both filters in parallel
 	const [eventsByAuthors, eventsByMentions] = await Promise.all([
-		ndk.fetchEvents(relatedEventsFilters[0]),
-		ndk.fetchEvents(relatedEventsFilters[1]),
+		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
 	])
 
 	// Combine and deduplicate
@@ -415,7 +465,7 @@ export const fetchOrdersByBuyer = async (buyerPubkey: string): Promise<OrderWith
 		limit: 100,
 	}
 
-	const allOrders = await ndk.fetchEvents(orderCreationFilter)
+	const allOrders = await ndkActions.fetchEventsWithTimeout(orderCreationFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS })
 
 	// Filter for ORDER_CREATION type programmatically
 	const orders = new Set<NDKEvent>(
@@ -461,8 +511,8 @@ export const fetchOrdersByBuyer = async (buyerPubkey: string): Promise<OrderWith
 	]
 
 	const [eventsByAuthors, eventsByMentions] = await Promise.all([
-		ndk.fetchEvents(relatedEventsFilters[0]),
-		ndk.fetchEvents(relatedEventsFilters[1]),
+		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
 	])
 
 	const allEvents = new Set<NDKEvent>([...Array.from(eventsByAuthors), ...Array.from(eventsByMentions)])
@@ -588,10 +638,7 @@ export const useOrdersByBuyer = (buyerPubkey: string) => {
 /**
  * Fetches orders where the specified user is the seller (recipient of order messages)
  */
-export const fetchOrdersBySeller = async (
-	sellerPubkey: string,
-	options: FetchOrdersBySellerOptions = {},
-): Promise<OrderWithRelatedEvents[]> => {
+export const fetchOrdersBySeller = async (sellerPubkey: string): Promise<OrderWithRelatedEvents[]> => {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
@@ -602,7 +649,7 @@ export const fetchOrdersBySeller = async (
 		limit: 100,
 	}
 
-	const allOrders = await ndk.fetchEvents(orderReceivedFilter)
+	const allOrders = await ndkActions.fetchEventsWithTimeout(orderReceivedFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS })
 
 	// Filter for ORDER_CREATION type programmatically
 	const orders = new Set<NDKEvent>(
@@ -647,8 +694,8 @@ export const fetchOrdersBySeller = async (
 	]
 
 	const [eventsByAuthors, eventsByMentions] = await Promise.all([
-		ndk.fetchEvents(relatedEventsFilters[0]),
-		ndk.fetchEvents(relatedEventsFilters[1]),
+		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
 	])
 
 	const allEvents = new Set<NDKEvent>([...Array.from(eventsByAuthors), ...Array.from(eventsByMentions)])
@@ -714,8 +761,10 @@ export const fetchOrdersBySeller = async (
 		}
 	}
 
-	// Create the combined order objects
-	const publicOrders = Array.from(orders).map((order) => {
+	// Create the combined order objects. This is the fast public-order list that the Sales view
+	// renders. Private gift-wrap delivery details are NOT fetched here: the useOrdersBySeller
+	// hook enriches them in a separate background query so they never block the list from showing.
+	return Array.from(orders).map((order) => {
 		const orderTag = order.tags.find((tag) => tag[0] === 'order')
 		if (!orderTag?.[1]) {
 			return {
@@ -758,41 +807,44 @@ export const fetchOrdersBySeller = async (
 			latestMessage: related.generalMessages[0],
 		}
 	})
-
-	if (!options.includePrivateOrderDetails) return publicOrders
-
-	try {
-		const giftWrapEvents = await fetchSellerPrivateOrderGiftWraps(sellerPubkey)
-		const decryptedDetails = await decryptSellerPrivateOrderGiftWraps({
-			giftWrapEvents,
-			sellerPubkey,
-			signer: options.signer ?? ndkActions.getSigner(),
-		})
-		return attachPrivateOrderDetailsToOrders(publicOrders, decryptedDetails)
-	} catch {
-		return publicOrders
-	}
 }
 
 /**
- * Hook to fetch orders where the specified user is the seller
+ * Hook to fetch orders where the specified user is the seller.
+ *
+ * Splits into two independent queries so the Sales view renders fast:
+ *   1. A fast public-order query (order list + related public events) that drives the table.
+ *   2. An optional background query that fetches and decrypts the seller's private order
+ *      gift wraps and enriches matching orders in place once it resolves.
+ *
+ * The public list is never blocked on gift-wrap fetch/decryption, so the table appears in
+ * ~1-2s and private delivery details fill in shortly after.
  */
 export const useOrdersBySeller = (sellerPubkey: string, options: UseOrdersBySellerOptions = {}) => {
 	const includePrivateOrderDetails = options.includePrivateOrderDetails === true
-	return useQuery({
-		queryKey: includePrivateOrderDetails ? orderKeys.bySellerWithPrivate(sellerPubkey) : orderKeys.bySeller(sellerPubkey),
-		queryFn: () =>
-			fetchOrdersBySeller(
-				sellerPubkey,
-				includePrivateOrderDetails
-					? {
-							includePrivateOrderDetails: true,
-							signer: ndkActions.getSigner(),
-						}
-					: undefined,
-			),
+
+	const publicQuery = useQuery({
+		queryKey: orderKeys.bySeller(sellerPubkey),
+		queryFn: () => fetchOrdersBySeller(sellerPubkey),
 		enabled: !!sellerPubkey,
 	})
+
+	const privateQuery = useQuery({
+		queryKey: orderKeys.bySellerWithPrivate(sellerPubkey),
+		queryFn: () => fetchSellerPrivateOrderDetailCandidates(sellerPubkey, ndkActions.getSigner()),
+		enabled: includePrivateOrderDetails && !!sellerPubkey,
+		staleTime: 30_000,
+	})
+
+	const data = useMemo(() => {
+		const publicOrders = publicQuery.data
+		if (!publicOrders) return publicOrders
+		const candidates = privateQuery.data
+		if (!includePrivateOrderDetails || !candidates || candidates.length === 0) return publicOrders
+		return attachPrivateOrderDetailsToOrders(publicOrders, candidates)
+	}, [publicQuery.data, privateQuery.data, includePrivateOrderDetails])
+
+	return { ...publicQuery, data }
 }
 
 /**
@@ -817,7 +869,7 @@ export const fetchOrderById = async (orderId: string, options: FetchOrderByIdOpt
 		orderFilter.ids = [orderId]
 	}
 
-	const allOrderEvents = await ndk.fetchEvents(orderFilter)
+	const allOrderEvents = await ndkActions.fetchEventsWithTimeout(orderFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS })
 
 	// Filter programmatically for ORDER_CREATION type and matching order ID
 	const matchingOrders = Array.from(allOrderEvents).filter((event) => {
@@ -863,8 +915,8 @@ export const fetchOrderById = async (orderId: string, options: FetchOrderByIdOpt
 	]
 
 	const [eventsByAuthors, eventsByMentions] = await Promise.all([
-		ndk.fetchEvents(relatedEventsFilters[0]),
-		ndk.fetchEvents(relatedEventsFilters[1]),
+		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
 	])
 
 	const allEvents = new Set<NDKEvent>([...Array.from(eventsByAuthors), ...Array.from(eventsByMentions)])

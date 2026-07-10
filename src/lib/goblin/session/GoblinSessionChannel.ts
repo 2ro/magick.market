@@ -197,6 +197,22 @@ export class GoblinSessionChannel {
 		return { kinds: [GOBLIN_SESSION_CHANNEL_KIND], '#p': [this.siteSessionKeys.publicKey] }
 	}
 
+	/**
+	 * Re-establish a channel that was already bound in an earlier page load, from
+	 * persisted state (spec: client-side session window). Unlike open(), this does
+	 * NOT wait for a fresh `session-open`: the wallet's "Authorize Sessions" is
+	 * still holding the same session open, so we rebind directly to the known
+	 * wallet session key, derive the conversation key, and start listening for
+	 * results. Idempotent-safe: a no-op if already bound or closed.
+	 */
+	resume(bind: { walletSessionPubkey: string; identityPubkey: string }): void {
+		if (this.closed || this.walletSessionPubkey) return
+		this.walletSessionPubkey = bind.walletSessionPubkey
+		this.identityPubkey = bind.identityPubkey
+		this.convKey = conversationKey(this.siteSessionKeys.privateKey, bind.walletSessionPubkey)
+		this.subscribe()
+	}
+
 	private subscribe(): void {
 		if (this.sub || this.closed) return
 		if (!this.pool) this.pool = new SimplePool()

@@ -36,7 +36,8 @@ export function TermsConditionsDialog({ open, onOpenChange, onAccept }: TermsCon
 								<h3 className="font-semibold text-base">User Friendly Summary</h3>
 								<ul className="list-disc pl-5 space-y-1 text-muted-foreground">
 									<li>
-										This Magick.Market "Instance" runs on nostr, uses open source software, and follows the laws of England and Wales.
+										This Magick.Market "Instance" runs on nostr, uses open source software, and follows the laws of the State of New York,
+										United States.
 									</li>
 									<li>
 										Do not list anything illegal, dangerous, or NSFW (for example: drugs, weapons, explicit adult content, counterfeit or
@@ -55,7 +56,7 @@ export function TermsConditionsDialog({ open, onOpenChange, onAccept }: TermsCon
 								<h3 className="font-semibold text-base">1. Introduction</h3>
 								<p className="text-muted-foreground">
 									Magick.Market is an independent marketplace "Instance" operating on the nostr protocol using the Magick App open source
-									solution and is governed by the laws of England and Wales.
+									solution and is governed by the laws of the State of New York, United States.
 								</p>
 								<p className="text-muted-foreground">
 									By accessing, registering with, or using Magick.Market (the "Instance"), you agree to be bound by these Terms and
@@ -64,7 +65,7 @@ export function TermsConditionsDialog({ open, onOpenChange, onAccept }: TermsCon
 								<p className="text-muted-foreground">
 									The listing, sale, distribution, or promotion of illegal, restricted, or Not Safe For Work ("NSFW") items is strictly
 									prohibited. This includes, without limitation, drugs, weapons, explicit adult content, counterfeit goods, and any products
-									that are unlawful or otherwise restricted under applicable UK law.
+									that are unlawful or otherwise restricted under applicable New York / US law.
 								</p>
 							</section>
 
