@@ -185,16 +185,50 @@ export class GoblinSessionChannel {
 		})
 	}
 
+	/**
+	 * The channel's one filter: stored, addressed session envelopes tagged to our
+	 * ephemeral site session pubkey. Built as an explicit, well-formed object every
+	 * time. nostr-tools 2.x `subscribeMany`/`querySync` take a single `Filter`
+	 * OBJECT (not an array); passing an array here makes SimplePool emit a REQ whose
+	 * filter element is itself an array, which strfry rejects as "provided filter is
+	 * not an object" (it never returns the stored session-open, so the login hangs).
+	 */
+	private channelFilter(): { kinds: number[]; '#p': string[] } {
+		return { kinds: [GOBLIN_SESSION_CHANNEL_KIND], '#p': [this.siteSessionKeys.publicKey] }
+	}
+
 	private subscribe(): void {
 		if (this.sub || this.closed) return
 		if (!this.pool) this.pool = new SimplePool()
-		this.sub = this.pool.subscribeMany(
-			this.relays,
-			[{ kinds: [GOBLIN_SESSION_CHANNEL_KIND], '#p': [this.siteSessionKeys.publicKey] }] as never,
-			{
-				onevent: (event: Event) => this.handleEnvelope(event),
-			},
-		) as { close: () => void }
+		this.sub = this.pool.subscribeMany(this.relays, this.channelFilter() as never, {
+			onevent: (event: Event) => this.handleEnvelope(event),
+		}) as { close: () => void }
+	}
+
+	/**
+	 * One-shot re-pull of the stored session-open, feeding each hit back through the
+	 * idempotent handleEnvelope(). This is the same-device mobile fix: when the
+	 * browser tab is suspended for the wallet deep-link, its live relay socket is
+	 * torn down and SimplePool never re-issues the REQ on resume, so the wallet's
+	 * already-stored session-open is never delivered and open() hangs on "Waiting
+	 * for your wallet". querySync opens a fresh subscription (reconnecting the
+	 * relay) and drains the stored event; handleEnvelope dedupes and runs
+	 * tryBind -> verifyIdentity -> bind, so calling this repeatedly is safe. No-op
+	 * once the channel is bound or closed.
+	 */
+	async resync(): Promise<void> {
+		if (this.closed || this.walletSessionPubkey) return
+		if (!this.pool) this.pool = new SimplePool()
+		let events: Event[]
+		try {
+			events = await this.pool.querySync(this.relays, this.channelFilter() as never)
+		} catch {
+			return // a failed one-shot pull is best-effort; the next resync retries
+		}
+		for (const event of events) {
+			if (this.closed || this.walletSessionPubkey) break
+			this.handleEnvelope(event)
+		}
 	}
 
 	/**

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { finalizeEvent, getEventHash, getPublicKey, nip44 } from 'nostr-tools'
+import { finalizeEvent, getEventHash, getPublicKey, nip44, SimplePool } from 'nostr-tools'
 import type { Event } from 'nostr-tools'
 import { GoblinSessionChannel, GoblinSessionError } from '@/lib/goblin/session/GoblinSessionChannel'
 import {
@@ -401,5 +401,81 @@ describe('GoblinSessionChannel', () => {
 		await expect(encryptPromise).rejects.toMatchObject({ code: 'user_declined' })
 		expect(channel.isClosed).toBe(false) // session stays live
 		expect(events.pending.at(-1)).toBe(0) // pending indicator cleared
+	})
+
+	// resync() is the same-device mobile fix: after the browser tab is suspended for
+	// the wallet deep-link, its live relay socket dies and SimplePool never re-issues
+	// the REQ, so the already-stored session-open is never delivered. resync() does a
+	// one-shot querySync re-pull and feeds each hit back into the idempotent
+	// handleEnvelope, binding the channel.
+	test('resync() re-pulls the stored session-open and binds the channel', async () => {
+		const { channel, siteSessionKeys } = makeChannel()
+		const wallet = makeWallet(siteSessionKeys.publicKey)
+		const stored = wallet.sessionOpen()
+
+		// Stand in for the relay: the one-shot pull returns the stored session-open.
+		const original = SimplePool.prototype.querySync
+		const calls: unknown[][] = []
+		SimplePool.prototype.querySync = async (relays: string[], filter: unknown) => {
+			calls.push([relays, filter])
+			return [stored]
+		}
+		try {
+			const opened = channel.open(1000)
+			await channel.resync()
+			const info = await opened
+			expect(info.identityPubkey).toBe(wallet.identityPub)
+			expect(channel.walletPubkey).toBe(wallet.walletKeys.publicKey)
+			// The pulled filter is a well-formed object (never an array/undefined) so a
+			// strict relay like strfry does not reject it as "not an object".
+			const filter = calls[0]?.[1] as { kinds?: unknown; '#p'?: unknown }
+			expect(Array.isArray(filter)).toBe(false)
+			expect(filter.kinds).toEqual([24140])
+			expect(filter['#p']).toEqual([siteSessionKeys.publicKey])
+
+			// Idempotent: a second resync re-feeds the same event, nothing breaks or rebinds.
+			await channel.resync()
+			expect(channel.walletPubkey).toBe(wallet.walletKeys.publicKey)
+		} finally {
+			SimplePool.prototype.querySync = original
+		}
+	})
+
+	test('resync() is a no-op once the channel is bound (no relay pull)', async () => {
+		const { channel, siteSessionKeys } = makeChannel()
+		const wallet = makeWallet(siteSessionKeys.publicKey)
+		const opened = channel.open(1000)
+		channel.handleEnvelope(wallet.sessionOpen())
+		await opened
+
+		const original = SimplePool.prototype.querySync
+		let pulled = false
+		SimplePool.prototype.querySync = async () => {
+			pulled = true
+			return []
+		}
+		try {
+			await channel.resync()
+			expect(pulled).toBe(false) // bound: guard returns before touching the relay
+		} finally {
+			SimplePool.prototype.querySync = original
+		}
+	})
+
+	test('resync() is a no-op after the channel is closed', async () => {
+		const { channel } = makeChannel()
+		channel.end('logout')
+		const original = SimplePool.prototype.querySync
+		let pulled = false
+		SimplePool.prototype.querySync = async () => {
+			pulled = true
+			return []
+		}
+		try {
+			await channel.resync()
+			expect(pulled).toBe(false)
+		} finally {
+			SimplePool.prototype.querySync = original
+		}
 	})
 })
