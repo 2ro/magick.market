@@ -228,7 +228,7 @@ export default function CartItem({
 					<div>
 						<h3 className="text-base font-medium">{title || 'Untitled Product'}</h3>
 						<div className="mt-1">
-							<PriceDisplay priceValue={price} originalCurrency={currency} showOriginalPrice={true} showSatsPrice={true} />
+							<PriceDisplay priceValue={price} originalCurrency={currency} />
 						</div>
 					</div>
 

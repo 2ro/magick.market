@@ -103,7 +103,7 @@ let eventHandlerReady = false
 
 // Start initialization but don't block setup on relay connections
 // Core components (signer, validator, admin manager) are set up synchronously in the constructor
-// Only relay-dependent features (zaps, blacklist sync) may be delayed
+// Only relay-dependent features (blacklist sync) may be delayed
 const initPromise = getEventHandler()
 	.initialize({
 		appPrivateKey: process.env.APP_PRIVATE_KEY || '',

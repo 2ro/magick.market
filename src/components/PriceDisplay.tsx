@@ -5,10 +5,6 @@ interface PriceDisplayProps {
 	originalCurrency?: string
 	/** Optional className for styling */
 	className?: string
-	/** Whether to show the original currency price (kept for API compatibility) */
-	showOriginalPrice?: boolean
-	/** Whether to show the primary price (kept for API compatibility) */
-	showSatsPrice?: boolean
 	/** Whether to show the root currency indicator */
 	showRootCurrency?: boolean
 }

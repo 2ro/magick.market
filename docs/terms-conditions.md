@@ -1,6 +1,6 @@
 ## Magick.Market – User Friendly Summary of Terms
 
-- This Magick.Market “Instance” runs on nostr, uses open source software, and follows the laws of England and Wales. [1]
+- This Magick.Market “Instance” runs on nostr, uses open source software, and follows the laws of the State of New York, United States. [1]
 - Do not list anything illegal, dangerous, or NSFW (for example: drugs, weapons, explicit adult content, counterfeit or stolen goods). Alcohol is not allowed yet. [1]
 - Be respectful. No abuse, harassment, threats, or hate. Admins can remove listings or ban users if needed. [1]
 - This is a peer‑to‑peer marketplace with no central customer service. You deal directly with the other person and should always act with “buyer beware” in mind. [1]
@@ -17,13 +17,13 @@ Sources
 
 ## 1. Introduction
 
-1.1 Magick.Market is an independent marketplace “Instance” operating on the nostr protocol using the Magick App open source solution and is governed by the laws of England and Wales. [1]
+1.1 Magick.Market is an independent marketplace “Instance” operating on the nostr protocol using the Magick App open source solution and is governed by the laws of the State of New York, United States. [1]
 
 1.2 By accessing, registering with, or using Magick.Market (the “Instance”), you agree to be bound by these Terms and Conditions (the “Terms”). [1]
 
-1.3 The listing, sale, distribution, or promotion of illegal, restricted, or Not Safe For Work (“NSFW”) items is strictly prohibited on the Instance. This includes, without limitation, drugs, weapons, explicit adult content, counterfeit goods, and any products that are unlawful or otherwise restricted under applicable UK law. [1]
+1.3 The listing, sale, distribution, or promotion of illegal, restricted, or Not Safe For Work (“NSFW”) items is strictly prohibited on the Instance. This includes, without limitation, drugs, weapons, explicit adult content, counterfeit goods, and any products that are unlawful or otherwise restricted under applicable New York / US law. [1]
 
-1.4 Although the sale of alcohol is generally lawful in the United Kingdom, the sale of alcoholic products is not currently permitted on Magick.Market. Alcohol‑related functionality will be introduced in the future subject to appropriate compliance measures. [1]
+1.4 Although the sale of alcohol is generally lawful in the State of New York, United States, the sale of alcoholic products is not currently permitted on Magick.Market. Alcohol‑related functionality will be introduced in the future subject to appropriate compliance measures. [1]
 
 ---
 
@@ -39,7 +39,7 @@ Sources
 
 ## 3. Legal Compliance and Prohibited Items
 
-3.1 Users are solely responsible for ensuring that any products they list, sell, or purchase comply with all applicable laws and regulations of the United Kingdom, as well as these Terms. [1]
+3.1 Users are solely responsible for ensuring that any products they list, sell, or purchase comply with all applicable laws and regulations of the State of New York, United States, as well as these Terms. [1]
 
 3.2 Without limitation, the following categories of items are prohibited on the Instance:
 
@@ -47,9 +47,9 @@ Sources
 - Firearms, weapons, and items designed to cause harm.
 - Explicit adult or NSFW content and services.
 - Counterfeit, stolen, or fraudulently obtained goods.
-- Any other products that are illegal, unsafe, or otherwise prohibited under UK law. [1]
+- Any other products that are illegal, unsafe, or otherwise prohibited under New York / US law. [1]
 
-  3.3 Magick.Market may cooperate with UK law‑enforcement or regulatory authorities where there is suspicion of unlawful activity, including by providing relevant information as required by law. [1]
+  3.3 Magick.Market may cooperate with US/New York law‑enforcement or regulatory authorities where there is suspicion of unlawful activity, including by providing relevant information as required by law. [1]
 
 ---
 
