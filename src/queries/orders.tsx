@@ -1268,7 +1268,7 @@ function isHexPubkey(value: string): boolean {
 /**
  * Format a nanogrin amount (as carried in order `amount` tags) for display.
  */
-export const formatSats = (amount?: string): string => {
+export const formatOrderAmount = (amount?: string): string => {
 	if (!amount) return '-'
 	return formatGrinAmount(parseInt(amount))
 }

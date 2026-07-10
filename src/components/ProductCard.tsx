@@ -114,7 +114,7 @@ export function ProductCard({ product, className }: ProductCardProps) {
 
 				{/* Pricing section */}
 				<div className="flex justify-between items-center">
-					{price && <PriceDisplay priceValue={parseFloat(price[1])} originalCurrency={price[2] || 'SATS'} />}
+					{price && <PriceDisplay priceValue={parseFloat(price[1])} originalCurrency={price[2] || 'GRIN'} />}
 
 					{/* Stock/Pre-order indicator - right aligned */}
 					{visibility === 'pre-order' ? (
