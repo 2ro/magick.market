@@ -14,6 +14,20 @@ import {
 	resolveCommunityQueryFixtureStep,
 } from '@/lib/tests/communityQueryFixtures'
 
+/**
+ * V4V revenue-split share tag (stored in the 30078 event content array).
+ *
+ * On a GRIN-only market a revenue split is not a Lightning "zap", so shares are
+ * written under the `split` tag. Historically they used the NIP-57-style `zap`
+ * tag; the reader accepts BOTH so already-published 30078 events keep parsing
+ * (read-both / write-new migration), while the writer only ever emits `split`.
+ */
+export const V4V_SHARE_TAG = 'split'
+export const LEGACY_V4V_SHARE_TAG = 'zap'
+
+/** True for a share tuple written under either the current or the legacy tag name. */
+export const isV4VShareTag = (name: unknown): boolean => name === V4V_SHARE_TAG || name === LEGACY_V4V_SHARE_TAG
+
 export type V4VConfigurationState = 'unknown' | 'never-configured' | 'configured-zero' | 'configured-nonzero'
 
 export interface V4VConfiguration {
@@ -90,16 +104,19 @@ export function resolveV4VConfigurationState(event: Pick<NDKEvent, 'content'> | 
 	}
 }
 
-async function parseV4VSharesFromEvent(event: NDKEvent, ndk: ReturnType<typeof ndkActions.getNDK>): Promise<V4VDTO[]> {
+export async function parseV4VSharesFromEvent(
+	event: Pick<NDKEvent, 'content'>,
+	ndk: ReturnType<typeof ndkActions.getNDK>,
+): Promise<V4VDTO[]> {
 	const content = JSON.parse(event.content)
 	if (!Array.isArray(content) || content.length === 0) {
 		return []
 	}
 
 	const seenPubkeys = new Set<string>()
-	const dedupedContent = content.filter((zapTag) => {
-		if (zapTag[0] === 'zap' && zapTag[1]) {
-			const normalized = normalizeAndEncodePubkey(zapTag[1])
+	const dedupedContent = content.filter((shareTag) => {
+		if (isV4VShareTag(shareTag[0]) && shareTag[1]) {
+			const normalized = normalizeAndEncodePubkey(shareTag[1])
 			if (normalized && !seenPubkeys.has(normalized.pubkey)) {
 				seenPubkeys.add(normalized.pubkey)
 				return true
@@ -111,10 +128,10 @@ async function parseV4VSharesFromEvent(event: NDKEvent, ndk: ReturnType<typeof n
 
 	const shares = await Promise.all(
 		dedupedContent
-			.map(async (zapTag, index) => {
-				if (zapTag[0] === 'zap' && zapTag[1] && zapTag[2]) {
-					const pubkeyValue = zapTag[1]
-					const percentage = parseFloat(zapTag[2]) || 5
+			.map(async (shareTag, index) => {
+				if (isV4VShareTag(shareTag[0]) && shareTag[1] && shareTag[2]) {
+					const pubkeyValue = shareTag[1]
+					const percentage = parseFloat(shareTag[2]) || 5
 
 					const normalized = normalizeAndEncodePubkey(pubkeyValue)
 					if (!normalized) {
@@ -247,12 +264,13 @@ export const publishV4VShares = async (shares: V4VDTO[], userPubkey: string, app
 		const signer = ndkActions.getSigner()
 		if (!signer) throw new Error('User signer not available')
 
-		// zapTags can be empty array (user takes 100%)
-		const zapTags = shares.map((share) => ['zap', share.pubkey, share.percentage.toString()])
+		// shareTags can be empty array (user takes 100%). Write the current `split`
+		// tag; readers still accept the legacy `zap` tag for older events.
+		const shareTags = shares.map((share) => [V4V_SHARE_TAG, share.pubkey, share.percentage.toString()])
 
 		const event = new NDKEvent(ndk)
 		event.kind = 30078
-		event.content = JSON.stringify(zapTags)
+		event.content = JSON.stringify(shareTags)
 		event.tags = [
 			['d', uuidv4()],
 			['l', 'v4v_share'],

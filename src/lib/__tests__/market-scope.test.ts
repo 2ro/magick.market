@@ -85,6 +85,29 @@ describe('filterGrinOnly', () => {
 	})
 })
 
+describe('V4V per-product split tag vs BITCOIN_RAIL_TAGS (landmine fix)', () => {
+	// The V4V share tag was renamed zap -> split. `split` is deliberately NOT a
+	// Bitcoin-rail tag, so a product that ever carries a per-product V4V `split`
+	// tag is never silently dropped from the catalog. A `zap` tag, after the
+	// rename, can only mean a foreign NIP-57 Lightning zap and is still dropped.
+	const splitTaggedProduct = ev([
+		['d', 'split-widget'],
+		['title', 'Widget with a V4V split'],
+		['price', '3', 'GRIN'],
+		['split', 'b'.repeat(64), '5'],
+	])
+	test('a product carrying a per-product V4V split tag is NOT treated as a Bitcoin rail', () => {
+		expect(hasBitcoinRail(splitTaggedProduct)).toBe(false)
+	})
+	test('a split-tagged GRIN product survives the public GRIN-only filter', () => {
+		expect(filterGrinOnly([splitTaggedProduct], true)).toEqual([splitTaggedProduct])
+	})
+	test('the legacy zap tag is still dropped (now unambiguously a foreign Lightning zap)', () => {
+		expect(hasBitcoinRail(zapTagged)).toBe(true)
+		expect(filterGrinOnly([zapTagged], true)).toEqual([])
+	})
+})
+
 describe('filterToAllowlist', () => {
 	const a = ev([['d', '1']], 30402, 'a'.repeat(64))
 	const b = ev([['d', '2']], 30402, 'b'.repeat(64))
