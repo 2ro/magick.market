@@ -88,6 +88,50 @@ bun start
 
 This project was created using `bun init` in bun v1.2.4. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
 
+## Nostr protocol surface
+
+magick.market is a GRIN-only, Nostr-native market. It speaks the following NIPs:
+
+Supported:
+
+- NIP-01 base events / profiles (kind 0, 1)
+- NIP-09 deletions (kind 5)
+- NIP-11 relay information (relay side)
+- NIP-17 private DMs - carries the order conversation (kinds 13, 14, 16)
+- NIP-22 comments (kind 1111)
+- NIP-25 reactions (kind 7)
+- NIP-40 expiration - session request envelopes
+- NIP-42 relay auth / login (kind 22242)
+- NIP-44 encryption - order details and the Authorize-Sessions channel
+- NIP-51 lists - app mute list (10000), roles + the `market_merchants` merchant allowlist (30000),
+  featured collections (30003)
+- NIP-59 gift wrap - buyer PII travels wrapped (kind 1059)
+- NIP-78 app data - cart, app settings, V4V splits (kind 30078)
+- NIP-89 app handler advertisement (kind 31990)
+- NIP-98 HTTP auth (kind 27235)
+- NIP-99 / Gamma classified listings - products (30402), collections (30405),
+  shipping options (30406); order processing (16) and payment receipt (17)
+- Blossom / BUD media upload auth (kind 24242)
+- Goblin Authorize Sessions - proprietary wallet-to-site signing channel (kind 24140)
+
+Payments:
+
+- Grin, via the Goblin wallet / GoblinPay. Order amounts are integer nanogrin. The kind-17 receipt's
+  `payment` tag is `["payment","grin",...]`; the proof is a Grin receiver-signature (plus optional
+  on-chain kernel), NOT a Lightning preimage.
+
+Intentionally NOT supported (this is a GRIN-only market):
+
+- NIP-57 zaps (kinds 9734/9735) - no Lightning zap send or zap-receipt path.
+- Lightning addresses (lud06/lud16), LNURL, BOLT11 invoices.
+- Cashu / nutzap eCash.
+
+Listings carrying any of these payment-rail tags are dropped from the catalog by
+`src/lib/market-scope.ts` (`BITCOIN_RAIL_TAGS`); non-GRIN-priced listings are dropped from all public
+browse surfaces. The GRIN-only invariant is additionally enforced at the write boundary: the product and
+shipping price schemas (`src/lib/schemas/`) accept only a `GRIN` currency literal, so the app cannot
+author a non-GRIN listing.
+
 ## Getting Started
 
 ### Initial Setup

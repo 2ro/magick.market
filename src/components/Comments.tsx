@@ -93,7 +93,7 @@ function CommentItem({ comment, onPressReply }: CommentItemProps) {
 				showCommentAsReplyIcon
 				hideShareButton
 				buttonVariant="ghost"
-				combineZapsAndReactions
+				combineReactions
 				className="comment-social-interactions flex-row items-center"
 			/>
 		</div>

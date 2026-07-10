@@ -10,7 +10,11 @@ describe('resolveV4VConfigurationState', () => {
 		expect(resolveV4VConfigurationState({ content: '[]' } as any)).toBe('configured-zero')
 	})
 
-	test('resolves non-empty V4V event content to configured-nonzero', () => {
+	test('resolves non-empty V4V event content (split tag) to configured-nonzero', () => {
+		expect(resolveV4VConfigurationState({ content: '[["split","abc","0.05"]]' } as any)).toBe('configured-nonzero')
+	})
+
+	test('still resolves legacy zap-tag content to configured-nonzero (read-both)', () => {
 		expect(resolveV4VConfigurationState({ content: '[["zap","abc","0.05"]]' } as any)).toBe('configured-nonzero')
 	})
 })

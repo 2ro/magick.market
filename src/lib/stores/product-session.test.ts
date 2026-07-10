@@ -47,7 +47,6 @@ describe('product form session boundaries', () => {
 		expect(productFormStore.state).toMatchObject({
 			...DEFAULT_FORM_STATE,
 			currency: 'GRIN',
-			currencyMode: 'sats',
 			formSessionId: DIRTY_CREATE_STATE.formSessionId + 1,
 		})
 	})
@@ -94,7 +93,6 @@ describe('product form session boundaries', () => {
 		expect(productFormStore.state).toMatchObject({
 			...DEFAULT_FORM_STATE,
 			currency: 'GRIN',
-			currencyMode: 'sats',
 			formSessionId: DIRTY_CREATE_STATE.formSessionId + 1,
 		})
 	})
@@ -108,7 +106,6 @@ describe('product form session boundaries', () => {
 			...DEFAULT_FORM_STATE,
 			editingProductId: 'existing-product-d-tag',
 			currency: 'GRIN',
-			currencyMode: 'sats',
 			formSessionId: DIRTY_CREATE_STATE.formSessionId + 1,
 		})
 		expect(productFormStore.state.name).toBe('')

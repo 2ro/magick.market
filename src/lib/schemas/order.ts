@@ -1,6 +1,5 @@
 import type { NDKKind } from '@nostr-dev-kit/ndk'
 import { z } from 'zod'
-import { iso4217Currency } from './common'
 
 // Define order kinds as specified in the spec (NIP-17 direct messages)
 export const ORDER_GENERAL_KIND = 14 as NDKKind // General communication
