@@ -1,6 +1,6 @@
 import { ndkActions } from '@/lib/stores/ndk'
 import { profileKeys } from '@/queries/queryKeyFactory'
-import { NDKEvent, type NDKUserProfile } from '@nostr-dev-kit/ndk'
+import { NDKEvent, serializeProfile, type NDKUserProfile } from '@nostr-dev-kit/ndk'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ensureCanSign, isSigningCancelled } from '@/lib/goblin/signGate'
@@ -34,10 +34,14 @@ export const updateProfile = async (profile: NDKUserProfile): Promise<void> => {
 		throw new Error('No connected relays. Please check your relay connections and try again.')
 	}
 
-	// Create a kind 0 (metadata) event manually
+	// Create a kind 0 (metadata) event manually.
+	// Serialize with NDK's serializeProfile so the content uses the standard
+	// NIP-24 field names (display_name, picture, about) instead of NDK's
+	// in-memory camelCase (displayName, image). This keeps a magick.market
+	// user's name and avatar rendering correctly in spec-compliant clients.
 	const profileEvent = new NDKEvent(ndk)
 	profileEvent.kind = 0
-	profileEvent.content = JSON.stringify(profile)
+	profileEvent.content = serializeProfile(profile)
 	profileEvent.created_at = Math.floor(Date.now() / 1000)
 	profileEvent.pubkey = user.pubkey
 
