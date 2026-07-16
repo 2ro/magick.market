@@ -91,6 +91,16 @@ export class EventHandler {
 			console.warn('⚠️ Load existing data failed, continuing anyway:', e)
 		}
 
+		// SECURITY: close bootstrap mode once admins have been restored from the
+		// relay. loadExistingData repopulates adminManager from the persisted setup
+		// event / admin list, but the bootstrap flag was fixed at construction from
+		// the (always-empty) config admin list, so without this a restarted-but-
+		// already-set-up instance stays in bootstrap mode — accepting setup and
+		// admin/editor-list events from ANY anonymous caller (an unauthenticated
+		// takeover). Reconcile against the restored admin count so a fresh instance
+		// still bootstraps (size 0) but an established one closes on every boot.
+		this.bootstrapManager.reconcileFromAdminCount(this.adminManager.size())
+
 		try {
 			this.ndkService.startSubscriptions()
 		} catch (e) {
