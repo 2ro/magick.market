@@ -35,6 +35,7 @@ export interface EditorManager {
 export interface BootstrapManager {
 	isBootstrapMode(): boolean
 	exitBootstrapMode(): void
+	reconcileFromAdminCount(adminCount: number): void
 	handleSetupEvent(event: NostrEvent): void
 	hasSetup(): boolean
 }

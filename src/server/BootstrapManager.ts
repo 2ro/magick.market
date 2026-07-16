@@ -25,6 +25,25 @@ export class BootstrapManagerImpl implements BootstrapManager {
 		console.log('Exited bootstrap mode')
 	}
 
+	/**
+	 * Reconcile bootstrap mode against the admin set restored from the relay on
+	 * boot. The constructor only ever sees the server's initial (always-empty,
+	 * see EventHandler.initialize `adminPubkeys: []`) admin list, so a restarted
+	 * — but already-set-up — instance would otherwise stay stuck in bootstrap
+	 * mode forever. In bootstrap mode EventValidator accepts setup and admin/
+	 * editor-list events from ANYONE, so a stuck-open instance lets any anonymous
+	 * caller publish an admin list naming themselves (re-signed under the app key
+	 * and persisted), a full takeover. Once any admin is known — a persisted
+	 * setup event or admin list was loaded from the relay — we are past first-run,
+	 * so close bootstrap. Called by EventHandler after loadExistingData.
+	 */
+	public reconcileFromAdminCount(adminCount: number): void {
+		if (adminCount > 0 && this.bootstrapMode) {
+			this.exitBootstrapMode()
+			console.log(`Bootstrap mode closed: ${adminCount} admin(s) restored from relay`)
+		}
+	}
+
 	public handleSetupEvent(event: NostrEvent): void {
 		if (!this.hasSetupEvent) {
 			this.hasSetupEvent = true

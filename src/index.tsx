@@ -11,6 +11,7 @@ import { file } from 'bun'
 import { computeConfigFlags } from './lib/configFlags'
 import { createNameInvoice, fetchNameInvoice } from './server/goblinPayServer'
 import { createGoblinLoginService, resolveExpectedDomain } from './server/goblinLogin'
+import { resolveListenHost } from './lib/serverHost'
 
 import.meta.hot.accept()
 
@@ -179,11 +180,15 @@ function determineStage(): 'production' | 'staging' | 'development' {
 }
 
 const PORT = Number(process.env.PORT || 3000)
+// SECURITY: bind to loopback in production (nginx proxies to 127.0.0.1:PORT) so
+// the plaintext port is not reachable on the public internet. See resolveListenHost.
+const LISTEN_HOST = resolveListenHost()
 
-console.log(`App port: ${PORT}`)
+console.log(`App listening on ${LISTEN_HOST}:${PORT}`)
 
 export const server = serve({
 	port: PORT,
+	hostname: LISTEN_HOST,
 	routes: {
 		'/api/config': {
 			GET: () => {
