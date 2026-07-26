@@ -421,7 +421,7 @@ check_runtime_sample() {
 observe() {
 	local epoch="$1" pid="$2" invocation="$3" binary_sha="$4"
 	local raw_before="$5" search_before="$6" free_before="$7"
-	local deadline service_journal kernel_journal
+	local deadline service_journal kernel_journal grep_status
 	local health_failures=0
 
 	deadline=$((SECONDS + OBSERVE_SECONDS))
@@ -461,8 +461,31 @@ observe() {
 
 	service_journal="$(sudo journalctl -u "$SERVICE_NAME" --since "@${epoch}" --no-pager 2>&1)"
 	kernel_journal="$(sudo journalctl -k --since "@${epoch}" --no-pager 2>&1)"
-	! grep -Eiq 'scheduled restart job|automatic restarting|restart counter is at' <<<"$service_journal"
-	! grep -Eiq 'out of memory|oom-kill|killed process' <<<"$kernel_journal"
+	if grep -Eiq \
+		'scheduled restart job|automatic restarting|restart counter is at' \
+		<<<"$service_journal"; then
+		echo "Automatic relay restart evidence found during observation"
+		return 1
+	else
+		grep_status=$?
+		if ((grep_status != 1)); then
+			echo "Unable to inspect relay restart evidence"
+			return 1
+		fi
+	fi
+
+	if grep -Eiq \
+		'out of memory|oom-kill|killed process' \
+		<<<"$kernel_journal"; then
+		echo "Kernel OOM evidence found during observation"
+		return 1
+	else
+		grep_status=$?
+		if ((grep_status != 1)); then
+			echo "Unable to inspect kernel OOM evidence"
+			return 1
+		fi
+	fi
 
 	# Reconfirm the terminal runtime/storage state after journal collection.
 	check_runtime_sample "$pid" "$invocation" "$binary_sha" \
