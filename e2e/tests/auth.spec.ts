@@ -483,7 +483,7 @@ test.describe('Authentication', () => {
 				})
 
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 				await openLoginDialog(page)
 
 				// Navigate to N-Connect → Bunker URL tab
@@ -519,7 +519,7 @@ test.describe('Authentication', () => {
 				})
 
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 				await openLoginDialog(page)
 
 				// Navigate to N-Connect → Bunker URL tab
@@ -553,7 +553,7 @@ test.describe('Authentication', () => {
 				})
 
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 				await openLoginDialog(page)
 
 				// Navigate to N-Connect → Bunker URL tab
