@@ -14,11 +14,18 @@ import { devUser1, devUser2, devUser3 } from '../../src/lib/fixtures'
  * the modal so test interactions can proceed.
  */
 async function dismissPIIModalIfPresent(page: Page): Promise<void> {
+	// isVisible() returns immediately and may miss the modal before React
+	// renders it. Use waitFor so we genuinely wait for it (or time out).
+	const piiVisible = await page
+		.getByRole('heading', { name: /personal data may be exposed/i })
+		.waitFor({ state: 'visible', timeout: 5000 })
+		.then(() => true)
+		.catch(() => false)
+	if (!piiVisible) return
+
 	const dismissButton = page.getByRole('button', { name: /dismiss warning/i })
-	if (await dismissButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-		await dismissButton.click()
-		await expect(dismissButton).not.toBeVisible({ timeout: 5000 })
-	}
+	await dismissButton.click()
+	await expect(dismissButton).not.toBeVisible({ timeout: 5000 })
 }
 
 type TestFixtures = {
@@ -61,7 +68,7 @@ export const test = base.extend<TestFixtures>({
 		await page.goto('/')
 		await page.waitForLoadState('domcontentloaded')
 		// Give the auto-login a moment to complete
-		await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+		await expect(page.getByTestId('dashboard-button')).toBeVisible({ timeout: 10_000 })
 		// Dismiss PII modal if accumulated PII events trigger it
 		await dismissPIIModalIfPresent(page)
 
@@ -78,7 +85,7 @@ export const test = base.extend<TestFixtures>({
 
 		await page.goto('/')
 		await page.waitForLoadState('domcontentloaded')
-		await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+		await expect(page.getByTestId('dashboard-button')).toBeVisible({ timeout: 10_000 })
 		await dismissPIIModalIfPresent(page)
 
 		await use(page)
@@ -94,7 +101,7 @@ export const test = base.extend<TestFixtures>({
 
 		await page.goto('/')
 		await page.waitForLoadState('domcontentloaded')
-		await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+		await expect(page.getByTestId('dashboard-button')).toBeVisible({ timeout: 10_000 })
 		await dismissPIIModalIfPresent(page)
 
 		await use(page)

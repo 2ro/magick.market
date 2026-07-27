@@ -61,7 +61,6 @@ async function openLoginDialog(page: Page) {
 	// before clicking. DialogRegistry needs to be mounted for the
 	// openDialog('login') state update to render anything.
 	await expect(page.locator('header')).toBeVisible({ timeout: 15_000 })
-	await page.waitForTimeout(500) // brief settle for React hydration
 
 	// Dismiss PII exposure modal if present (accumulated events from prior tests)
 	const dismissButton = page.getByRole('button', { name: /dismiss warning/i })
@@ -70,17 +69,15 @@ async function openLoginDialog(page: Page) {
 		await expect(dismissButton).not.toBeVisible({ timeout: 5000 })
 	}
 
-	// Remove any zombie dialog overlays that intercept pointer events.
-	await page.evaluate(() => {
-		document.querySelectorAll('[data-slot="dialog-overlay"]').forEach((el) => el.remove())
-	})
+	// Properly close any open dialog instead of deleting overlay DOM nodes.
+	// Pressing Escape lets React unmount the overlay cleanly, so subsequent
+	// clicks pass Playwright's actionability checks.
+	await page.keyboard.press('Escape')
+	await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0, { timeout: 5000 })
 
 	const loginButton = page.locator('[data-testid="login-button"]').first()
 	await expect(loginButton).toBeVisible({ timeout: 10_000 })
-	// Use JS click to bypass zombie dialog overlays that React's dialog system
-	// leaves in the DOM (auto-opened from stored-key decrypt prompt).
-	// This is safe because we've already waited for hydration above.
-	await loginButton.evaluate((el: HTMLElement) => el.click())
+	await loginButton.click()
 	await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible({ timeout: 15_000 })
 }
 

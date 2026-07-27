@@ -89,7 +89,7 @@ test.describe('User Profile', () => {
 		await monitor.start()
 
 		await page.goto('/dashboard/account/profile')
-		// Wait for DOM ready + hydration — NDK WebSocket prevents networkidle (ADR-015)
+		// Wait for DOM ready + hydration — NDK WebSocket keeps connections open
 		await page.waitForLoadState('domcontentloaded')
 
 		const nameInput = page.locator('#name')

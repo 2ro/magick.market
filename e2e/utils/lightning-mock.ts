@@ -97,8 +97,12 @@ export class LightningMock {
 			})
 		})
 
-		// LNURL callback: invoice generation
-		await page.route(`https://${MOCK_LNURL_DOMAIN}/**`, async (route) => {
+		// LNURL callback: invoice generation.
+		// Use the specific callback path so this handler does NOT shadow the
+		// .well-known/lnurlp/* discovery handler registered above. Playwright
+		// evaluates routes in reverse order (last registered wins), so a broad
+		// `https://domain/**` glob would intercept discovery requests too.
+		await page.route(`https://${MOCK_LNURL_DOMAIN}/lnurlp/callback**`, async (route) => {
 			const url = new URL(route.request().url())
 
 			// Extract amount for a more realistic-looking invoice

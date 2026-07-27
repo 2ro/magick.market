@@ -42,9 +42,9 @@ async function safeGoto(page: Page, url: string): Promise<void> {
 async function openCart(page: Page): Promise<void> {
 	const cartButton = page.getByRole('button').filter({ has: page.locator('.i-basket') })
 	await expect(cartButton).toBeVisible({ timeout: 10_000 })
-	// Use JS click — the basket button is wrapped in a tooltip that
-	// intercepts pointer events (same pattern as the auth login button).
-	await cartButton.evaluate((el: HTMLElement) => el.click())
+	// Playwright's default actionability checks handle the tooltip wrapper;
+	// a plain .click() waits for the button to be stable before clicking.
+	await cartButton.click()
 	await expect(page.getByRole('heading', { name: /your cart/i })).toBeVisible({ timeout: 10_000 })
 }
 
