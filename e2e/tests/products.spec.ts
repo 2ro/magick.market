@@ -58,7 +58,7 @@ async function createFreshUserPage(browser: Browser) {
 	await page.goto('/')
 	// Wait for DOM ready — NDK WebSocket keeps connections open, preventing networkidle
 	await page.waitForLoadState('domcontentloaded')
-	await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+	await expect(page.getByTestId('dashboard-button')).toBeVisible({ timeout: 10_000 })
 
 	return { context, page }
 }

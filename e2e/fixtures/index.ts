@@ -3,30 +3,7 @@ import { RelayMonitor } from './relay-monitor'
 import { setupAuthContext, type TestUser } from './auth'
 import { ensureScenario, resetRemoteCartForUser, type ScenarioName } from '../scenarios'
 import { devUser1, devUser2, devUser3 } from '../../src/lib/fixtures'
-
-/**
- * Dismiss the PII exposure modal if it appears.
- *
- * The PII scanner runs on page load when the user has kind-16 order events
- * with PII tags (address, email, phone) on the relay. PII events from
- * previous test runs accumulate on the reused relay and trigger the modal
- * on subsequent page loads, blocking all clicks. This helper dismisses
- * the modal so test interactions can proceed.
- */
-async function dismissPIIModalIfPresent(page: Page): Promise<void> {
-	// isVisible() returns immediately and may miss the modal before React
-	// renders it. Use waitFor so we genuinely wait for it (or time out).
-	const piiVisible = await page
-		.getByRole('heading', { name: /personal data may be exposed/i })
-		.waitFor({ state: 'visible', timeout: 5000 })
-		.then(() => true)
-		.catch(() => false)
-	if (!piiVisible) return
-
-	const dismissButton = page.getByRole('button', { name: /dismiss warning/i })
-	await dismissButton.click()
-	await expect(dismissButton).not.toBeVisible({ timeout: 5000 })
-}
+import { dismissPIIModalIfPresent } from '../utils/pii-helpers'
 
 type TestFixtures = {
 	/** Page with devUser1 logged in (merchant / app owner) */
