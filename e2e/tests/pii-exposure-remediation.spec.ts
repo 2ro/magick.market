@@ -351,7 +351,7 @@ test.describe('PII Exposure Remediation Workflow', () => {
 		expect(modalVisible).toBe(true)
 
 		// Get modal content
-		const modalContent = await (await merchantPage.getByRole('dialog', { name: 'Personal Information Leak' }).allTextContents()).join('')
+		const modalContent = (await merchantPage.getByRole('dialog', { name: 'Some of your personal data may be exposed' }).allTextContents()).join('')
 
 		// Should show field names but not raw values
 		if (modalContent) {
