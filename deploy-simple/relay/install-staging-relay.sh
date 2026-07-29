@@ -261,8 +261,8 @@ make_backup() {
 		"$REMOTE_BIN" "$BACKUP_DIR/market-relay"
 	sudo install -o "$uid" -g "$gid" -m 0600 \
 		"$REMOTE_SERVICE" "$BACKUP_DIR/market-relay.service"
-	[[ "$(sha256sum "$BACKUP_DIR/market-relay" | awk '{print $1}')" == "$PRE_BINARY_SHA" ]]
-	[[ "$(sha256sum "$BACKUP_DIR/market-relay.service" | awk '{print $1}')" == "$PRE_UNIT_SHA" ]]
+	[[ "$(sha256sum "$BACKUP_DIR/market-relay" | awk '{print $1}')" == "$PRE_BINARY_SHA" ]] || { echo "Backup binary hash does not match pre-activation hash"; return 1; }
+	[[ "$(sha256sum "$BACKUP_DIR/market-relay.service" | awk '{print $1}')" == "$PRE_UNIT_SHA" ]] || { echo "Backup unit hash does not match pre-activation hash"; return 1; }
 }
 
 rollback() {
@@ -409,12 +409,12 @@ check_runtime_sample() {
 	local pid="$1" invocation="$2" binary_sha="$3"
 	local raw_before="$4" search_before="$5" free_before="$6"
 
-	[[ "$(cat /proc/sys/kernel/random/boot_id)" == "$PRE_BOOT_ID" ]]
-	[[ "$(property ActiveState)" == "active" && "$(property SubState)" == "running" ]]
-	[[ "$(property MainPID)" == "$pid" ]]
-	[[ "$(property InvocationID)" == "$invocation" ]]
-	[[ "$(property NRestarts)" == "0" ]]
-	[[ "$(hash_file "/proc/${pid}/exe")" == "$binary_sha" ]]
+	[[ "$(cat /proc/sys/kernel/random/boot_id)" == "$PRE_BOOT_ID" ]] || { echo "Runtime sample failed: boot_id changed during observation"; return 1; }
+	[[ "$(property ActiveState)" == "active" && "$(property SubState)" == "running" ]] || { echo "Runtime sample failed: service is not active/running"; return 1; }
+	[[ "$(property MainPID)" == "$pid" ]] || { echo "Runtime sample failed: MainPID changed during observation"; return 1; }
+	[[ "$(property InvocationID)" == "$invocation" ]] || { echo "Runtime sample failed: InvocationID changed during observation"; return 1; }
+	[[ "$(property NRestarts)" == "0" ]] || { echo "Runtime sample failed: NRestarts is nonzero during observation"; return 1; }
+	[[ "$(hash_file "/proc/${pid}/exe")" == "$binary_sha" ]] || { echo "Runtime sample failed: running binary hash does not match expected"; return 1; }
 	check_growth "$raw_before" "$search_before" "$free_before"
 }
 
@@ -459,8 +459,8 @@ observe() {
 		fi
 	fi
 
-	service_journal="$(sudo journalctl -u "$SERVICE_NAME" --since "@${epoch}" --no-pager 2>&1)"
-	kernel_journal="$(sudo journalctl -k --since "@${epoch}" --no-pager 2>&1)"
+	service_journal="$(sudo journalctl -u "$SERVICE_NAME" -n 1000 --since "@${epoch}" --no-pager 2>&1)"
+	kernel_journal="$(sudo journalctl -k -n 1000 --since "@${epoch}" --no-pager 2>&1)"
 	if grep -Eiq \
 		'scheduled restart job|automatic restarting|restart counter is at' \
 		<<<"$service_journal"; then
@@ -520,8 +520,8 @@ main() {
 	printf 'installed_binary_sha256=%s\n' "$installed_bin"
 	printf 'artifact_unit_sha256=%s\n' "$expected_unit"
 	printf 'installed_unit_sha256=%s\n' "$installed_unit"
-	[[ "$installed_bin" == "$expected_bin" ]]
-	[[ "$installed_unit" == "$expected_unit" ]]
+	[[ "$installed_bin" == "$expected_bin" ]] || { echo "Installed binary hash does not match artifact hash"; return 1; }
+	[[ "$installed_unit" == "$expected_unit" ]] || { echo "Installed unit hash does not match artifact hash"; return 1; }
 
 	raw_before="$(allocated "$RAW_DIR")"
 	search_before="$(allocated "$SEARCH_DIR")"
@@ -537,13 +537,13 @@ main() {
 
 	epoch="$(date +%s)"
 	sudo systemctl daemon-reload
-	[[ "$(property FragmentPath)" == "$REMOTE_SERVICE" ]]
-	[[ "$(property NeedDaemonReload)" == "no" ]]
-	[[ -z "$(property DropInPaths)" ]]
+	[[ "$(property FragmentPath)" == "$REMOTE_SERVICE" ]] || { echo "Post-install unit fragment path is not from expected location"; return 1; }
+	[[ "$(property NeedDaemonReload)" == "no" ]] || { echo "Post-install unit still requires daemon-reload"; return 1; }
+	[[ -z "$(property DropInPaths)" ]] || { echo "Post-install unit has unexpected systemd drop-ins"; return 1; }
 	sudo systemctl restart "$SERVICE_NAME"
 	sleep 5
 
-	[[ "$(property ActiveState)" == "active" && "$(property SubState)" == "running" ]]
+	[[ "$(property ActiveState)" == "active" && "$(property SubState)" == "running" ]] || { echo "Staging relay is not active/running after activation"; return 1; }
 	pid="$(property MainPID)"
 	invocation="$(property InvocationID)"
 	restarts="$(property NRestarts)"
@@ -555,13 +555,13 @@ main() {
 		echo "Staging relay NRestarts is not zero after activation"
 		return 1
 	}
-	[[ -n "$invocation" ]]
-	[[ "$pid" != "$PRE_PID" ]]
-	[[ "$invocation" != "$PRE_INVOCATION" ]]
+	[[ -n "$invocation" ]] || { echo "Staging relay has no InvocationID after activation"; return 1; }
+	[[ "$pid" != "$PRE_PID" ]] || { echo "Staging relay MainPID unchanged after restart"; return 1; }
+	[[ "$invocation" != "$PRE_INVOCATION" ]] || { echo "Staging relay InvocationID unchanged after restart"; return 1; }
 
 	running_bin="$(hash_file "/proc/${pid}/exe")"
 	printf 'running_binary_sha256=%s\n' "$running_bin"
-	[[ "$running_bin" == "$expected_bin" ]]
+	[[ "$running_bin" == "$expected_bin" ]] || { echo "Running binary hash does not match expected artifact hash"; return 1; }
 	local_health
 	check_growth "$raw_before" "$search_before" "$free_before"
 	observe "$epoch" "$pid" "$invocation" "$expected_bin" \
