@@ -7,7 +7,6 @@ import { nip19 } from 'nostr-tools'
 import { Nip46Mock } from '../utils/nip46-mock'
 import { RELAY_URL } from '../test-config'
 import { encrypt } from 'nostr-tools/nip49'
-import { dismissPIIModalIfPresent } from '../utils/pii-helpers'
 
 test.use({ scenario: 'base' })
 
@@ -62,11 +61,6 @@ async function openLoginDialog(page: Page) {
 	// before clicking. DialogRegistry needs to be mounted for the
 	// openDialog('login') state update to render anything.
 	await expect(page.locator('header')).toBeVisible({ timeout: 15_000 })
-
-	// Dismiss PII exposure modal if present (accumulated events from prior tests).
-	// Uses the shared helper so the detection logic is identical to the fixtures —
-	// isVisible() returns immediately and can miss the modal before React renders it.
-	await dismissPIIModalIfPresent(page)
 
 	// Properly close any open dialog instead of deleting overlay DOM nodes.
 	// Pressing Escape lets React unmount the overlay cleanly, so subsequent

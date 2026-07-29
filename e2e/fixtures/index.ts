@@ -3,7 +3,6 @@ import { RelayMonitor } from './relay-monitor'
 import { setupAuthContext, type TestUser } from './auth'
 import { ensureScenario, resetRemoteCartForUser, type ScenarioName } from '../scenarios'
 import { devUser1, devUser2, devUser3 } from '../../src/lib/fixtures'
-import { dismissPIIModalIfPresent } from '../utils/pii-helpers'
 
 type TestFixtures = {
 	/** Page with devUser1 logged in (merchant / app owner) */
@@ -46,8 +45,6 @@ export const test = base.extend<TestFixtures>({
 		await page.waitForLoadState('domcontentloaded')
 		// Give the auto-login a moment to complete
 		await expect(page.getByTestId('dashboard-button')).toBeVisible({ timeout: 10_000 })
-		// Dismiss PII modal if accumulated PII events trigger it
-		await dismissPIIModalIfPresent(page)
 
 		await use(page)
 		await context.close()
@@ -63,7 +60,6 @@ export const test = base.extend<TestFixtures>({
 		await page.goto('/')
 		await page.waitForLoadState('domcontentloaded')
 		await expect(page.getByTestId('dashboard-button')).toBeVisible({ timeout: 10_000 })
-		await dismissPIIModalIfPresent(page)
 
 		await use(page)
 		await context.close()
@@ -79,7 +75,6 @@ export const test = base.extend<TestFixtures>({
 		await page.goto('/')
 		await page.waitForLoadState('domcontentloaded')
 		await expect(page.getByTestId('dashboard-button')).toBeVisible({ timeout: 10_000 })
-		await dismissPIIModalIfPresent(page)
 
 		await use(page)
 		await context.close()

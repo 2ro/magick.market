@@ -164,14 +164,18 @@ async function findDeletionEvent(originalEventId: string) {
 }
 
 test.describe('PII Exposure Remediation Workflow', () => {
-	test.beforeEach(async ({ merchantPage }) => {
+	test.beforeEach(async () => {
 		// Ensure clean state before each test - delete all kind 16 events
 		await deleteAllKind16Events(devUser1.sk, devUser1.pk)
+		await deleteAllKind16Events(devUser2.sk, devUser2.pk)
 	})
 
 	test.afterEach(async () => {
-		// Clean up after each test
+		// Clean up after each test - delete ALL kind 16 events from both test
+		// users so PII events don't leak into subsequent test runs and trigger
+		// the PII exposure modal in unrelated tests.
 		await deleteAllKind16Events(devUser1.sk, devUser1.pk)
+		await deleteAllKind16Events(devUser2.sk, devUser2.pk)
 	})
 
 	test('scanner flags affected kind 16 order events with sensitive delivery/contact fields', async ({ merchantPage }) => {
