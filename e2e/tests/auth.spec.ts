@@ -63,10 +63,15 @@ async function openLoginDialog(page: Page) {
 	await expect(page.locator('header')).toBeVisible({ timeout: 15_000 })
 
 	// Properly close any open dialog instead of deleting overlay DOM nodes.
-	// Pressing Escape lets React unmount the overlay cleanly, so subsequent
-	// clicks pass Playwright's actionability checks.
-	await page.keyboard.press('Escape')
-	await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0, { timeout: 15_000 })
+	// Clicking the dialog overlay (outside the dialog content) lets React
+	// unmount the overlay cleanly, so subsequent clicks pass Playwright's
+	// actionability checks. Escape keypress does not reliably close the
+	// overlay in headless CI.
+	const overlay = page.locator('[data-slot="dialog-overlay"]')
+	if ((await overlay.count()) > 0) {
+		await overlay.first().click({ position: { x: 10, y: 10 } })
+	}
+	await expect(overlay).toHaveCount(0, { timeout: 15_000 })
 
 	const loginButton = page.locator('[data-testid="login-button"]').first()
 	await expect(loginButton).toBeVisible({ timeout: 10_000 })
