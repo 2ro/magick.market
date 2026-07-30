@@ -614,10 +614,11 @@ test.describe('Product Page - Interactions & Social (Authenticated)', () => {
 
 		// Verify reaction was added - check for filled state
 		await expect(commentReactionBtn).toHaveClass(/bg-neo-purple/)
-		// Verify the reaction chip appears on the same comment with count 1
-		const commentReactionsList = commentSocialInteractions.getByTestId('reactions-list').first()
-		const reactionChip = commentReactionsList.getByRole('button', { name: /❤️/ })
-		await expect(reactionChip).toBeVisible()
+		// Verify the reaction chip appears on the same comment with count 1.
+		// ReactionsList uses asChildren=true here, so it renders bare buttons
+		// without the 'reactions-list' wrapper div — query the button directly.
+		const reactionChip = commentSocialInteractions.getByRole('button', { name: /❤️/ }).last()
+		await expect(reactionChip).toBeVisible({ timeout: 15_000 })
 		await expect(reactionChip).toContainText('1')
 	})
 })

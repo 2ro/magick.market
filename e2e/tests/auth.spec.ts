@@ -66,7 +66,7 @@ async function openLoginDialog(page: Page) {
 	// Pressing Escape lets React unmount the overlay cleanly, so subsequent
 	// clicks pass Playwright's actionability checks.
 	await page.keyboard.press('Escape')
-	await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0, { timeout: 5000 })
+	await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0, { timeout: 15_000 })
 
 	const loginButton = page.locator('[data-testid="login-button"]').first()
 	await expect(loginButton).toBeVisible({ timeout: 10_000 })

@@ -339,7 +339,7 @@ test.describe('Cart - Persistence', () => {
 
 		// Reload the page
 		await newUserPage.reload()
-		await newUserPage.waitForLoadState('domcontentloaded')
+		await newUserPage.waitForLoadState('networkidle')
 
 		// Open the cart and verify both items survived the reload
 		await openCart(newUserPage)
@@ -372,7 +372,7 @@ test.describe('Cart - Persistence', () => {
 		// Close dialog and reload
 		await newUserPage.keyboard.press('Escape')
 		await newUserPage.reload()
-		await newUserPage.waitForLoadState('domcontentloaded')
+		await newUserPage.waitForLoadState('networkidle')
 
 		// Verify quantity is still 3 after reload
 		await openCart(newUserPage)
@@ -388,11 +388,11 @@ test.describe('Cart - Persistence', () => {
 
 		// Navigate away to a different page
 		await safeGoto(newUserPage, '/')
-		await newUserPage.waitForLoadState('domcontentloaded')
+		await newUserPage.waitForLoadState('networkidle')
 
 		// Navigate back to products
 		await safeGoto(newUserPage, '/products')
-		await newUserPage.waitForLoadState('domcontentloaded')
+		await newUserPage.waitForLoadState('networkidle')
 
 		// Cart should still have the item
 		await openCart(newUserPage)
@@ -424,7 +424,7 @@ test.describe('Cart - Persistence', () => {
 		// Close and reload to confirm persistence of the cleared state
 		await buyerPage.keyboard.press('Escape')
 		await buyerPage.reload()
-		await buyerPage.waitForLoadState('domcontentloaded')
+		await buyerPage.waitForLoadState('networkidle')
 
 		// Re-open cart — should still be empty (no phantom items)
 		await openCart(buyerPage)

@@ -46,10 +46,8 @@ test.describe('Shipping Special Cases', () => {
 		// ─── 1. Add digital-only product to cart ──────────────────────
 		await addProductAndOpenCart(buyerPage, 'Bitcoin E-Book')
 
-		// Shipping should auto-select "Digital Delivery" (only option)
-		await expect(buyerPage.getByText(/Digital Delivery/)).toBeVisible({ timeout: 10_000 })
-
-		// Proceed to checkout
+		// Proceed to checkout — ShippingSelector is hidden in the cart sheet
+		// (hideShipping=true) and only renders on the checkout page.
 		const checkoutButton = buyerPage.getByRole('button', { name: /Checkout/i })
 		await expect(checkoutButton).toBeEnabled({ timeout: 5_000 })
 		await checkoutButton.click()
@@ -127,10 +125,8 @@ test.describe('Shipping Special Cases', () => {
 		// ─── 1. Add pickup-only product to cart ──────────────────────
 		await addProductAndOpenCart(buyerPage, 'Bitcoin Conference Ticket')
 
-		// Shipping should auto-select "Local Pickup - Bitcoin Store" (only option)
-		await expect(buyerPage.getByText(/Local Pickup/)).toBeVisible({ timeout: 10_000 })
-
-		// Proceed to checkout
+		// Proceed to checkout — ShippingSelector is hidden in the cart sheet
+		// (hideShipping=true) and only renders on the checkout page.
 		const checkoutButton = buyerPage.getByRole('button', { name: /Checkout/i })
 		await expect(checkoutButton).toBeEnabled({ timeout: 5_000 })
 		await checkoutButton.click()
