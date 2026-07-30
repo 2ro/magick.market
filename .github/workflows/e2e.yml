@@ -11,6 +11,10 @@ on:
         description: 'Optional grep filter (runs only matching tests). Empty = default full run.'
         required: false
         default: ''
+      repeat_each:
+        description: 'Repeat each test N times for flake detection (1 = normal run)'
+        required: false
+        default: '1'
   schedule:
     - cron: '0 6 * * 1'
 
@@ -250,11 +254,17 @@ jobs:
       - name: Run remaining E2E tests
         env:
           TEST_GREP: ${{ inputs.test_grep }}
+          REPEAT_EACH: ${{ inputs.repeat_each || '1' }}
         run: |
+          REPEAT_FLAG=""
+          if [ "${REPEAT_EACH}" != "1" ] && [ -n "${REPEAT_EACH}" ]; then
+            REPEAT_FLAG="--repeat-each=${REPEAT_EACH} --retries=0"
+            echo "🔍 Flake detection mode: ${REPEAT_EACH} runs per test, retries disabled"
+          fi
           if [ -n "$TEST_GREP" ]; then
-            bun run test:e2e -- --grep "$TEST_GREP"
+            bun run test:e2e -- --grep "$TEST_GREP" $REPEAT_FLAG
           else
-            bun run test:e2e -- --grep-invert 'Navigation|User Profile|Shipping Option Creation|Community Tab Progressive Loading|Order Details|Marketplace Display|V4V Dashboard Management|Receiving Payments Configuration|Product Page - View Only|Collection Management'
+            bun run test:e2e -- --grep-invert 'Navigation|User Profile|Shipping Option Creation|Community Tab Progressive Loading|Order Details|Marketplace Display|V4V Dashboard Management|Receiving Payments Configuration|Product Page - View Only|Collection Management' $REPEAT_FLAG
           fi
 
       - name: Show server logs on failure
