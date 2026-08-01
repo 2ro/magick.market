@@ -87,6 +87,10 @@ export const fetchSellerPrivateOrderGiftWraps = async (sellerPubkey: string): Pr
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// An empty seller pubkey would build { '#p': [''] } and trip NDK's (fatal)
+	// filter guardrail (#p is validated as 64-hex too).
+	if (!sellerPubkey) return []
+
 	const giftWrapFilter: NDKFilter = {
 		kinds: [NIP59_GIFT_WRAP_KIND],
 		'#p': [sellerPubkey],
@@ -429,6 +433,10 @@ export const fetchOrdersByBuyer = async (buyerPubkey: string): Promise<OrderWith
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// An empty buyer pubkey would build { authors: [''] } (and later
+	// allAuthors = ['', ...]) and trip NDK's (fatal) filter guardrail.
+	if (!buyerPubkey) return []
+
 	// Orders where the specified user is the author (buyer sending order to merchant)
 	const orderCreationFilter: NDKFilter = {
 		kinds: [ORDER_PROCESS_KIND],
@@ -615,6 +623,10 @@ export const fetchOrdersBySeller = async (
 ): Promise<OrderWithRelatedEvents[]> => {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
+
+	// An empty seller pubkey would build { '#p': [''] } and trip NDK's
+	// (fatal) filter guardrail (#p is validated as 64-hex too).
+	if (!sellerPubkey) return []
 
 	// Orders where the specified user is the recipient (merchant receiving orders)
 	const orderReceivedFilter: NDKFilter = {

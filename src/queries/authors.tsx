@@ -29,6 +29,10 @@ export const fetchAuthor = async (pubkey: string) => {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// An empty pubkey would build { authors: [''] } and trip NDK's (fatal)
+	// filter guardrail. Fail fast instead of constructing an invalid filter.
+	if (!pubkey) throw new Error('Author pubkey is required')
+
 	const events = await ndk.fetchEvents(filter)
 	const eventArray = Array.from(events)
 

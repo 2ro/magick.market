@@ -1148,6 +1148,10 @@ export const resolvePaymentDetailsForProduct = async (productId: string, sellerP
 		const ndk = ndkActions.getNDK()
 		if (!ndk) throw new Error('NDK not initialized')
 
+		// An empty seller pubkey would build { authors: [''] } (and a malformed
+		// coordinate) and trip NDK's (fatal) filter guardrail.
+		if (!sellerPubkey) return []
+
 		// 1. Check for product-specific payment details
 		const productCoordinates = `30402:${sellerPubkey}:${productId}`
 		const productPaymentDetails = await fetchProductPaymentDetails(productCoordinates, sellerPubkey)

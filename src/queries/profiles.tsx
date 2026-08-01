@@ -66,6 +66,14 @@ export const fetchProfileByIdentifier = async (identifier: string): Promise<{ pr
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// An empty/blank identifier would make ndk.fetchUser('') construct an
+	// NDKUser with an empty pubkey, and user.fetchProfile() would then build
+	// { kinds: [0], authors: [''] } — an empty-string author that trips NDK's
+	// (fatal) filter guardrail. Bail out early instead.
+	if (!identifier || !identifier.trim()) {
+		return { profile: null, user: null }
+	}
+
 	const timeoutMs = 8000
 	try {
 		const result = await Promise.race([
@@ -141,6 +149,7 @@ export const getProfileNip05 = ({ profile }: { profile: NDKUserProfile | null })
 export const useProfileName = (pubkey: string) => {
 	return useQuery({
 		...profileByIdentifierQueryOptions(pubkey),
+		enabled: !!pubkey,
 		select: getProfileName,
 	})
 }
@@ -148,6 +157,7 @@ export const useProfileName = (pubkey: string) => {
 export const useProfileNip05 = (pubkey: string) => {
 	return useQuery({
 		...profileByIdentifierQueryOptions(pubkey),
+		enabled: !!pubkey,
 		select: getProfileNip05,
 	})
 }

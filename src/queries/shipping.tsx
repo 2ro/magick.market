@@ -145,6 +145,10 @@ export const fetchShippingOptionsByPubkey = async (pubkey: string) => {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// An empty pubkey would build { authors: [''] } and trip NDK's (fatal)
+	// filter guardrail.
+	if (!pubkey) return []
+
 	const filter: NDKFilter = {
 		kinds: [SHIPPING_KIND],
 		authors: [pubkey],

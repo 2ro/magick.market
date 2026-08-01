@@ -128,6 +128,10 @@ export const fetchCollectionsByPubkey = async (pubkey: string) => {
 		return []
 	}
 
+	// An empty pubkey would build { authors: [''] } and trip NDK's (fatal)
+	// filter guardrail.
+	if (!pubkey) return []
+
 	const filter: NDKFilter = {
 		kinds: [30405 as NDKKind], // Collections
 		authors: [pubkey],
