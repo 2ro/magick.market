@@ -300,12 +300,23 @@ export const ndkActions = {
 		// This prevents NDK from discovering and connecting to additional relays
 		const enableOutbox = stage !== 'staging' && stage !== 'development' && !localRelayOnly
 
+		// AI Guardrails are an NDK dev-time educational tool (shipped off by
+		// default). Enabling them in production turns a single malformed pubkey
+		// in any filter into a fatal throw ("AI_GUARDRAILS ERROR") that crashes
+		// the page. Keep them on only in dev/staging where they're useful.
+		const enableGuardrails = stage === 'development' || stage === 'staging'
 		const ndk = new NDK({
 			explicitRelayUrls: explicitRelays,
 			enableOutboxModel: enableOutbox,
-			aiGuardrails: {
-				skip: new Set(['ndk-no-cache', 'fetch-events-usage']),
-			},
+			aiGuardrails: enableGuardrails ? { skip: new Set(['ndk-no-cache', 'fetch-events-usage']) } : false,
+			// NDK validates every filter before subscribing. The default mode
+			// ('validate') *throws* on an invalid pubkey (e.g. an empty string
+			// from a `?? ''` fallback during a transient state) — which would
+			// crash the page even with guardrails off. In production we want
+			// graceful degradation: 'fix' strips invalid entries from the
+			// filter instead of throwing. In dev/staging we keep 'validate' so
+			// filter bugs surface loudly during development.
+			filterValidationMode: enableGuardrails ? 'validate' : 'fix',
 		})
 
 		// Always monitor zap receipts on public ZAP_RELAYS (plus the app relay).

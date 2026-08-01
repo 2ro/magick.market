@@ -9,10 +9,14 @@ export async function fetchAppSettings(relayUrl: string, appPubkey: string): Pro
 		// to avoid shared store issues with ndkActions
 		const ndk = new NDK({
 			explicitRelayUrls: [relayUrl],
-			// Skip AI guardrails that might filter out events during fetch
-			aiGuardrails: {
-				skip: new Set(['ndk-no-cache', 'fetch-events-usage']),
-			},
+			// This is a server-side, one-off fetch of app-config events with a
+			// known-valid app pubkey. AI guardrails are a dev-time educational
+			// tool and have no place here; leaving them on risks a fatal throw
+			// if the pubkey were ever malformed.
+			aiGuardrails: false,
+			// Strip (don't throw on) any invalid filter values — server fetches
+			// should degrade gracefully, never crash.
+			filterValidationMode: 'fix',
 		})
 
 		// Connect with timeout
