@@ -24,7 +24,7 @@ import { useShippingOptionsByPubkey, getShippingService, getShippingPickupAddres
 import { getProfileIdentifierValidationError } from '@/lib/utils/profileValidation'
 import { useAutoAnimate } from '@formkit/auto-animate/react'
 import type { NDKEvent } from '@nostr-dev-kit/ndk'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Edit, MapPin, MessageCircle, Minus, Plus, Share2, Timer } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
@@ -49,6 +49,17 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 	} = useQuery({
 		...profileByIdentifierQueryOptions(profileId),
 		enabled: !validationError,
+		// Profile metadata (kind 0) is slow-changing and is invalidated
+		// explicitly when the user edits their profile. Don't let a
+		// backgrounded tab's degraded relay pool clobber a loaded profile:
+		// a refocus/reconnect refetch that EOSE-empties would otherwise
+		// commit { profile: null, user } over good data and flip the page
+		// to a false "Could not load user profile". keepPreviousData keeps
+		// the good profile visible during any in-flight refetch.
+		placeholderData: keepPreviousData,
+		staleTime: 60_000,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
 	})
 	const { profile, user } = profileData || {}
 
@@ -210,6 +221,11 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 		validateBanner()
 	}, [profile?.banner])
 
+	// A profile is "not found" when we resolved no kind-0 metadata for it.
+	// The refocus/reconnect clobber that used to false-fire here is prevented
+	// at the query level (refetchOnWindowFocus/refetchOnReconnect: false +
+	// keepPreviousData above), so this condition now only fires for profiles
+	// that genuinely have no metadata, which is the correct "not found" case.
 	const profileNotFoundError = !validationError && !profileIsLoading && !profileIsFetching && (profileIsError || !profile)
 	const invalidResolvedPubkeyError = !validationError && !profileIsLoading && !profileIsFetching && !!user && !profilePubkey
 	const errorMessage =
