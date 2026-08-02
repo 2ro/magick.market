@@ -18,7 +18,7 @@ Accepted
 ## Context
 
 Two failure modes produced the same user-visible outcome — a profile page
-that wouldn't load.
+that wouldn't load — and a third latent risk was surfaced in review.
 
 1. **Filter-validation crash.** NDK AI Guardrails were enabled unconditionally
    in production via `{ skip: ... }`. The `filter-invalid-hex` guardrail is a
@@ -37,6 +37,13 @@ that wouldn't load.
    try/catch that returned `{ profile: null, user: null }`, so timeout, relay
    error, no connection, and genuine absence were all indistinguishable.
 
+3. **App-config authority gap.** Not a reported crash, but a latent risk
+   surfaced in review: the kind-31990 app-config fetch queried by author +
+   kind + d tag yet trusted whichever returned event had the highest
+   `created_at`. The content schema validates shape, not publisher authority,
+   so a malformed `appPubkey` (or a relay returning an event from a different
+   publisher) could yield app settings from an unrelated source.
+
 ## Decision
 
 ### 1. Disable AI Guardrails in production; retain strict filter validation
@@ -53,8 +60,8 @@ that wouldn't load.
   query layer **before** any filter is built (fail closed); strict validation
   then never throws because filters are always well-formed.
 - The server-side app-settings fetch NDK uses `aiGuardrails: false` with
-  default strict validation (a malformed appPubkey fails closed rather than
-  broadening the query).
+  default strict validation. App-config publisher authority is verified
+  separately (see decision 4).
 
 ### 2. Validate identity inputs before building Nostr filters
 
@@ -112,21 +119,28 @@ app actually trusts:
 
 - **Do not** return a placeholder profile instead of the "Profile not found"
   error; genuinely-unfound profiles still show the error.
-- **Do not** change fetching logic apart from guarding the error-causing
-  condition and the transient/absence distinction.
+- **Do not** change fetching logic apart from: input validation guards, the
+  transient/absence distinction, and app-config publisher-authority
+  verification. No other fetching behavior is altered.
 
 ## Consequences
 
-- An empty/invalid pubkey is rejected at the query layer (fail closed); NDK
-  strict validation is retained, so any filter that slips past the guards
-  fails loudly rather than being silently broadened.
+- A malformed pubkey (empty, whitespace, truncated, or non-hex) is rejected
+  at the query layer with `isValidHexKey` / `validateProfileIdentifier`
+  before any filter is built (fail closed). NDK strict validation is retained
+  as the backstop, so any filter that slips past the guards fails loudly
+  rather than being silently broadened.
 - Guardrails off in production removes the `AI_GUARDRAILS` educational throw;
   strict `'validate'` remains the backstop for malformed filters.
 - A transient post-refocus refetch no longer clobbers a loaded profile
   (throws → `isError` + retained data; `keepPreviousData` covers the pending
   state). Genuine absence still surfaces the "not found" error.
-- New query helpers building `authors`/`#p` from a pubkey must guard empty
-  input.
+- App-config content is accepted only from events authored by the expected
+  `appPubkey` with kind 31990 and the exact d tag; a spoofed event that
+  passes the shape schema is refused.
+- New query helpers building `authors`/`#p` from a pubkey must validate it with
+  `isValidHexKey` (hex fetchers) or `validateProfileIdentifier` (identifier
+  fetchers) before constructing the filter.
 
 ## Follow-ups (not in this PR, per review)
 
