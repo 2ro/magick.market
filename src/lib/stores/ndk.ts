@@ -304,19 +304,18 @@ export const ndkActions = {
 		// default). Enabling them in production turns a single malformed pubkey
 		// in any filter into a fatal throw ("AI_GUARDRAILS ERROR") that crashes
 		// the page. Keep them on only in dev/staging where they're useful.
+		//
+		// NDK's default filter validation ('validate', strict) is intentionally
+		// retained in all stages: invalid/empty pubkeys are rejected at the query
+		// layer before any filter is built (fail closed) — never by loosening NDK
+		// validation. 'fix' mode would strip a bad author and broaden an
+		// identity-scoped request instead of rejecting it, which is unsafe for
+		// marketplace identity/order/payment boundaries.
 		const enableGuardrails = stage === 'development' || stage === 'staging'
 		const ndk = new NDK({
 			explicitRelayUrls: explicitRelays,
 			enableOutboxModel: enableOutbox,
 			aiGuardrails: enableGuardrails ? { skip: new Set(['ndk-no-cache', 'fetch-events-usage']) } : false,
-			// NDK validates every filter before subscribing. The default mode
-			// ('validate') *throws* on an invalid pubkey (e.g. an empty string
-			// from a `?? ''` fallback during a transient state) — which would
-			// crash the page even with guardrails off. In production we want
-			// graceful degradation: 'fix' strips invalid entries from the
-			// filter instead of throwing. In dev/staging we keep 'validate' so
-			// filter bugs surface loudly during development.
-			filterValidationMode: enableGuardrails ? 'validate' : 'fix',
 		})
 
 		// Always monitor zap receipts on public ZAP_RELAYS (plus the app relay).
