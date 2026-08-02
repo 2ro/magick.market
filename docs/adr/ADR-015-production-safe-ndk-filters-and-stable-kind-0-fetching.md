@@ -89,6 +89,25 @@ whitespace, truncated keys, and arbitrary malformed non-empty values.
   genuinely no profile to show (`!profile`, not `isError || !profile`).
 - Behavior is covered by `profilesFetch.test.ts`.
 
+### 4. Verify app-settings publisher authority before accepting content
+
+The kind-31990 app-config fetch (`fetchAppSettings` in `lib/appSettings.ts`)
+queries `{ kinds: [31990], authors: [appPubkey], '#d': ['plebeian-market-handler'] }`.
+Two hardenings close the gap between the requested filter and the content the
+app actually trusts:
+
+- **Validate before the query**: `appPubkey` is checked with `isValidHexKey`
+  before an NDK instance is created or any relay request is issued. A malformed
+  key is rejected early (fail closed) rather than relying solely on NDK's
+  strict filter validation to refuse the filter.
+- **Verify after the fetch**: the returned events are filtered to only those
+  authored by `appPubkey`, with kind 31990 and the exact `d` tag
+  `plebeian-market-handler` (`selectAuthoritativeAppSettingsEvent`). The
+  content schema validates shape, not authority, so a spoofed event from a
+  different publisher that happens to pass `AppSettingsSchema` is refused.
+  A higher-timestamp spoofed event is ignored in favor of the legitimate one.
+- Behavior is covered by `appSettings.test.ts`.
+
 ### Explicit non-goals
 
 - **Do not** return a placeholder profile instead of the "Profile not found"
@@ -111,8 +130,6 @@ whitespace, truncated keys, and arbitrary malformed non-empty values.
 
 ## Follow-ups (not in this PR, per review)
 
-- Validate `appPubkey` before the app-settings query and verify the returned
-  event's publisher authority (author + kind 31990 + exact `d` tag).
 - Products-by-pubkey is owned by #1206 (`enabled: isValidHexKey` at the
   query-activation boundary); this PR does not guard products to avoid two
   competing contracts. Merge #1206 before this PR and rebase onto the result.
