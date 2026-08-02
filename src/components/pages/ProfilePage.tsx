@@ -43,19 +43,19 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 
 	const {
 		data: profileData,
-		isLoading: profileIsLoading,
 		isFetching: profileIsFetching,
-		isError: profileIsError,
+		isLoading: profileIsLoading,
 	} = useQuery({
 		...profileByIdentifierQueryOptions(profileId),
 		enabled: !validationError,
 		// Profile metadata (kind 0) is slow-changing and is invalidated
-		// explicitly when the user edits their profile. Don't let a
-		// backgrounded tab's degraded relay pool clobber a loaded profile:
-		// a refocus/reconnect refetch that EOSE-empties would otherwise
-		// commit { profile: null, user } over good data and flip the page
-		// to a false "Could not load user profile". keepPreviousData keeps
-		// the good profile visible during any in-flight refetch.
+		// explicitly on edit. A refocus/reconnect refetch that fails
+		// transiently (timeout/disconnect) now throws from
+		// fetchProfileByIdentifier, so React Query retains the previous
+		// profile (isError + retained data) instead of committing null.
+		// keepPreviousData keeps it visible during the in-flight refetch,
+		// and the error condition below only fires when there is genuinely
+		// no profile to show. See profilesFetch.test.ts.
 		placeholderData: keepPreviousData,
 		staleTime: 60_000,
 		refetchOnWindowFocus: false,
@@ -221,12 +221,12 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 		validateBanner()
 	}, [profile?.banner])
 
-	// A profile is "not found" when we resolved no kind-0 metadata for it.
-	// The refocus/reconnect clobber that used to false-fire here is prevented
-	// at the query level (refetchOnWindowFocus/refetchOnReconnect: false +
-	// keepPreviousData above), so this condition now only fires for profiles
-	// that genuinely have no metadata, which is the correct "not found" case.
-	const profileNotFoundError = !validationError && !profileIsLoading && !profileIsFetching && (profileIsError || !profile)
+	// "Not found" = settled with no kind-0 metadata to show. Transient failures
+	// (timeout/disconnect/relay error) throw from fetchProfileByIdentifier, so
+	// React Query keeps the previous profile data and `profile` stays non-null
+	// — this no longer false-fires on a failed backgrounded-tab refetch. It
+	// fires only for genuine absence (settled, profile is null).
+	const profileNotFoundError = !validationError && !profileIsLoading && !profileIsFetching && !profile
 	const invalidResolvedPubkeyError = !validationError && !profileIsLoading && !profileIsFetching && !!user && !profilePubkey
 	const errorMessage =
 		validationError ??

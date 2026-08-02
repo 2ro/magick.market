@@ -74,22 +74,32 @@ export const fetchProfileByIdentifier = async (identifier: string): Promise<{ pr
 		return { profile: null, user: null }
 	}
 
-	const timeoutMs = 8000
-	try {
-		const result = await Promise.race([
-			(async () => {
-				const user = await ndk.fetchUser(identifier)
-				if (!user) return { profile: null, user: null }
-				const profile = await user.fetchProfile()
-				return { profile, user }
-			})(),
-			new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Profile fetch timed out')), timeoutMs)),
-		])
-		return result
-	} catch (e) {
-		console.error('Failed to fetch profile with identifier:', e)
-		return { profile: null, user: null }
+	// Distinguish transient failures (no connection, timeout, relay errors)
+	// from genuine profile absence. Transient failures must THROW so React
+	// Query treats them as `isError` and retains any previously-loaded profile
+	// (see `placeholderData: keepPreviousData` in ProfilePage) instead of
+	// committing a null-shaped "success" that clobbers a loaded profile. Only
+	// genuine absence — relays connected and fetchProfile() resolved to null —
+	// returns the null-shaped value. (Behavioral cases covered in
+	// profilesFetch.test.ts.)
+	const connectedRelays = ndk.pool?.connectedRelays() ?? []
+	if (connectedRelays.length === 0) {
+		throw new Error('No relay connection available to fetch profile')
 	}
+
+	const timeoutMs = 8000
+	// No try/catch: let the timeout and fetchUser/fetchProfile rejections
+	// propagate as query errors. Only fetchProfile() resolving to null
+	// (genuine absence) produces the null-shaped success below.
+	return await Promise.race([
+		(async () => {
+			const user = await ndk.fetchUser(identifier)
+			if (!user) return { profile: null, user: null }
+			const profile = await user.fetchProfile()
+			return { profile, user }
+		})(),
+		new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Profile fetch timed out')), timeoutMs)),
+	])
 }
 
 export const profileQueryOptions = (npub: string) =>
