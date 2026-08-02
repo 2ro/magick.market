@@ -1,5 +1,6 @@
 import { CollectionImageTagSchema, CollectionSummaryTagSchema, CollectionTitleTagSchema } from '@/lib/schemas/productCollection.ts'
 import { ndkActions } from '@/lib/stores/ndk'
+import { isValidHexKey } from '@/lib/utils'
 import type { NDKFilter, NDKKind } from '@nostr-dev-kit/ndk'
 import { NDKEvent } from '@nostr-dev-kit/ndk'
 import { queryOptions, useQuery } from '@tanstack/react-query'
@@ -128,9 +129,9 @@ export const fetchCollectionsByPubkey = async (pubkey: string) => {
 		return []
 	}
 
-	// An empty pubkey would build { authors: [''] } and trip NDK's (fatal)
-	// filter guardrail.
-	if (!pubkey) return []
+	// A malformed (not just empty) pubkey would build { authors: [...] } that
+	// trips NDK's strict filter validation. Reject before constructing it.
+	if (!isValidHexKey(pubkey)) return []
 
 	const filter: NDKFilter = {
 		kinds: [30405 as NDKKind], // Collections

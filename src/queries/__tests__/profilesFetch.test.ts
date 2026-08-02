@@ -91,4 +91,14 @@ describe('fetchProfileByIdentifier distinguishes genuine absence from transient 
 
 		await expect(fetchProfileByIdentifier(VALID_HEX)).rejects.toThrow('NDK not initialized')
 	})
+
+	test('returns { profile: null, user: null } for a malformed identifier without a relay request', async () => {
+		const fetchUser = mock(async () => stubUser(null))
+		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 1, fetchUser })
+
+		const result = await fetchProfileByIdentifier('not-a-valid-identifier')
+
+		expect(result).toEqual({ profile: null, user: null })
+		expect(fetchUser).toHaveBeenCalledTimes(0)
+	})
 })

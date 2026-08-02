@@ -246,10 +246,6 @@ export const fetchProductsByPubkey = async (pubkey: string, includeHidden: boole
 		return []
 	}
 
-	// An empty pubkey would build { authors: [''] } and trip NDK's (fatal)
-	// filter guardrail.
-	if (!pubkey) return []
-
 	const filter: NDKFilter = {
 		kinds: [30402],
 		authors: [pubkey],

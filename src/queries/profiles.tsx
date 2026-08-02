@@ -2,6 +2,7 @@ import { ndkActions } from '@/lib/stores/ndk'
 import { type NDKUserProfile, NDKEvent, NDKUser } from '@nostr-dev-kit/ndk'
 import { NDKWoT } from '@nostr-dev-kit/wot'
 import { queryOptions, useQuery } from '@tanstack/react-query'
+import { validateProfileIdentifier } from '@/lib/utils/profileValidation'
 import { profileKeys } from './queryKeyFactory'
 
 export function normalizeOptionalString(value: unknown): string | null {
@@ -66,11 +67,12 @@ export const fetchProfileByIdentifier = async (identifier: string): Promise<{ pr
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
-	// An empty/blank identifier would make ndk.fetchUser('') construct an
-	// NDKUser with an empty pubkey, and user.fetchProfile() would then build
-	// { kinds: [0], authors: [''] } — an empty-string author that trips NDK's
-	// (fatal) filter guardrail. Bail out early instead.
-	if (!identifier || !identifier.trim()) {
+	// Reject invalid identifiers (empty, whitespace, truncated, or otherwise
+	// malformed) before any relay request — ndk.fetchUser builds an NDKUser
+	// whose pubkey ends up in a { kinds: [0], authors: [...] } filter, and an
+	// invalid value trips NDK's strict filter validation. This accepts hex,
+	// npub, nprofile, and nip05 (everything ndk.fetchUser accepts).
+	if (!validateProfileIdentifier(identifier).isValid) {
 		return { profile: null, user: null }
 	}
 
@@ -159,7 +161,10 @@ export const getProfileNip05 = ({ profile }: { profile: NDKUserProfile | null })
 export const useProfileName = (pubkey: string) => {
 	return useQuery({
 		...profileByIdentifierQueryOptions(pubkey),
-		enabled: !!pubkey,
+		// The pubkey feeds ndk.fetchUser, which accepts hex/npub/nprofile/nip05;
+		// gate on a valid identifier (not just truthiness) so whitespace,
+		// truncated, or malformed values don't activate a relay request.
+		enabled: validateProfileIdentifier(pubkey).isValid,
 		select: getProfileName,
 	})
 }
@@ -167,7 +172,7 @@ export const useProfileName = (pubkey: string) => {
 export const useProfileNip05 = (pubkey: string) => {
 	return useQuery({
 		...profileByIdentifierQueryOptions(pubkey),
-		enabled: !!pubkey,
+		enabled: validateProfileIdentifier(pubkey).isValid,
 		select: getProfileNip05,
 	})
 }

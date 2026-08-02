@@ -1,6 +1,7 @@
 import { PAYMENT_DETAILS_METHOD, ZAP_RELAYS, type PaymentDetailsMethod } from '@/lib/constants'
 import { configStore } from '@/lib/stores/config'
 import { ndkActions } from '@/lib/stores/ndk'
+import { isValidHexKey } from '@/lib/utils'
 import type { PayWithNwcParams } from '@/publish/payment'
 import { payInvoiceWithNwc, payInvoiceWithWebln } from '@/publish/payment'
 import { LightningAddress, type Invoice, type NostrProvider } from '@getalby/lightning-tools'
@@ -1148,9 +1149,9 @@ export const resolvePaymentDetailsForProduct = async (productId: string, sellerP
 		const ndk = ndkActions.getNDK()
 		if (!ndk) throw new Error('NDK not initialized')
 
-		// An empty seller pubkey would build { authors: [''] } (and a malformed
-		// coordinate) and trip NDK's (fatal) filter guardrail.
-		if (!sellerPubkey) return []
+		// A malformed (not just empty) seller pubkey would build { authors: [...] }
+		// (and a malformed coordinate) that trips NDK's strict filter validation.
+		if (!isValidHexKey(sellerPubkey)) return []
 
 		// 1. Check for product-specific payment details
 		const productCoordinates = `30402:${sellerPubkey}:${productId}`

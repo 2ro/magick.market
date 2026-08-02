@@ -56,12 +56,25 @@ that wouldn't load.
   default strict validation (a malformed appPubkey fails closed rather than
   broadening the query).
 
-### 2. Guard empty-string pubkey paths before building Nostr filters
+### 2. Validate identity inputs before building Nostr filters
 
-Query helpers that build `authors`/`#p` from a pubkey parameter short-circuit
-on an empty/blank pubkey (early-return / throw / `enabled: !!pubkey`) instead
-of constructing an invalid filter. No fetching logic is changed beyond
-guarding the error-causing condition.
+Query helpers that build `authors`/`#p` from a pubkey parameter reject a
+malformed pubkey (not just an empty one) before constructing the filter, using
+the repository-standard checks:
+
+- **Hex-pubkey fetchers** (`fetchAuthor`, `fetchShippingOptionsByPubkey`,
+  `fetchOrdersByBuyer`/`fetchOrdersBySeller`,
+  `fetchSellerPrivateOrderGiftWraps`, `fetchCollectionsByPubkey`,
+  `resolvePaymentDetailsForProduct`) use `isValidHexKey` — these build
+  `authors`/`#p` directly, which NDK's strict validation requires to be 64-hex.
+- **Identifier-accepting** paths (`fetchProfileByIdentifier`, `useProfileName`,
+  `useProfileNip05`) use `validateProfileIdentifier`, because they feed
+  `ndk.fetchUser`, which accepts hex/npub/nprofile/nip05. (The dashboard
+  messages route passes an npub route param to `useProfileName`, so a hex-only
+  gate would break that view.)
+
+This replaces the earlier truthiness (`!!pubkey`) guards, which permitted
+whitespace, truncated keys, and arbitrary malformed non-empty values.
 
 ### 3. Distinguish transient fetch failures from genuine absence; don't refetch stable kind-0
 
@@ -98,10 +111,8 @@ guarding the error-causing condition.
 
 ## Follow-ups (not in this PR, per review)
 
-- Upgrade the empty-pubkey guards from truthiness (`!!pubkey`) to full
-  repo-standard `isValidHexKey` validation, and validate profile identifiers
-  with `validateProfileIdentifier` before any relay request.
 - Validate `appPubkey` before the app-settings query and verify the returned
   event's publisher authority (author + kind 31990 + exact `d` tag).
-- Resolve the products-query overlap with #1206 (which uses `isValidHexKey`
-  at the query-activation boundary).
+- Products-by-pubkey is owned by #1206 (`enabled: isValidHexKey` at the
+  query-activation boundary); this PR does not guard products to avoid two
+  competing contracts. Merge #1206 before this PR and rebase onto the result.

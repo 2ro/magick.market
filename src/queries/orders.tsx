@@ -20,6 +20,7 @@ import {
 	type NDKSigner,
 } from '@/lib/nostr/ndk-events'
 import { ndkActions } from '@/lib/stores/ndk'
+import { isValidHexKey } from '@/lib/utils'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Event } from 'nostr-tools'
 import { useEffect, useMemo } from 'react'
@@ -87,9 +88,9 @@ export const fetchSellerPrivateOrderGiftWraps = async (sellerPubkey: string): Pr
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
-	// An empty seller pubkey would build { '#p': [''] } and trip NDK's (fatal)
-	// filter guardrail (#p is validated as 64-hex too).
-	if (!sellerPubkey) return []
+	// A malformed (not just empty) seller pubkey would build { '#p': [...] }
+	// that trips NDK's strict filter validation (#p must be 64-hex too).
+	if (!isValidHexKey(sellerPubkey)) return []
 
 	const giftWrapFilter: NDKFilter = {
 		kinds: [NIP59_GIFT_WRAP_KIND],
@@ -433,9 +434,9 @@ export const fetchOrdersByBuyer = async (buyerPubkey: string): Promise<OrderWith
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
-	// An empty buyer pubkey would build { authors: [''] } (and later
-	// allAuthors = ['', ...]) and trip NDK's (fatal) filter guardrail.
-	if (!buyerPubkey) return []
+	// A malformed (not just empty) buyer pubkey would build { authors: [...] }
+	// (and later contaminate allAuthors) that trips NDK's strict validation.
+	if (!isValidHexKey(buyerPubkey)) return []
 
 	// Orders where the specified user is the author (buyer sending order to merchant)
 	const orderCreationFilter: NDKFilter = {
@@ -624,9 +625,9 @@ export const fetchOrdersBySeller = async (
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
-	// An empty seller pubkey would build { '#p': [''] } and trip NDK's
-	// (fatal) filter guardrail (#p is validated as 64-hex too).
-	if (!sellerPubkey) return []
+	// A malformed (not just empty) seller pubkey would build { '#p': [...] }
+	// that trips NDK's strict filter validation (#p must be 64-hex too).
+	if (!isValidHexKey(sellerPubkey)) return []
 
 	// Orders where the specified user is the recipient (merchant receiving orders)
 	const orderReceivedFilter: NDKFilter = {
