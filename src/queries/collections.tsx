@@ -346,7 +346,7 @@ export const collectionsByPubkeyQueryOptions = (pubkey: string) =>
 	queryOptions({
 		queryKey: collectionsKeys.byPubkey(pubkey),
 		queryFn: () => fetchCollectionsByPubkey(pubkey),
-		enabled: !!pubkey,
+		enabled: isValidHexKey(pubkey),
 	})
 
 // --- HOOKS ---

@@ -50,4 +50,5 @@ export const authorQueryOptions = (pubkey: string) =>
 	queryOptions({
 		queryKey: authorKeys.details(pubkey),
 		queryFn: () => fetchAuthor(pubkey),
+		enabled: isValidHexKey(pubkey),
 	})

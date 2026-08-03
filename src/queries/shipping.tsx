@@ -201,6 +201,7 @@ export const shippingOptionsByPubkeyQueryOptions = (pubkey: string) =>
 	queryOptions({
 		queryKey: shippingKeys.byPubkey(pubkey),
 		queryFn: () => fetchShippingOptionsByPubkey(pubkey),
+		enabled: isValidHexKey(pubkey),
 		staleTime: 300000, // Added staleTime of 5 minutes (300,000 ms)
 	})
 
@@ -696,7 +697,6 @@ export const useShippingService = (id: string) => {
 export const useShippingOptionsByPubkey = (pubkey: string) => {
 	return useQuery({
 		...shippingOptionsByPubkeyQueryOptions(pubkey),
-		enabled: !!pubkey,
 	})
 }
 

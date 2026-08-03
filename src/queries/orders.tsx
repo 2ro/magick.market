@@ -611,7 +611,7 @@ export const useOrdersByBuyer = (buyerPubkey: string) => {
 	return useQuery({
 		queryKey: orderKeys.byBuyer(buyerPubkey),
 		queryFn: () => fetchOrdersByBuyer(buyerPubkey),
-		enabled: !!buyerPubkey,
+		enabled: isValidHexKey(buyerPubkey),
 	})
 }
 
@@ -825,7 +825,7 @@ export const useOrdersBySeller = (sellerPubkey: string, options: UseOrdersBySell
 						}
 					: undefined,
 			),
-		enabled: !!sellerPubkey,
+		enabled: isValidHexKey(sellerPubkey),
 	})
 }
 

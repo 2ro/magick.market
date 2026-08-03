@@ -80,7 +80,8 @@ malformed pubkey (not just an empty one) before constructing the filter, using
 the repository-standard checks:
 
 - **Hex-pubkey fetchers** (`fetchAuthor`, `fetchProductsByPubkey`,
-  `fetchShippingOptionsByPubkey`, `fetchOrdersByBuyer`/`fetchOrdersBySeller`,
+  `fetchUserPaymentDetails`, `fetchShippingOptionsByPubkey`,
+  `fetchOrdersByBuyer`/`fetchOrdersBySeller`,
   `fetchSellerPrivateOrderGiftWraps`, `fetchCollectionsByPubkey`,
   `resolvePaymentDetailsForProduct`) use `isValidHexKey` — these build
   `authors`/`#p` directly, which NDK's strict validation requires to be 64-hex.
@@ -88,8 +89,13 @@ the repository-standard checks:
   malformed pubkey reaching the fetcher is a programming error, not a data
   condition — the throw surfaces the bug in React Query's error state rather
   than silently returning an empty list that conflates "no results" with
-  "invalid input." The sibling fetchers (`fetchShippingOptionsByPubkey`, etc.)
-  return `[]` and may be migrated to the throw pattern in a follow-up.
+  "invalid input." The sibling fetchers (`fetchShippingOptionsByPubkey`,
+  `fetchUserPaymentDetails`, etc.) return `[]` because their try-catch blocks
+  swallow throws; they may be migrated to the throw pattern in a follow-up.
+  `fetchProductPaymentDetails` guards its optional-author path: if a pubkey is
+  provided but malformed, it returns `[]` (fail closed); if no pubkey is
+  provided, it proceeds with a broad query (no `authors` filter) — that
+  broadening is intentional.
 - **Identifier-accepting** paths (`fetchProfileByIdentifier`, `useProfileName`,
   `useProfileNip05`, `useProfile`) use `validateProfileIdentifier`, because
   they feed `ndk.fetchUser`, which accepts hex/npub/nprofile/nip05. (The
@@ -100,9 +106,15 @@ the repository-standard checks:
   `useQuery` callers. Callers with additional conditions COMBINE (not
   overwrite) the factory's `enabled`, e.g.
   `enabled: options.enabled && !validationError`.
-- **Hex-pubkey query factories** (`productsByPubkeyQueryOptions`,
-  `wotScoreQueryOptions`) use `isValidHexKey` at the factory level, so
-  `useProductsByPubkey`, `useWotScore`, and direct callers inherit the guard.
+- **Hex-pubkey query factories** (`authorQueryOptions`,
+  `productsByPubkeyQueryOptions`, `collectionsByPubkeyQueryOptions`,
+  `shippingOptionsByPubkeyQueryOptions`, `wotScoreQueryOptions`) use
+  `isValidHexKey` at the factory level, so `useProductsByPubkey`,
+  `useCollectionsByPubkey`, `useShippingOptionsByPubkey`, `useWotScore`, and
+  direct callers inherit the guard. Hooks that build queries inline
+  (`useOrdersByBuyer`, `useOrdersBySeller`, `useUserPaymentDetails`,
+  `useRichUserPaymentDetails`, `useWalletDetail`, `useAvailablePaymentOptions`)
+  also use `isValidHexKey` at the `enabled` boundary.
   Consumers with additional conditions COMBINE (not overwrite) the factory's
   `enabled`, e.g. `enabled: productOptions.enabled && isAuthenticated`.
   Truthiness checks (`!!pubkey`) are dropped because `isValidHexKey` implies
