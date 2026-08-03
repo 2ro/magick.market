@@ -75,10 +75,18 @@ the repository-standard checks:
   `resolvePaymentDetailsForProduct`) use `isValidHexKey` — these build
   `authors`/`#p` directly, which NDK's strict validation requires to be 64-hex.
 - **Identifier-accepting** paths (`fetchProfileByIdentifier`, `useProfileName`,
-  `useProfileNip05`) use `validateProfileIdentifier`, because they feed
-  `ndk.fetchUser`, which accepts hex/npub/nprofile/nip05. (The dashboard
-  messages route passes an npub route param to `useProfileName`, so a hex-only
-  gate would break that view.)
+  `useProfileNip05`, `useProfile`) use `validateProfileIdentifier`, because
+  they feed `ndk.fetchUser`, which accepts hex/npub/nprofile/nip05. (The
+  dashboard messages route passes an npub route param to `useProfileName`, so
+  a hex-only gate would break that view.) The validation lives in the shared
+  `profileByIdentifierQueryOptions` factory (`enabled`), not in individual
+  hooks, so every consumer is gated — including route loaders and direct
+  `useQuery` callers. Callers with additional conditions COMBINE (not
+  overwrite) the factory's `enabled`, e.g.
+  `enabled: options.enabled && !validationError`.
+- **Hex-pubkey query factories** (`wotScoreQueryOptions`) use `isValidHexKey`
+  at the factory level, so `useWotScore` and direct callers like `WotScore.tsx`
+  inherit the guard.
 
 This replaces the earlier truthiness (`!!pubkey`) guards, which permitted
 whitespace, truncated keys, and arbitrary malformed non-empty values.

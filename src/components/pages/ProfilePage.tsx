@@ -41,6 +41,7 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 	const [animationParent] = useAutoAnimate()
 	const validationError = getProfileIdentifierValidationError(profileId)
 
+	const profileOptions = profileByIdentifierQueryOptions(profileId)
 	const {
 		data: profileData,
 		isFetching: profileIsFetching,
@@ -49,8 +50,8 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 		error: profileError,
 		refetch: refetchProfile,
 	} = useQuery({
-		...profileByIdentifierQueryOptions(profileId),
-		enabled: !validationError,
+		...profileOptions,
+		enabled: profileOptions.enabled && !validationError,
 		// Profile metadata (kind 0) is slow-changing and is invalidated
 		// explicitly on edit. A refocus refetch that fails transiently
 		// (timeout/disconnect) now throws from fetchProfileByIdentifier,

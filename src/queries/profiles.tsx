@@ -3,6 +3,7 @@ import { type NDKUserProfile, NDKEvent, NDKUser } from '@nostr-dev-kit/ndk'
 import { NDKWoT } from '@nostr-dev-kit/wot'
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import { validateProfileIdentifier } from '@/lib/utils/profileValidation'
+import { isValidHexKey } from '@/lib/utils'
 import { profileKeys } from './queryKeyFactory'
 
 export function normalizeOptionalString(value: unknown): string | null {
@@ -121,6 +122,11 @@ export const profileByIdentifierQueryOptions = (identifier: string) =>
 	queryOptions({
 		queryKey: profileKeys.details(identifier),
 		queryFn: () => fetchProfileByIdentifier(identifier),
+		// Gate at the shared factory so every consumer — hooks, route loaders,
+		// and direct useQuery callers — gets the same validation. Callers that
+		// need additional conditions must COMBINE (not overwrite) this base,
+		// e.g. `enabled: options.enabled && myCondition`.
+		enabled: validateProfileIdentifier(identifier).isValid,
 	})
 
 export const validateNip05 = async (pubkey: string): Promise<boolean | null> => {
@@ -162,10 +168,6 @@ export const getProfileNip05 = ({ profile }: { profile: NDKUserProfile | null })
 export const useProfileName = (pubkey: string) => {
 	return useQuery({
 		...profileByIdentifierQueryOptions(pubkey),
-		// The pubkey feeds ndk.fetchUser, which accepts hex/npub/nprofile/nip05;
-		// gate on a valid identifier (not just truthiness) so whitespace,
-		// truncated, or malformed values don't activate a relay request.
-		enabled: validateProfileIdentifier(pubkey).isValid,
 		select: getProfileName,
 	})
 }
@@ -173,16 +175,15 @@ export const useProfileName = (pubkey: string) => {
 export const useProfileNip05 = (pubkey: string) => {
 	return useQuery({
 		...profileByIdentifierQueryOptions(pubkey),
-		enabled: validateProfileIdentifier(pubkey).isValid,
 		select: getProfileNip05,
 	})
 }
 
 export const useProfile = (pubkey: string | undefined) => {
+	const options = profileByIdentifierQueryOptions(pubkey ?? '')
 	return useQuery({
-		queryKey: profileKeys.details(pubkey ?? ''),
-		queryFn: () => fetchProfileByIdentifier(pubkey!),
-		enabled: !!pubkey,
+		...options,
+		enabled: options.enabled,
 		staleTime: 5 * 60 * 1000,
 		retry: 2,
 	})
@@ -353,7 +354,7 @@ export const wotScoreQueryOptions = (pubkey: string) =>
 	queryOptions({
 		queryKey: profileKeys.wot(pubkey),
 		queryFn: () => getWotScore(pubkey),
-		enabled: !!pubkey,
+		enabled: isValidHexKey(pubkey),
 		retry: 2,
 		retryDelay: 1000,
 	})
@@ -361,6 +362,5 @@ export const wotScoreQueryOptions = (pubkey: string) =>
 export const useWotScore = (pubkey: string) => {
 	return useQuery({
 		...wotScoreQueryOptions(pubkey),
-		enabled: !!pubkey,
 	})
 }

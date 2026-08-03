@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient } from '@tanstack/react-query'
 
 import { ndkActions } from '@/lib/stores/ndk'
-import { fetchProfileByIdentifier } from '../profiles'
+import { fetchProfileByIdentifier, profileByIdentifierQueryOptions, wotScoreQueryOptions } from '../profiles'
 
 // Infer NDK return types from the function under test instead of importing
 // the NDK package directly — the NDK-footprint CI guard counts any src/ file
@@ -191,5 +191,29 @@ describe('QueryClient retains cached profile data after a rejected same-key refe
 		// The cache must still retain the previous profile data.
 		const cached = queryClient.getQueryData<{ profile: NDKUserProfileLike | null; user: unknown }>(queryKey)
 		expect(cached?.profile).toEqual(profile)
+	})
+})
+
+describe('identity-scoped query options disable for invalid input (zero relay I/O)', () => {
+	test('profileByIdentifierQueryOptions disables for empty / whitespace / malformed identifiers', () => {
+		expect(profileByIdentifierQueryOptions('').enabled).toBe(false)
+		expect(profileByIdentifierQueryOptions('   ').enabled).toBe(false)
+		expect(profileByIdentifierQueryOptions('not-a-valid-identifier').enabled).toBe(false)
+		expect(profileByIdentifierQueryOptions('abc').enabled).toBe(false)
+	})
+
+	test('profileByIdentifierQueryOptions enables for valid hex pubkeys', () => {
+		expect(profileByIdentifierQueryOptions(VALID_HEX).enabled).toBe(true)
+	})
+
+	test('wotScoreQueryOptions disables for invalid hex pubkeys', () => {
+		expect(wotScoreQueryOptions('').enabled).toBe(false)
+		expect(wotScoreQueryOptions('   ').enabled).toBe(false)
+		expect(wotScoreQueryOptions('not-hex').enabled).toBe(false)
+		expect(wotScoreQueryOptions('abc'.repeat(10)).enabled).toBe(false)
+	})
+
+	test('wotScoreQueryOptions enables for valid 64-char hex pubkeys', () => {
+		expect(wotScoreQueryOptions(VALID_HEX).enabled).toBe(true)
 	})
 })
