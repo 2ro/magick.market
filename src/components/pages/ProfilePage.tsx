@@ -80,9 +80,10 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 		}
 	}, [user])
 
+	const sellerProductOptions = productsByPubkeyQueryOptions(profilePubkey ?? '')
 	const { data: sellerProducts = [], isLoading: sellerProductsIsLoading } = useQuery({
-		...productsByPubkeyQueryOptions(profilePubkey ?? ''),
-		enabled: !!profilePubkey,
+		...sellerProductOptions,
+		enabled: sellerProductOptions.enabled,
 	})
 
 	const [showFullAbout, setShowFullAbout] = useState(false)

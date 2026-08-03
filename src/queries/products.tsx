@@ -241,6 +241,8 @@ export const fetchProduct = async (id: string) => {
  * @returns Array of product events sorted by creation date (blacklist filtered, optionally hidden products excluded)
  */
 export const fetchProductsByPubkey = async (pubkey: string, includeHidden: boolean = false, limit: number = 50) => {
+	if (!isValidHexKey(pubkey)) throw new Error('fetchProductsByPubkey: invalid seller pubkey')
+
 	const ndk = ndkActions.getNDK()
 	if (!ndk) {
 		console.warn('NDK not ready, returning empty products by pubkey list')
