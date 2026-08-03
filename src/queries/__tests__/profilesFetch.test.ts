@@ -118,4 +118,33 @@ describe('fetchProfileByIdentifier distinguishes genuine absence from transient 
 		expect(result).toEqual({ profile: null, user: null })
 		expect(fetchUser).toHaveBeenCalledTimes(0)
 	})
+
+	test('can be retried after a transient failure: second call succeeds once the relay is ready', async () => {
+		// Simulate the zero-relay startup scenario: the first call times out
+		// (no relay connected), then the relay connects and the retry succeeds.
+		// This proves that refetchOnReconnect / the retry button recover the
+		// query — the fetcher is stateless and a second invocation works.
+		const hangingUser = {
+			pubkey: VALID_HEX,
+			fetchProfile: () => new Promise<NDKUserProfileLike | null>(() => {}),
+		} as unknown as NDKUserLike
+		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 0, fetchUser: async () => hangingUser })
+		globalThis.setTimeout = ((cb: () => void) => {
+			cb()
+			return 0 as unknown as ReturnType<typeof globalThis.setTimeout>
+		}) as typeof globalThis.setTimeout
+
+		await expect(fetchProfileByIdentifier(VALID_HEX)).rejects.toThrow('Profile fetch timed out')
+
+		// Restore real setTimeout and simulate relay now being ready.
+		globalThis.setTimeout = realSetTimeout as typeof globalThis.setTimeout
+		const profile = { name: 'alice', about: 'hi' } as NDKUserProfileLike
+		const readyUser = stubUser(profile)
+		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 1, fetchUser: async () => readyUser })
+
+		const result = await fetchProfileByIdentifier(VALID_HEX)
+
+		expect(result.profile).toBe(profile)
+		expect(result.user).toBe(readyUser)
+	})
 })

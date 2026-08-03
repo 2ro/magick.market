@@ -26,7 +26,7 @@ import { useAutoAnimate } from '@formkit/auto-animate/react'
 import type { NDKEvent } from '@nostr-dev-kit/ndk'
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Edit, MapPin, MessageCircle, Minus, Plus, Share2, Timer } from 'lucide-react'
+import { Edit, MapPin, MessageCircle, Minus, Plus, RotateCcw, Share2, Timer } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
 import { UserCard } from '../UserCard'
@@ -45,21 +45,26 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 		data: profileData,
 		isFetching: profileIsFetching,
 		isLoading: profileIsLoading,
+		refetch: refetchProfile,
 	} = useQuery({
 		...profileByIdentifierQueryOptions(profileId),
 		enabled: !validationError,
 		// Profile metadata (kind 0) is slow-changing and is invalidated
-		// explicitly on edit. A refocus/reconnect refetch that fails
-		// transiently (timeout/disconnect) now throws from
-		// fetchProfileByIdentifier, so React Query retains the previous
-		// profile (isError + retained data) instead of committing null.
-		// keepPreviousData keeps it visible during the in-flight refetch,
-		// and the error condition below only fires when there is genuinely
-		// no profile to show. See profilesFetch.test.ts.
+		// explicitly on edit. A refocus refetch that fails transiently
+		// (timeout/disconnect) now throws from fetchProfileByIdentifier,
+		// so React Query retains the previous profile (isError + retained
+		// data) instead of committing null. keepPreviousData keeps it
+		// visible during the in-flight refetch, and the error condition
+		// below only fires when there is genuinely no profile to show.
+		//
+		// refetchOnReconnect is preserved (RQ default) so that an initial
+		// profile query that failed during zero-relay startup is retried
+		// automatically once the relay connects. A failed reconnect refetch
+		// throws (transient), so RQ retains the previous profile via
+		// keepPreviousData — it does not clobber. See profilesFetch.test.ts.
 		placeholderData: keepPreviousData,
 		staleTime: 60_000,
 		refetchOnWindowFocus: false,
-		refetchOnReconnect: false,
 	})
 	const { profile, user } = profileData || {}
 
@@ -233,12 +238,15 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 		(invalidResolvedPubkeyError ? 'This profile resolved to an invalid pubkey.' : null) ??
 		(profileNotFoundError ? 'This profile is unavailable or could not be loaded. Please try again later or check the URL.' : null)
 
+	const canRetry = !validationError && !invalidResolvedPubkeyError
+
 	if (errorMessage) {
 		return (
 			<ProfileErrorState
 				title={validationError ? 'Invalid profile identifier' : 'Could not load user profile'}
 				message={errorMessage}
 				gradientColor={profilePubkey ? getHexColorFingerprintFromHexPubkey(profilePubkey) : undefined}
+				onRetry={canRetry ? () => refetchProfile() : undefined}
 			/>
 		)
 	}
@@ -406,9 +414,10 @@ interface ProfileErrorStateProps {
 	title: string
 	message: string
 	gradientColor?: string
+	onRetry?: () => void
 }
 
-function ProfileErrorState({ title, message, gradientColor = 'hsl(0, 0%, 30%)' }: ProfileErrorStateProps) {
+function ProfileErrorState({ title, message, gradientColor = 'hsl(0, 0%, 30%)', onRetry }: ProfileErrorStateProps) {
 	return (
 		<div className="relative flex flex-col min-h-screen">
 			<div className="top-0 right-0 left-0 z-0 absolute bg-hero-image-margin h-[40vh] sm:h-[40vh] md:h-[50vh] overflow-hidden">
@@ -424,6 +433,12 @@ function ProfileErrorState({ title, message, gradientColor = 'hsl(0, 0%, 30%)' }
 				<div className="mx-auto w-full max-w-3xl rounded-3xl border border-border bg-background/90 p-8 text-center shadow-xl backdrop-blur">
 					<h1 className="text-3xl font-semibold text-foreground">{title}</h1>
 					<p className="mt-4 text-sm text-muted-foreground">{message}</p>
+					{onRetry && (
+						<Button onClick={onRetry} className="mt-6" variant="secondary">
+							<RotateCcw className="w-4 h-4 mr-2" />
+							Try again
+						</Button>
+					)}
 				</div>
 			</div>
 		</div>
