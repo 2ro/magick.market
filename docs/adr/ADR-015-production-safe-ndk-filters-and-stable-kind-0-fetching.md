@@ -152,6 +152,6 @@ app actually trusts:
 
 ## Follow-ups (not in this PR, per review)
 
-- Products-by-pubkey is owned by #1206 (`enabled: isValidHexKey` at the
-  query-activation boundary); this PR does not guard products to avoid two
-  competing contracts. Merge #1206 before this PR and rebase onto the result.
+- None. The products-by-pubkey guard from #1206 (`enabled: isValidHexKey`
+  at the query-activation boundary) has been incorporated into this PR;
+  #1206 is closed as superseded.
