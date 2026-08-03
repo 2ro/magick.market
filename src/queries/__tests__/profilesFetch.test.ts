@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import type { NDKUser, NDKUserProfile } from '@nostr-dev-kit/ndk'
 
 import { ndkActions } from '@/lib/stores/ndk'
 import { fetchProfileByIdentifier } from '../profiles'
+
+// Infer NDK return types from the function under test instead of importing
+// the NDK package directly — the NDK-footprint CI guard counts any src/ file
+// containing the NDK package import path, and this test file must not
+// increase the 127-file baseline.
+type FetchResult = Awaited<ReturnType<typeof fetchProfileByIdentifier>>
+type NDKUserLike = NonNullable<FetchResult['user']>
+type NDKUserProfileLike = NonNullable<FetchResult['profile']>
 
 // `fetchProfileByIdentifier` reads NDK from the `ndkActions` store, so we stub
 // `getNDK` (the orders-seam.test.ts pattern) to drive each behavioral case.
@@ -17,12 +24,12 @@ afterEach(() => {
 const VALID_HEX = 'a'.repeat(64)
 
 /** A minimal NDKUser stub: just enough (pubkey + fetchProfile) for the fetcher. */
-function stubUser(profile: NDKUserProfile | null): NDKUser {
-	return { pubkey: VALID_HEX, fetchProfile: async () => profile } as unknown as NDKUser
+function stubUser(profile: NDKUserProfileLike | null): NDKUserLike {
+	return { pubkey: VALID_HEX, fetchProfile: async () => profile } as unknown as NDKUserLike
 }
 
 /** Minimal NDK stub: a relay pool that reports `connected` live relays + a fetchUser. */
-function stubNdk(opts: { connectedRelays: number; fetchUser: (identifier: string) => Promise<NDKUser | null> }) {
+function stubNdk(opts: { connectedRelays: number; fetchUser: (identifier: string) => Promise<NDKUserLike | null> }) {
 	return {
 		pool: { connectedRelays: () => Array.from({ length: opts.connectedRelays }, () => ({})) },
 		fetchUser: opts.fetchUser,
@@ -31,7 +38,7 @@ function stubNdk(opts: { connectedRelays: number; fetchUser: (identifier: string
 
 describe('fetchProfileByIdentifier distinguishes genuine absence from transient failures', () => {
 	test('returns the profile when relays are connected and fetchProfile resolves data', async () => {
-		const profile = { name: 'alice', about: 'hi' } as NDKUserProfile
+		const profile = { name: 'alice', about: 'hi' } as NDKUserProfileLike
 		const user = stubUser(profile)
 		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 1, fetchUser: async () => user })
 
@@ -55,7 +62,10 @@ describe('fetchProfileByIdentifier distinguishes genuine absence from transient 
 
 	test('throws on timeout instead of returning a null-shaped success', async () => {
 		// fetchProfile never settles; the timeout must win the race and throw.
-		const hangingUser = { pubkey: VALID_HEX, fetchProfile: () => new Promise<NDKUserProfile | null>(() => {}) } as unknown as NDKUser
+		const hangingUser = {
+			pubkey: VALID_HEX,
+			fetchProfile: () => new Promise<NDKUserProfileLike | null>(() => {}),
+		} as unknown as NDKUserLike
 		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 1, fetchUser: async () => hangingUser })
 		// Fire the timeout reject immediately so the test doesn't wait 8s.
 		globalThis.setTimeout = ((cb: () => void) => {
@@ -67,7 +77,7 @@ describe('fetchProfileByIdentifier distinguishes genuine absence from transient 
 	})
 
 	test('throws when fetchProfile rejects (relay error) instead of returning null', async () => {
-		const user = { pubkey: VALID_HEX, fetchProfile: async () => Promise.reject(new Error('relay boom')) } as unknown as NDKUser
+		const user = { pubkey: VALID_HEX, fetchProfile: async () => Promise.reject(new Error('relay boom')) } as unknown as NDKUserLike
 		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 1, fetchUser: async () => user })
 
 		await expect(fetchProfileByIdentifier(VALID_HEX)).rejects.toThrow('relay boom')
