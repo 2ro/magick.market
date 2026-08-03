@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { QueryClient } from '@tanstack/react-query'
 
 import { ndkActions } from '@/lib/stores/ndk'
 import { fetchProfileByIdentifier } from '../profiles'
@@ -146,5 +147,49 @@ describe('fetchProfileByIdentifier distinguishes genuine absence from transient 
 
 		expect(result.profile).toBe(profile)
 		expect(result.user).toBe(readyUser)
+	})
+})
+
+describe('QueryClient retains cached profile data after a rejected same-key refetch', () => {
+	test('previous profile survives a failed refetch (RQ v5 fetchFailed reducer spreads state)', async () => {
+		// Prove that keepPreviousData + the throw-on-transient contract work
+		// together: after a successful fetch, a rejected refetch of the same
+		// query key does NOT evict the cached data. RQ v5's fetchFailed reducer
+		// does `...state` (preserving data) before setting status: "error".
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		})
+		const queryKey = ['profile', 'test']
+
+		// First fetch: succeeds with a profile.
+		const profile = { name: 'alice', about: 'hi' } as NDKUserProfileLike
+		const goodUser = stubUser(profile)
+		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 1, fetchUser: async () => goodUser })
+
+		const result1 = await queryClient.fetchQuery({
+			queryKey,
+			queryFn: () => fetchProfileByIdentifier(VALID_HEX),
+			staleTime: 0,
+		})
+		expect(result1.profile).toEqual(profile)
+
+		// Second fetch: the relay now rejects. staleTime: 0 forces a re-run.
+		const failingUser = {
+			pubkey: VALID_HEX,
+			fetchProfile: async () => Promise.reject(new Error('relay boom')),
+		} as unknown as NDKUserLike
+		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 1, fetchUser: async () => failingUser })
+
+		await expect(
+			queryClient.fetchQuery({
+				queryKey,
+				queryFn: () => fetchProfileByIdentifier(VALID_HEX),
+				staleTime: 0,
+			}),
+		).rejects.toThrow('relay boom')
+
+		// The cache must still retain the previous profile data.
+		const cached = queryClient.getQueryData<{ profile: NDKUserProfileLike | null; user: unknown }>(queryKey)
+		expect(cached?.profile).toEqual(profile)
 	})
 })

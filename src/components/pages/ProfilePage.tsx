@@ -45,6 +45,8 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 		data: profileData,
 		isFetching: profileIsFetching,
 		isLoading: profileIsLoading,
+		isError: profileIsError,
+		error: profileError,
 		refetch: refetchProfile,
 	} = useQuery({
 		...profileByIdentifierQueryOptions(profileId),
@@ -226,24 +228,43 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 		validateBanner()
 	}, [profile?.banner])
 
-	// "Not found" = settled with no kind-0 metadata to show. Transient failures
-	// (timeout/disconnect/relay error) throw from fetchProfileByIdentifier, so
-	// React Query keeps the previous profile data and `profile` stays non-null
-	// — this no longer false-fires on a failed backgrounded-tab refetch. It
-	// fires only for genuine absence (settled, profile is null).
-	const profileNotFoundError = !validationError && !profileIsLoading && !profileIsFetching && !profile
-	const invalidResolvedPubkeyError = !validationError && !profileIsLoading && !profileIsFetching && !!user && !profilePubkey
+	// Transport error: the query failed (timeout, disconnect, relay
+	// exception) on initial load with no cached profile to show. This is
+	// distinct from genuine absence (below) — it is retryable. When a
+	// background refetch fails after a successful load, keepPreviousData
+	// retains the profile and `profile` stays non-null, so this does not
+	// fire and the profile remains visible (covered by profilesFetch.test.ts
+	// QueryClient test).
+	const profileTransportError = !validationError && !profileIsLoading && !profileIsFetching && profileIsError && !profile
+	// Genuine absence: the query succeeded (no error) but no kind-0 metadata
+	// was observed from the configured relays for this user.
+	const profileNotFoundError = !validationError && !profileIsLoading && !profileIsFetching && !profileIsError && !profile
+	const invalidResolvedPubkeyError =
+		!validationError && !profileIsLoading && !profileIsFetching && !profileIsError && !!user && !profilePubkey
 	const errorMessage =
 		validationError ??
+		(profileTransportError
+			? `Could not load this profile: ${profileError instanceof Error ? profileError.message : 'the relay may be unreachable or still connecting'}. Please try again.`
+			: null) ??
 		(invalidResolvedPubkeyError ? 'This profile resolved to an invalid pubkey.' : null) ??
-		(profileNotFoundError ? 'This profile is unavailable or could not be loaded. Please try again later or check the URL.' : null)
+		(profileNotFoundError ? 'No profile metadata was observed from the configured relays for this user.' : null)
 
-	const canRetry = !validationError && !invalidResolvedPubkeyError
+	// Only transport errors are retryable; genuine absence and invalid
+	// identifiers are settled states.
+	const canRetry = profileTransportError
+
+	const errorTitle = validationError
+		? 'Invalid profile identifier'
+		: profileTransportError
+			? 'Could not load user profile'
+			: invalidResolvedPubkeyError
+				? 'Invalid profile'
+				: 'Profile not found'
 
 	if (errorMessage) {
 		return (
 			<ProfileErrorState
-				title={validationError ? 'Invalid profile identifier' : 'Could not load user profile'}
+				title={errorTitle}
 				message={errorMessage}
 				gradientColor={profilePubkey ? getHexColorFingerprintFromHexPubkey(profilePubkey) : undefined}
 				onRetry={canRetry ? () => refetchProfile() : undefined}
