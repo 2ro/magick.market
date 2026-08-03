@@ -90,10 +90,17 @@ describe('fetchProfileByIdentifier distinguishes genuine absence from transient 
 		await expect(fetchProfileByIdentifier(VALID_HEX)).rejects.toThrow('fetchUser boom')
 	})
 
-	test('throws on no relay connection instead of returning null', async () => {
-		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 0, fetchUser: async () => stubUser(null) })
+	test('does not preflight-throw on zero connected relays; proceeds to fetchProfile', async () => {
+		// Zero connected relays is a normal transient state while connect()
+		// completes; the fetcher must not throw a preflight error but instead
+		// proceed and let the timeout/operation determine the outcome.
+		const user = stubUser(null)
+		;(ndkActions as { getNDK: () => unknown }).getNDK = () => stubNdk({ connectedRelays: 0, fetchUser: async () => user })
 
-		await expect(fetchProfileByIdentifier(VALID_HEX)).rejects.toThrow('No relay connection')
+		const result = await fetchProfileByIdentifier(VALID_HEX)
+
+		expect(result.profile).toBeNull()
+		expect(result.user).toBe(user)
 	})
 
 	test('throws when NDK is not initialized', async () => {

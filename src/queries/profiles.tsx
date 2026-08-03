@@ -76,19 +76,20 @@ export const fetchProfileByIdentifier = async (identifier: string): Promise<{ pr
 		return { profile: null, user: null }
 	}
 
-	// Distinguish transient failures (no connection, timeout, relay errors)
-	// from genuine profile absence. Transient failures must THROW so React
-	// Query treats them as `isError` and retains any previously-loaded profile
-	// (see `placeholderData: keepPreviousData` in ProfilePage) instead of
+	// Distinguish transient failures (timeout, relay errors) from genuine
+	// profile absence. Transient failures must THROW so React Query treats
+	// them as `isError` and retains any previously-loaded profile (see
+	// `placeholderData: keepPreviousData` in ProfilePage) instead of
 	// committing a null-shaped "success" that clobbers a loaded profile. Only
-	// genuine absence — relays connected and fetchProfile() resolved to null —
-	// returns the null-shaped value. (Behavioral cases covered in
-	// profilesFetch.test.ts.)
-	const connectedRelays = ndk.pool?.connectedRelays() ?? []
-	if (connectedRelays.length === 0) {
-		throw new Error('No relay connection available to fetch profile')
-	}
-
+	// genuine absence — fetchProfile() resolved to null — returns the
+	// null-shaped value.
+	//
+	// No preflight relay-connection check: zero connected relays is a normal
+	// transient state while the app's background connect() completes. A
+	// preflight throw would fail an otherwise-valid initial query before the
+	// relay is ready. Instead, let the timeout below determine failure — if no
+	// relay connects within the timeout window, the race rejects (transient,
+	// retryable). (Behavioral cases covered in profilesFetch.test.ts.)
 	const timeoutMs = 8000
 	// No try/catch: let the timeout and fetchUser/fetchProfile rejections
 	// propagate as query errors. Only fetchProfile() resolving to null
