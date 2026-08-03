@@ -52,19 +52,15 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 	} = useQuery({
 		...profileOptions,
 		enabled: profileOptions.enabled && !validationError,
-		// Profile metadata (kind 0) is slow-changing and is invalidated
-		// explicitly on edit. A refocus refetch that fails transiently
-		// (timeout/disconnect) now throws from fetchProfileByIdentifier,
-		// so React Query retains the previous profile (isError + retained
-		// data) instead of committing null. keepPreviousData keeps it
-		// visible during the in-flight refetch, and the error condition
-		// below only fires when there is genuinely no profile to show.
+		// Profile metadata is slow-changing. Transient fetch failures reject,
+		// so React Query retains previously cached data rather than committing
+		// a null-shaped success. keepPreviousData preserves observer data while
+		// switching query keys.
 		//
-		// refetchOnReconnect is preserved (RQ default) so that an initial
-		// profile query that failed during zero-relay startup is retried
-		// automatically once the relay connects. A failed reconnect refetch
-		// throws (transient), so RQ retains the previous profile via
-		// keepPreviousData — it does not clobber. See profilesFetch.test.ts.
+		// Window-focus refetching is disabled. The default reconnect policy
+		// covers browser online/offline recovery only; it does not observe NDK
+		// relay readiness. Initial failures remain recoverable through normal
+		// retries and the manual Try again action below.
 		placeholderData: keepPreviousData,
 		staleTime: 60_000,
 		refetchOnWindowFocus: false,
@@ -232,13 +228,13 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 
 	// Transport error: the query failed (timeout, disconnect, relay
 	// exception) on initial load with no cached profile to show. This is
-	// distinct from genuine absence (below) — it is retryable. When a
+	// distinct from metadata not observed (below) — it is retryable. When a
 	// background refetch fails after a successful load, keepPreviousData
 	// retains the profile and `profile` stays non-null, so this does not
 	// fire and the profile remains visible (covered by profilesFetch.test.ts
 	// QueryClient test).
 	const profileTransportError = !validationError && !profileIsLoading && !profileIsFetching && profileIsError && !profile
-	// Genuine absence: the query succeeded (no error) but no kind-0 metadata
+	// Metadata not observed: the query succeeded (no error) but no kind-0 metadata
 	// was observed from the configured relays for this user.
 	const profileNotFoundError = !validationError && !profileIsLoading && !profileIsFetching && !profileIsError && !profile
 	const invalidResolvedPubkeyError =
@@ -251,7 +247,7 @@ export function ProfilePage({ profileId }: ProfilePageProps) {
 		(invalidResolvedPubkeyError ? 'This profile resolved to an invalid pubkey.' : null) ??
 		(profileNotFoundError ? 'No profile metadata was observed from the configured relays for this user.' : null)
 
-	// Only transport errors are retryable; genuine absence and invalid
+	// Only transport errors are retryable; metadata not observed and invalid
 	// identifiers are settled states.
 	const canRetry = profileTransportError
 
