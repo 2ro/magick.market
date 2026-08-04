@@ -172,9 +172,17 @@ function candidateEvent(id: string, createdAt: number): NDKEvent {
 }
 
 function expectNoPii(value: unknown): void {
-	const serialized = JSON.stringify(value)
+	// Check PII sentinels only in human-readable fields (content, tags),
+	// not in cryptographic fields (id, pubkey, sig) whose random hex
+	// characters can coincidentally contain a sentinel substring (e.g.
+	// "90210" appearing in a random 64-char hex pubkey).
+	const event = value as { content?: unknown; tags?: unknown }
+	const humanReadable = JSON.stringify({
+		content: event.content ?? '',
+		tags: event.tags ?? [],
+	})
 	for (const sentinel of PII_SENTINELS) {
-		expect(serialized).not.toContain(sentinel)
+		expect(humanReadable).not.toContain(sentinel)
 	}
 }
 
