@@ -1,3 +1,9 @@
+# ADR: Component UI Migration & Widget Book
+
+## Status
+
+Proposed — open for review on PR #1212.
+
 ## Context
 
 The codebase has grown to span multiple domains, resulting in a fragmented UI layer where components are scattered, duplicated, and inconsistent. There are no fixed rules governing component location, styling, or API contracts, leading to hardcoded colors bypassing the CSS variable system, business logic embedded in presentational components, and component-specific styling mixed with global theme definitions. Dark mode lacks coherence with the light theme, and while Shadcn/UI primitives exist, there is no standardized wrapper layer, no shared directory for domain-specific UI, and no enforcement mechanism preventing new ad-hoc components from being created in arbitrary locations.
@@ -9,13 +15,53 @@ The codebase has grown to span multiple domains, resulting in a fragmented UI la
 **1a. Stylesheet: Scoped Theme + Slice-by-Slice Migration**
 The app should define a new theme under a `.theme-new { ... }` class scope (in a dedicated `styles/globals-new.css`, imported after the existing `styles/globals.css`), rather than on `:root`. Scoping the new token system to a class — applied to migrated subtrees via a `ThemeMigrationWrapper` component — is what enables **slice-by-slice migration**: new and old UI can coexist on the same page without one clobbering the other, because CSS custom properties are DOM-scoped rather than layer-scoped. The legacy `globals.css` `:root` tokens remain the default for unmigrated UI and are removed only when the whole app is wrapped and no legacy consumers remain.
 
-- Define a clean token system inside `.theme-new` (with `& .dark { ... }` for dark mode, and `@theme inline` consuming the scoped variables) modeled on standard Shadcn conventions (e.g., `primary`, `secondary`, `muted`, `accent`). See an example here: https://ui.shadcn.com/docs/theming
+- Define a clean token system inside `.theme-new` (with `.dark .theme-new`
+  for dark mode, and `@theme inline` at the **top level** of the stylesheet
+  consuming the scoped variables) modeled on standard Shadcn conventions
+  (e.g., `primary`, `secondary`, `muted`, `accent`). See an example here:
+  https://ui.shadcn.com/docs/theming
+  - **Note:** Tailwind v4 does not support `@theme` inside a class selector.
+    The `@theme inline` block must be at the top level of
+    `globals-new.css`, not nested inside `.theme-new { ... }`. The `var()`
+    references in `@theme inline` resolve to the scoped custom properties when
+    used inside a `.theme-new` subtree and to `:root` defaults outside it.
+  - **Dark mode selector:** Use `.dark .theme-new` (ancestor selector) so that
+    dark mode applies when the `.dark` class is on an ancestor element (e.g.
+    `html.dark`), mirroring the legacy `globals.css` pattern. This is an
+    ancestor selector, not a nested `& .dark` descendant selector.
 - **Color standard:** Tokens should be defined using **`oklch`**, the preferred color standard for this stylesheet.
 - Change the font specification from `font-serif` and `font-sans` to `font-body` and `font-header`. This is more semantic, usage-based definition that more widely applies to all websites and web-apps.
 - Extend this with specific **UX state tokens** (`info`, `warning`, `error`, `success`) for cards (including foreground, background, border) for semantic/ux-based styling. This should more or less map onto the colours: **blue** for info, **orange** for warning, **red** for error and **green** for success.
-- `.theme-new` may scope not only the custom-property token block but also `@layer base` and `@layer utilities`, so that base resets and utility classes defined for the new theme apply only within migrated subtrees. `@import 'tailwindcss'`, `@theme`, and `@custom-variant` remain defined once in `globals.css` and are not duplicated.
+- `.theme-new` may scope not only the custom-property token block but also
+  `@layer base` and `@layer utilities`, so that base resets and utility classes
+  defined for the new theme apply only within migrated subtrees.
+  `@import 'tailwindcss'`, `@theme`, and `@custom-variant` remain defined once
+  in `globals.css` and are not duplicated.
 
-The current app styles need to be refactored and redefined within the new stylesheet, and this is done in the migration guide section 2b.
+### Portal handling
+
+Radix UI portals (used by Shadcn dialogs, popovers, tooltips) render their
+content to `document.body` by default, which is **outside** the `.theme-new`
+DOM scope. Portalled content therefore does not inherit the scoped CSS custom
+properties and falls back to the legacy `:root` tokens.
+
+`ThemeMigrationWrapper` provides a `useThemeMigration()` React context hook
+that returns `"theme-new"` when inside a wrapper, or `null` when outside.
+Portalled components should call this hook and apply the returned class to
+their portalled content element (e.g. `DialogContent`, `PopoverContent`,
+`TooltipContent`) to re-establish the scoped token boundary:
+
+```tsx
+const themeClass = useThemeMigration()
+<DialogContent className={cn(themeClass, 'bg-background text-foreground')}>
+```
+
+When the entire app is eventually wrapped, the portal issue disappears
+naturally because all content — portalled or not — will be inside the
+global `.theme-new` scope.
+
+The current app styles need to be refactored and redefined within the new
+stylesheet, and this is done in the migration guide section 2b.
 
 **1b. Component Directory Structure**
 
@@ -30,12 +76,33 @@ src/components/
 ...More component subdirectories can be added per-feature or per specification ruleset.
 ```
 
-Components may only import from directories below them in the hierarchy (e.g., `ui` → `ui-wrappers` → `shared`). Any UI component currently living outside `src/components/` must be relocated. Some subdirectories might be allowed to perform a specific kind of business logic, such as the `nostr/` directory being permitted to use nostr queries through hooks, dialogs to perform actions through stores, etc., but this should be considered **an exception from the rule and must be permitted through the subdirectory AGENTS.md file**. AGENTS.md files in each subdirectory additionally serve as the authoritative source for import rules, dependency hierarchies, and specific standards unique to that directory.
+The import hierarchy applies to **new and migrated code only**. Existing
+legacy components that violate these rules are tracked as migration debt and
+will be addressed during their respective slice migrations (see §2a).
+
+For new and migrated code, components may only import from directories below
+them in the hierarchy (e.g., `ui` → `ui-wrappers` → `shared`). New UI
+components must be placed in `src/components/`. Some subdirectories might be
+allowed to perform a specific kind of business logic, such as the `nostr/`
+directory being permitted to consume **read-only** Nostr data adapters
+(`useProfile`, `useQuery`) for display, and `dialogs/` being permitted to
+call **UI-only store actions** (e.g., `uiActions.openDialog`/
+`uiActions.closeDialog`) — but these are **narrowly-scoped exceptions from the
+rule and must be documented in the subdirectory's AGENTS.md file**.
+Publishing, signing, and domain store mutations (cart, wallet, auth, orders)
+are NOT permitted in any component — these are passed via explicit callback
+props. AGENTS.md files in each subdirectory additionally serve as the
+authoritative source for import rules, dependency hierarchies, and specific
+standards unique to that directory.
 
 **1c. Standardized Parameters**
 For all **migrated** components in the standardized component set, they should accept and implement the following parameters:
 
-- **`forwardRef`:** Forward refs to root DOM element.
+- **Ref exposure (React 19 ref-as-prop):** Forward refs to root DOM
+  element. React 19 (\^19.2.6) supports `ref` as a regular prop —
+  `forwardRef` is no longer required. Accept `ref` in props and pass it
+  through to the root DOM element (or the underlying Shadcn primitive,
+  which spreads `{...props}` onto its root node).
 - **`cn()` className merging:** Accept `className` prop, merge with internal styles via `cn()`.
 - **Callbacks** for actions instead of in-file hooks or otherwise.
 - **Additional Standardized Parameters:** Variants (`variant`), density (`compact`), and other props are defined and enforced per-directory in AGENTS.md files, not globally in this ADR.
@@ -89,7 +156,9 @@ In order to keep the work of each PR over time, every migrated or created compon
 - The stylesheet evolves from a mixed token/override file to a clean token-only definition, with component-specific styling isolated in component files.
 - AGENTS.md files define variant standards, import rules, and review checklists per directory, providing context for creating and reviewing agents.
 - The widget book harness provides visual regression testing and a browsable component gallery, ensuring migrated components are verified.
-- The `nostr/` directory resolves the tension between "no business logic" and necessary data access patterns via standardized hooks.
+- The `nostr/` directory resolves the tension between "no business logic" and
+  necessary data access patterns via narrowly-scoped, read-only data adapters
+  (not broad hook/store access).
 - Enforcement is lean: CI catches structural violations, while AGENTS.md handles nuanced judgment calls.
 - The `.theme-new` scope + `ThemeMigrationWrapper` placement creates a self-documenting migration progress indicator: migrated subtrees are visibly opted into the new theme, and the legacy `globals.css` shrinks as consumers migrate.
 
@@ -102,5 +171,5 @@ A suggested PR strategy is as follows:
 - **PR 3 - Migration: Home Page & User Profile Components:** - Create a migration for components found in the home page. This coincides with the CMS work which will use many of the same components.
 - **PR 4 - Migration: Layout Components:** - Create a migration for the commonly used app layout components (header, footer, sidebar) to ensure they are compliant with the new styling.
 - **PR 5 - Migration: UX Components:** - Ensure UX components such as forms, dialogs, and other interactive pieces of the app UX are compliant with the new guidelines.
-- **PR 5 - Migration: Dashboard Components:** - Move remaining dashboard components to the new guidelines.
+- **PR 6 - Migration: Dashboard Components:** - Move remaining dashboard components to the new guidelines.
   ...A few more migrations will be needed for specific features, such as: Wallet, Checkout, etc., which can be taken on at this point.

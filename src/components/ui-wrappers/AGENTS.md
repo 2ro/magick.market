@@ -21,14 +21,16 @@ systems while keeping the import hierarchy clean: `ui` → `ui-wrappers` →
 
 ## Standards
 
-- **`forwardRef`:** All wrapper components **must** use `forwardRef` to forward
-  refs to their root DOM element.
+- **Ref exposure (React 19 ref-as-prop):** All wrapper components **must**
+  expose `ref` to their root DOM element. React 19 (\^19.2.6) supports `ref`
+  as a regular prop — `forwardRef` is not required. Accept `ref` in props
+  and pass it through to the root element.
 - **`cn()` className merging:** Accept a `className` prop and merge with
   internal styles via `cn()`. Never use string concatenation.
 - **Callbacks:** No inline hooks for data fetching, store access, or business
   logic. Wrappers are purely presentational with optional behavioral
   extensions (e.g., managing open/close state for a dropdown wrapper).
-- **Forwarding refs through Shadcn primitives:** Most Shadcn primitives spread
+- **Passing refs through Shadcn primitives:** Most Shadcn primitives spread
   `{...props}` onto their root DOM element, so a `ref` passed into the
   primitive's props attaches to that node. Rely on this — do **not** wrap the
   primitive in an extra DOM element solely to attach a ref. This keeps the
@@ -41,7 +43,7 @@ systems while keeping the import hierarchy clean: `ui` → `ui-wrappers` →
 
 ## Review checklist
 
-- [ ] Uses `forwardRef` with `displayName` set
+- [ ] Exposes `ref` to root DOM element (React 19 ref-as-prop)
 - [ ] Uses `cn()` for className merging
 - [ ] No inline store/query/business-logic calls
 - [ ] Only imports from `ui/`, `lib/`, `hooks/`

@@ -5,9 +5,10 @@ migration per the ADR: Component UI Migration & Widget Book.
 
 ## Contents
 
-- `ThemeMigrationWrapper.tsx` — A `forwardRef` component that renders a
+- `ThemeMigrationWrapper.tsx` — A component that renders a
   `<div className="theme-new">` wrapper. Applying this class to a subtree opts
   it into the new scoped token system defined in `styles/globals-new.css`.
+  Uses React 19 ref-as-prop (no `forwardRef` needed).
 
 ## Constraints
 
@@ -17,8 +18,31 @@ migration per the ADR: Component UI Migration & Widget Book.
   `<div>` can affect flex/grid layout. When wrapping the entire app, consider
   applying the `theme-new` class to an existing root layout container rather
   than introducing an extra DOM node.
-- `ThemeMigrationWrapper` uses `forwardRef` and `cn()` per the standardized
-  component conventions in `src/components/AGENTS.md`.
+- `ThemeMigrationWrapper` uses React 19 ref-as-prop (no `forwardRef`) and
+  `cn()` per the standardized component conventions in
+  `src/components/AGENTS.md`.
+
+## Portal handling
+
+Radix UI portals (used by Shadcn dialogs, popovers, tooltips) render their
+content to `document.body` by default, which is **outside** the `.theme-new`
+DOM scope. Portalled content therefore does not inherit the scoped CSS custom
+properties and falls back to the legacy `:root` tokens.
+
+`ThemeMigrationWrapper` provides a `useThemeMigration()` hook that returns
+`"theme-new"` when inside a wrapper, or `null` when outside. Portalled
+components should call this hook and apply the returned class to their
+portalled content element (e.g. `DialogContent`, `PopoverContent`,
+`TooltipContent`) to re-establish the scoped token boundary:
+
+```tsx
+const themeClass = useThemeMigration()
+<DialogContent className={cn(themeClass, 'bg-background text-foreground')}>
+```
+
+When the entire app is eventually wrapped, the portal issue disappears
+naturally because all content — portalled or not — will be inside the
+global `.theme-new` scope.
 
 ## Migration tracker
 

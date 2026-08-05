@@ -32,13 +32,23 @@ src/components/
   theme-migration/ ← ThemeMigrationWrapper + scoped theme infrastructure
 ```
 
+New components must be placed in the appropriate subdirectory above. Legacy
+components that currently live outside `src/components/` are tracked as
+migration debt and will be relocated during their slice migration.
+
 ### Import hierarchy
 
-Components may only import from directories below them in the hierarchy:
-`ui` → `ui-wrappers` → `shared` / `nostr` / `layout` / `dialogs`. Any UI
-component currently living outside `src/components/` must be relocated. Each
-subdirectory's `AGENTS.md` file is the authoritative source for its import
-rules and exceptions.
+The import hierarchy applies to **new and migrated code only**. Existing
+legacy components that violate these rules are tracked as migration debt and
+are not required to be fixed as part of this PR — they will be addressed
+during their respective slice migrations (see ADR §2a Classification System).
+
+For new and migrated code, components may only import from directories below
+them in the hierarchy:
+`ui` → `ui-wrappers` → `shared` / `nostr` / `layout` / `dialogs`. New UI
+components must be placed in `src/components/`. Each subdirectory's
+`AGENTS.md` file is the authoritative source for its import rules and
+exceptions.
 
 ### Canonical import alias
 
@@ -52,23 +62,23 @@ Routes must import UI exclusively from `src/components/`.
 - Keep loading, empty, error, and eventually-consistent relay states visible
   when a component depends on Nostr data.
 - Use icons and controls consistently with the surrounding UI.
-- **Ref convention (per ADR: Component UI Migration):**
+- **Ref convention (React 19 ref-as-prop, per ADR: Component UI Migration):**
   - `src/components/ui/` holds generated Shadcn primitives. Leave them **as-is,
-    no diffs** — do not convert them to `forwardRef` or otherwise modify. They
-    use the modern `React.ComponentProps` + `data-slot` style.
+    no diffs** — do not modify them. They use the modern
+    `React.ComponentProps` + `data-slot` style.
   - Components authored by us (in `ui-wrappers/`, `shared/`, `nostr/`,
-    `layout/`, `dialogs/`, and feature directories) **must use `forwardRef`**
-    to forward refs to their root DOM element, for consistency across the
-    standardized component set.
-  - **Forwarding refs through Shadcn primitives from a `forwardRef` wrapper:**
-    most Shadcn primitives spread `{...props}` onto their root DOM element, so a
-    `ref` passed into the primitive's props attaches to that node even though
-    the primitive itself is not `forwardRef`-wrapped. Our `ui-wrappers/`
-    components should rely on this: forward `ref` through to the primitive via
-    its props. **Do not** wrap the primitive in an extra DOM element solely to
-    attach a ref. This avoids React dev warnings about `ref` on function
-    components while keeping the wrapper a single element. Per-subdirectory
-    `AGENTS.md` files (e.g. `ui-wrappers/AGENTS.md`) restate this rule.
+    `layout/`, `dialogs/`, and feature directories) **must expose `ref`** to
+    their root DOM element. React 19 (\^19.2.6) supports `ref` as a regular
+    prop — `forwardRef` is not required. Accept `ref` in the component's
+    props type and pass it through to the root element (or the underlying
+    Shadcn primitive, which spreads `{...props}` onto its root node).
+  - **Passing refs through Shadcn primitives:** most Shadcn primitives spread
+    `{...props}` onto their root DOM element, so a `ref` passed into the
+    primitive's props attaches to that node. Our `ui-wrappers/` components
+    should rely on this: pass `ref` through to the primitive via its props.
+    **Do not** wrap the primitive in an extra DOM element solely to attach a
+    ref. This keeps the wrapper a single element. Per-subdirectory `AGENTS.md`
+    files (e.g. `ui-wrappers/AGENTS.md`) restate this rule.
 
 ## Safe Checks
 

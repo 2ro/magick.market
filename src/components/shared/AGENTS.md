@@ -21,8 +21,10 @@ and other cross-cutting UI primitives.
 
 ## Standards
 
-- **`forwardRef`:** All components **must** use `forwardRef` to forward refs
-  to their root DOM element.
+- **Ref exposure (React 19 ref-as-prop):** All components **must** expose
+  `ref` to their root DOM element. React 19 (\^19.2.6) supports `ref` as a
+  regular prop — `forwardRef` is not required. Accept `ref` in props and
+  pass it through to the root element.
 - **`cn()` className merging:** Accept `className` prop, merge with internal
   styles via `cn()`. Never use string concatenation.
 - **No business logic:** Shared components are purely presentational. No
@@ -35,7 +37,7 @@ and other cross-cutting UI primitives.
 
 ## Review checklist
 
-- [ ] Uses `forwardRef` with `displayName` set
+- [ ] Exposes `ref` to root DOM element (React 19 ref-as-prop)
 - [ ] Uses `cn()` for className merging
 - [ ] No inline data hooks or store calls
 - [ ] No hardcoded colors — uses semantic tokens
