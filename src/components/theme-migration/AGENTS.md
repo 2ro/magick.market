@@ -1,14 +1,14 @@
 # AGENTS.md — src/components/theme-migration
 
 This directory holds the infrastructure that enables slice-by-slice theme
-migration per the ADR: Component UI Migration & Widget Book.
+migration per ADR-016: Component UI Migration & Widget Book.
 
 ## Contents
 
-- `ThemeMigrationWrapper.tsx` — A component that renders a
-  `<div className="theme-new">` wrapper. Applying this class to a subtree opts
-  it into the new scoped token system defined in `styles/globals-new.css`.
-  Uses React 19 ref-as-prop (no `forwardRef` needed).
+- `ThemeMigrationWrapper.tsx` — A React 19 ref-as-prop component that renders
+  a `<div className="theme-new">` wrapper and mounts a portal container.
+  Applying the `theme-new` class to a subtree opts it into the new scoped
+  token system defined in `styles/globals-new.css`.
 
 ## Constraints
 
@@ -18,9 +18,10 @@ migration per the ADR: Component UI Migration & Widget Book.
   `<div>` can affect flex/grid layout. When wrapping the entire app, consider
   applying the `theme-new` class to an existing root layout container rather
   than introducing an extra DOM node.
-- `ThemeMigrationWrapper` uses React 19 ref-as-prop (no `forwardRef`) and
-  `cn()` per the standardized component conventions in
-  `src/components/AGENTS.md`.
+- `ThemeMigrationWrapper` uses React 19 ref-as-prop (accepts `ref` via
+  `...props` spread, no `forwardRef`) and `cn()` per the standardized
+  component conventions in `src/components/AGENTS.md`. It serves as the
+  **canonical example** of the ref-as-prop pattern.
 
 ## Portal handling
 
@@ -29,19 +30,23 @@ content to `document.body` by default, which is **outside** the `.theme-new`
 DOM scope. Portalled content therefore does not inherit the scoped CSS custom
 properties and falls back to the legacy `:root` tokens.
 
-`ThemeMigrationWrapper` provides a `useThemeMigration()` hook that returns
-`"theme-new"` when inside a wrapper, or `null` when outside. Portalled
-components should call this hook and apply the returned class to their
-portalled content element (e.g. `DialogContent`, `PopoverContent`,
-`TooltipContent`) to re-establish the scoped token boundary:
+`ThemeMigrationWrapper` addresses this by mounting a hidden container
+element (carrying the `theme-new` class) appended to `document.body`.
+Portalled components should use `useThemePortal()` to obtain this container
+and pass it to their Radix `Portal`'s `container` prop:
 
 ```tsx
-const themeClass = useThemeMigration()
-<DialogContent className={cn(themeClass, 'bg-background text-foreground')}>
+const portalContainer = useThemePortal()
+<DialogPortal container={portalContainer}>
 ```
 
-When the entire app is eventually wrapped, the portal issue disappears
-naturally because all content — portalled or not — will be inside the
+This automatically scopes portalled content to the new token system — no
+manual class application needed on each portalled component. The
+`useThemeMigration()` hook is also available for awareness/testing and
+returns the full context value (class name + portal container).
+
+When the entire app is eventually wrapped, the portal container becomes
+redundant because all content — portalled or not — will be inside the
 global `.theme-new` scope.
 
 ## Migration tracker

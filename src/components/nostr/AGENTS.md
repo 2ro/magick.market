@@ -24,21 +24,32 @@ components that render Nostr event/profile data.
 `nostr/` is the **only** component subdirectory permitted to consume Nostr
 data adapters inline for **read-only** data access. This is an explicit,
 narrowly-scoped exception to the "no business logic in presentational
-components" rule, documented here per ADR §1b.
+components" rule, documented here per ADR-016 §1b.
 
-### Allowed — read-only data adapters
+### Allowed — named read-only data-adapter hooks from `@/queries/*`
 
-Components may import and call the following validated data adapters:
+Components may import and call the following **named** adapter hooks. These
+encapsulate query-key construction, NDK filter logic, and relay-error
+handling behind a stable, typed interface. Components consume the adapter's
+return value — they do not access the raw NDK/relay layer or construct
+queries themselves.
 
-- `useProfile` — fetch profile metadata for a pubkey (read-only)
-- `useQuery` with nostr query options — fetch Nostr events for display
-  (products, auctions, posts, etc.) (read-only)
+- `useProfile` — fetch full profile metadata for a pubkey (read-only)
+- `useProfileName` — fetch display name for a pubkey (read-only)
+- `useProfileNip05` — fetch NIP-05 verification status (read-only)
+- `useProductTitle`, `useProductDescription`, `useProductPrice`,
+  `useProductImages`, `useProductsByPubkey`, `useProductByATag`,
+  `useProductIsNSFW` — product data adapters (read-only)
+- `useWotScore` — web-of-trust score for a pubkey (read-only)
+- `useFeaturedProducts`, `useFeaturedUsers` — featured content (read-only)
 - Read-only store selectors for display state (e.g.,
   `useStore(authStore)` to check authenticated-user context)
 
-These are **data adapters** — they encapsulate Nostr protocol details
-behind a stable interface. Components consume the adapter's return value;
-they do not access the raw NDK/relay layer or construct queries themselves.
+**Generic `useQuery()` with raw inline Nostr filter options is NOT
+permitted.** If a new data need arises, add a named adapter hook to
+`@/queries/*` and consume it here. The allow-list above is illustrative, not
+exhaustive — any named hook exported from `@/queries/*` that is read-only
+and returns display data is acceptable.
 
 ### NOT allowed — mutations, actions, publishing
 
@@ -60,9 +71,10 @@ exception; _mutating_ state, publishing, and signing are not.
 ## Standards
 
 - **Ref exposure (React 19 ref-as-prop):** All components **must** expose
-  `ref` to their root DOM element. React 19 (\^19.2.6) supports `ref` as a
-  regular prop — `forwardRef` is not required. Accept `ref` in props and
-  pass it through to the root element.
+  `ref` to their root DOM element. **Prefer React 19 ref-as-prop** (accept
+  `ref` as a regular prop). **Use `forwardRef` only where a dependency
+  still requires it.** Existing components using `forwardRef` do not need
+  to be rewritten.
 - **`cn()` className merging:** Accept `className` prop, merge via `cn()`.
 - **Callbacks for actions:** Accept callback props for any user action
   (clicks, selections, etc.). Data-fetching hooks are the only exception.
@@ -75,6 +87,6 @@ exception; _mutating_ state, publishing, and signing are not.
 
 - [ ] Exposes `ref` to root DOM element (React 19 ref-as-prop)
 - [ ] Uses `cn()` for className merging
-- [ ] Only data hooks (useProfile, useQuery) — no action/store mutations
+- [ ] Only named adapter hooks from @/queries/ — no generic useQuery, no action/store mutations
 - [ ] Actions delegated via callback props
 - [ ] No hardcoded colors — uses semantic tokens

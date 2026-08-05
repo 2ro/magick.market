@@ -24,9 +24,10 @@ compose other components into a page structure.
 ## Standards
 
 - **Ref exposure (React 19 ref-as-prop):** All components **must** expose
-  `ref` to their root DOM element. React 19 (\^19.2.6) supports `ref` as a
-  regular prop — `forwardRef` is not required. Accept `ref` in props and
-  pass it through to the root element.
+  `ref` to their root DOM element. **Prefer React 19 ref-as-prop** (accept
+  `ref` as a regular prop). **Use `forwardRef` only where a dependency
+  still requires it.** Existing components using `forwardRef` do not need
+  to be rewritten.
 - **`cn()` className merging:** Accept `className` prop, merge via `cn()`.
 - **Callbacks for actions:** Navigation, auth, and UI actions should be
   delegated via callbacks where practical. Read-only store access for display
