@@ -505,24 +505,12 @@ export const cartActions = {
 		await cartActions.fetchAndSetSellerShippingOptions()
 	},
 
-	// Merges a guest (local) cart with the authenticated user's remote cart.
-	// Guest products are the source of truth: all guest items are kept, quantities for
-	// overlapping products are summed with remote, and guest shipping selections are always
-	// preserved. Products that exist only in remote are intentionally ignored.
+	// Keeps local cart items as source of truth during manual login reconciliation.
+	// Remote items are intentionally ignored to avoid changing local quantities.
 	mergeGuestWithRemote: (guest: NormalizedCart, remote: NormalizedCart): NormalizedCart => {
-		const products: Record<string, CartProduct> = {}
-
-		for (const [id, guestProduct] of Object.entries(guest.products)) {
-			const remoteProduct = remote.products[id]
-			products[id] = {
-				...guestProduct,
-				amount: remoteProduct ? guestProduct.amount + remoteProduct.amount : guestProduct.amount,
-			}
-		}
-
 		return {
 			sellers: { ...guest.sellers },
-			products,
+			products: { ...guest.products },
 			orders: { ...guest.orders },
 			invoices: { ...guest.invoices },
 		}
@@ -542,46 +530,7 @@ export const cartActions = {
 			const localHasItems = Object.keys(cartStore.state.cart.products).length > 0
 
 			if (wasLoggedOut && localHasItems) {
-				// Guest session with items: preserve local cart, sum quantities for any products
-				// that also exist in remote, then publish the result under the user's pubkey.
-				// Products that exist only in remote are not added.
-				const remoteSnapshot = await cartSyncDependencies.fetchLatestCartSnapshot(pubkey)
-
-				if (remoteSnapshot) {
-					const normalizedRemote = normalizePersistedCart(remoteSnapshot)
-					const liveProducts: Record<string, { productRef: string; sellerPubkey: string; productId: string; shippingRefs: string[] }> = {}
-					const liveShipping: Record<string, { shippingRef: string; sellerPubkey: string }> = {}
-
-					for (const item of normalizedRemote.items) {
-						const productCoords = parseCoordinateRef(item.productRef, '30402')
-						if (!productCoords) continue
-
-						const productEvent = await cartSyncDependencies.getProductEvent(productCoords.identifier, productCoords.pubkey)
-						const productDTag = getProductId(productEvent)
-						if (!productEvent || !productDTag || productEvent.pubkey !== productCoords.pubkey) continue
-
-						liveProducts[item.productRef] = {
-							productRef: item.productRef,
-							sellerPubkey: productEvent.pubkey,
-							productId: productDTag,
-							shippingRefs: productEvent.tags.filter((tag) => tag[0] === 'shipping_option' && tag[1]).map((tag) => tag[1]),
-						}
-
-						if (item.shippingRef && !liveShipping[item.shippingRef]) {
-							const shippingCoords = parseCoordinateRef(item.shippingRef, String(SHIPPING_KIND))
-							if (!shippingCoords) continue
-							const shippingEvent = await cartSyncDependencies.getShippingEvent(item.shippingRef)
-							if (!shippingEvent || shippingEvent.pubkey !== shippingCoords.pubkey) continue
-							liveShipping[item.shippingRef] = { shippingRef: item.shippingRef, sellerPubkey: shippingEvent.pubkey }
-						}
-					}
-
-					const rehydrated = rehydrateCartFromLiveData(normalizedRemote, liveProducts, liveShipping)
-					if (Object.keys(rehydrated.cart.products).length > 0) {
-						const mergedCart = cartActions.mergeGuestWithRemote(cartStore.state.cart, rehydrated.cart)
-						await cartActions.applyRemoteCartLocally(mergedCart, cartSyncDependencies.now())
-					}
-				}
+				// Manual login with local cart items: keep local cart unchanged and publish it.
 
 				cartStore.setState((state) => ({
 					...state,

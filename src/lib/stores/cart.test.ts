@@ -337,11 +337,11 @@ describe('mergeGuestWithRemote', () => {
 		expect(merged.products['r-only']).toBeUndefined()
 	})
 
-	test('overlapping product quantities are summed', () => {
+	test('overlapping product quantities keep local amount', () => {
 		const guest = makeCart([makeProduct('shared', 2)])
 		const remote = makeCart([makeProduct('shared', 3)])
 		const merged = cartActions.mergeGuestWithRemote(guest, remote)
-		expect(merged.products['shared'].amount).toBe(5)
+		expect(merged.products['shared'].amount).toBe(2)
 	})
 
 	test('guest shipping selection is preserved for overlapping products', () => {
@@ -397,7 +397,7 @@ describe('reconcileRemoteCartForUser – guest session', () => {
 		expect(cartStore.state.cart.products['remote-p']?.amount).toBe(4)
 	})
 
-	test('overlapping product quantities are summed on login', async () => {
+	test('overlapping product quantities keep local amount on login', async () => {
 		const guestCart = makeCart([makeProduct('shared', 2)])
 		cartStore.setState((s) => ({ ...s, cart: guestCart, lastCartIntentUpdatedAt: 100 }))
 
@@ -411,7 +411,7 @@ describe('reconcileRemoteCartForUser – guest session', () => {
 
 		await cartActions.reconcileRemoteCartForUser('buyer', {} as any, {} as any, true)
 
-		expect(cartStore.state.cart.products['shared'].amount).toBe(5)
+		expect(cartStore.state.cart.products['shared'].amount).toBe(2)
 	})
 
 	test('remote-only products are not added to the guest cart', async () => {
