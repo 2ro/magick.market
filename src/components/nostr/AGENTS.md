@@ -24,7 +24,7 @@ components that render Nostr event/profile data.
 `nostr/` is the **only** component subdirectory permitted to consume Nostr
 data adapters inline for **read-only** data access. This is an explicit,
 narrowly-scoped exception to the "no business logic in presentational
-components" rule, documented here per ADR-016 §1b.
+components" rule, documented here per ADR-0007 §1b.
 
 ### Allowed — named read-only data-adapter hooks from `@/queries/*`
 

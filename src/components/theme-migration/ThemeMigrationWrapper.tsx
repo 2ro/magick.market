@@ -80,7 +80,7 @@ export function useThemePortal(): HTMLElement | undefined {
  * redundant because all content — portalled or not — will be inside the
  * global `.theme-new` scope.
  *
- * @see docs/adr/ADR-016-component-ui-migration-and-widget-book.md §1a, §2b
+ * @see docs/adr/ADR-0007-component-ui-migration-and-widget-book.md §1a, §2b
  */
 export function ThemeMigrationWrapper({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
 	const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)

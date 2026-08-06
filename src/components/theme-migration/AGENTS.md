@@ -1,7 +1,7 @@
 # AGENTS.md — src/components/theme-migration
 
 This directory holds the infrastructure that enables slice-by-slice theme
-migration per ADR-016: Component UI Migration & Widget Book.
+migration per ADR-0007: Component UI Migration & Widget Book.
 
 ## Contents
 

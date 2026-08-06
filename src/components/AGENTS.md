@@ -19,7 +19,7 @@ under `src/components/ui/`.
 - Preserve accessible labels, roles, focus behavior, and existing shadcn/ui
   conventions when changing controls.
 
-## Directory structure (per ADR-016: Component UI Migration §1b)
+## Directory structure (per ADR-0007: Component UI Migration §1b)
 
 ```
 src/components/
@@ -41,7 +41,7 @@ migration debt and will be relocated during their slice migration.
 The import hierarchy applies to **new and migrated code only**. Existing
 legacy components that violate these rules are tracked as migration debt and
 are not required to be fixed as part of this PR — they will be addressed
-during their respective slice migrations (see ADR-016 §2a Classification
+during their respective slice migrations (see ADR-0007 §2a Classification
 System).
 
 For new and migrated code, the following **dependency directions** are
@@ -74,7 +74,7 @@ Routes must import UI exclusively from `src/components/`.
 - Keep loading, empty, error, and eventually-consistent relay states visible
   when a component depends on Nostr data.
 - Use icons and controls consistently with the surrounding UI.
-- **Ref convention (React 19 ref-as-prop, per ADR-016: Component UI Migration):**
+- **Ref convention (React 19 ref-as-prop, per ADR-0007: Component UI Migration):**
   - `src/components/ui/` holds generated Shadcn primitives. Leave them **as-is,
     no diffs** — do not modify them. They use the modern
     `React.ComponentProps` + `data-slot` style.

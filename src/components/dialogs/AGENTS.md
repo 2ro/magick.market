@@ -23,7 +23,7 @@ share dialogs, NSFW confirmation, pickup location, zap, terms, etc.
 - **Store access:** Dialogs may call **UI-only store actions** —
   specifically `uiActions.openDialog` and `uiActions.closeDialog` — and
   navigation (e.g., `useNavigate`). This is the narrowly-scoped exception
-  per ADR-016 §1b. **Domain store mutations** are NOT permitted: no
+  per ADR-0007 §1b. **Domain store mutations** are NOT permitted: no
   `cartActions`, no `walletActions`, no `authActions`, no order mutations.
   These must be passed via callback props (e.g., `onConfirm`, `onSubmit`).
 - **Canonical alias:** `@/components/dialogs/{component}`.

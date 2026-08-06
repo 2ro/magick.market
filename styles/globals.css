@@ -254,7 +254,7 @@ button {
 	--color-light-gray: var(--light-gray);
 	--color-neo-purple: var(--neo-purple);
 
-	/* New utilities for the scoped .theme-new token system (ADR-016 §1a).  */
+	/* New utilities for the scoped .theme-new token system (ADR-0007 §1a). */
 	/* These map to the same var() names that .theme-new overrides —    */
 	/* they resolve to scoped values inside .theme-new and :root       */
 	/* defaults outside it. Registered here (not in globals-new.css)    */

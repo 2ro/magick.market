@@ -5,7 +5,7 @@
  * enabling slice-by-slice migration: new and old UI can coexist on the same page
  * because CSS custom properties are DOM-scoped, not layer-scoped.
  *
- * Rules (per ADR-016: Component UI Migration §1a):
+ * Rules (per ADR-0007: Component UI Migration §1a):
  *   - Does NOT contain @import 'tailwindcss', @theme inline, or
  *     @custom-variant — those remain defined solely in globals.css.
  *     New utility registrations for scoped tokens (info/warning/error/
