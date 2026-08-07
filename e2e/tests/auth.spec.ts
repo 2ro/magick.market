@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures'
 import type { BrowserContext, Page } from '@playwright/test'
 import { devUser1, devUser2 } from '../../src/lib/fixtures'
 import { getPublicKey, finalizeEvent, type UnsignedEvent } from 'nostr-tools/pure'
+import { v2 as nip44 } from 'nostr-tools/nip44'
 import { hexToBytes } from '@noble/hashes/utils.js'
 import { nip19 } from 'nostr-tools'
 import { Nip46Mock } from '../utils/nip46-mock'
@@ -24,6 +25,17 @@ async function setupExtensionOnly(context: BrowserContext, user: { sk: string; p
 		return user.pk
 	})
 
+	const skBytes = hexToBytes(user.sk)
+	await context.exposeFunction('__nostrNip44Encrypt', (pubkey: string, plaintext: string): string => {
+		const convKey = nip44.utils.getConversationKey(skBytes, pubkey)
+		return nip44.encrypt(plaintext, convKey)
+	})
+
+	await context.exposeFunction('__nostrNip44Decrypt', (pubkey: string, ciphertext: string): string => {
+		const convKey = nip44.utils.getConversationKey(skBytes, pubkey)
+		return nip44.decrypt(ciphertext, convKey)
+	})
+
 	await context.addInitScript(() => {
 		;(window as any).nostr = {
 			getPublicKey: async () => {
@@ -37,6 +49,14 @@ async function setupExtensionOnly(context: BrowserContext, user: { sk: string; p
 				encrypt: async (_pubkey: string, plaintext: string) => `test_encrypted:${plaintext}`,
 				decrypt: async (_pubkey: string, ciphertext: string) =>
 					ciphertext.startsWith('test_encrypted:') ? ciphertext.slice('test_encrypted:'.length) : ciphertext,
+			},
+			nip44: {
+				encrypt: async (pubkey: string, plaintext: string) => {
+					return await (window as any).__nostrNip44Encrypt(pubkey, plaintext)
+				},
+				decrypt: async (pubkey: string, ciphertext: string) => {
+					return await (window as any).__nostrNip44Decrypt(pubkey, ciphertext)
+				},
 			},
 		}
 
@@ -62,6 +82,7 @@ async function openLoginDialog(page: Page) {
 	// openDialog('login') state update to render anything.
 	await expect(page.locator('header')).toBeVisible({ timeout: 15_000 })
 
+	// Workaround for orphaned dialog overlay (app bug — see #1224).
 	// Properly close any open dialog instead of deleting overlay DOM nodes.
 	// Clicking the dialog overlay (outside the dialog content) lets React
 	// unmount the overlay cleanly, so subsequent clicks pass Playwright's

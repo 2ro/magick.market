@@ -185,7 +185,7 @@ test.describe('PII Exposure Remediation Workflow', () => {
 
 		// Navigate to dashboard where scanner would run
 		await merchantPage.goto('/dashboard')
-		await merchantPage.waitForLoadState('networkidle')
+		await merchantPage.waitForLoadState('domcontentloaded')
 
 		// Wait for potential PII exposure modal using header text detection
 		const modalVisible = await waitForPIIModal(merchantPage)
@@ -226,7 +226,7 @@ test.describe('PII Exposure Remediation Workflow', () => {
 
 		// Navigate to the app
 		await merchantPage.goto('/dashboard')
-		await merchantPage.waitForLoadState('networkidle')
+		await merchantPage.waitForLoadState('domcontentloaded')
 
 		// Wait a bit to let scanner potentially run
 		await merchantPage.waitForTimeout(2000)
@@ -263,7 +263,7 @@ test.describe('PII Exposure Remediation Workflow', () => {
 
 		// Navigate to dashboard
 		await merchantPage.goto('/dashboard')
-		await merchantPage.waitForLoadState('networkidle')
+		await merchantPage.waitForLoadState('domcontentloaded')
 
 		// Wait for PII modal to appear using header text detection
 		const modalVisible = await waitForPIIModal(merchantPage, 10000)
@@ -305,7 +305,7 @@ test.describe('PII Exposure Remediation Workflow', () => {
 
 		// Navigate to dashboard
 		await merchantPage.goto('/dashboard')
-		await merchantPage.waitForLoadState('networkidle')
+		await merchantPage.waitForLoadState('domcontentloaded')
 
 		// The unauthorized events should not appear in the current user's modal
 		// Check that the unauthorized event exists on relay
@@ -329,7 +329,7 @@ test.describe('PII Exposure Remediation Workflow', () => {
 
 		// Navigate to the app
 		await merchantPage.goto('/dashboard')
-		await merchantPage.waitForLoadState('networkidle')
+		await merchantPage.waitForLoadState('domcontentloaded')
 
 		// Wait for PII modal to appear using header text detection
 		const modalVisible = await waitForPIIModal(merchantPage, 10000)
@@ -348,7 +348,7 @@ test.describe('PII Exposure Remediation Workflow', () => {
 
 		// Navigate to the app
 		await merchantPage.goto('/dashboard')
-		await merchantPage.waitForLoadState('networkidle')
+		await merchantPage.waitForLoadState('domcontentloaded')
 
 		// Wait for PII modal to appear using header text detection
 		const modalVisible = await waitForPIIModal(merchantPage, 10000)
@@ -389,7 +389,7 @@ test.describe('PII Exposure Remediation Workflow', () => {
 
 		// Navigate to dashboard
 		await merchantPage.goto('/dashboard')
-		await merchantPage.waitForLoadState('networkidle')
+		await merchantPage.waitForLoadState('domcontentloaded')
 
 		// Wait for PII modal to appear
 		const modalVisible = await waitForPIIModal(merchantPage, 10000)

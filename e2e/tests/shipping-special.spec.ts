@@ -39,6 +39,8 @@ async function dismissToasts(page: Page) {
 test.describe('Shipping Special Cases', () => {
 	test.describe.configure({ timeout: 120_000 })
 
+	// Skipped: checkout/payment flow has deeper CI failures beyond this PR's scope.
+	// Selector fixes are kept so the tests pass once the checkout flow is stable.
 	test.skip('digital delivery checkout completes without shipping cost', async ({ buyerPage }) => {
 		const testStartTime = Math.floor(Date.now() / 1000) - 5
 		await LightningMock.setup(buyerPage)
@@ -118,6 +120,8 @@ test.describe('Shipping Special Cases', () => {
 		}
 	})
 
+	// Skipped: checkout/payment flow has deeper CI failures beyond this PR's scope.
+	// Selector fixes are kept so the tests pass once the checkout flow is stable.
 	test.skip('local pickup checkout shows pickup address and hides shipping form', async ({ buyerPage }) => {
 		const testStartTime = Math.floor(Date.now() / 1000) - 5
 		await LightningMock.setup(buyerPage)
