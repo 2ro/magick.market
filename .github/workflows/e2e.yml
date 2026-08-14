@@ -123,7 +123,10 @@ jobs:
           LOCAL_RELAY_ONLY: 'true'
 
       - name: Run E2E tests
-        run: bun run test:e2e -- --grep 'Navigation|User Profile|Shipping Option Creation|Community Tab Progressive Loading|Order Details|Marketplace Display|V4V Dashboard Management|Receiving Payments Configuration|Product Page - View Only'
+        # Reviewer request (#1191): gate the promoted tests of this PR too, and
+        # run each test twice with retries disabled so flaky tests fail the gate
+        # instead of being masked by Playwright's automatic retries.
+        run: bun run test:e2e -- --grep 'Navigation|User Profile|Shipping Option Creation|Community Tab Progressive Loading|Order Details|Marketplace Display|V4V Dashboard Management|Receiving Payments Configuration|Product Page - View Only|should allow adding reaction to a comment|Lightning Mock' --repeat-each=2 --retries=0
 
       - name: Show server logs on failure
         if: failure()
