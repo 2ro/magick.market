@@ -40,17 +40,30 @@ interface ExifOrientation {
 }
 
 /**
- * Check if browser supports WebP format
- * Caches result to avoid repeated checks
+ * Check if browser supports WebP format.
+ * This is intentionally lazy so the module can be imported in non-browser
+ * environments without touching document during module initialization.
  */
-const webpSupport = (() => {
-	try {
-		const canvas = document.createElement('canvas')
-		return canvas.toDataURL('image/webp').startsWith('data:image/webp')
-	} catch {
+let webpSupport: boolean | undefined
+
+function isWebPSupported(): boolean {
+	if (webpSupport !== undefined) {
+		return webpSupport
+	}
+
+	if (typeof document === 'undefined') {
 		return false
 	}
-})()
+
+	try {
+		const canvas = document.createElement('canvas')
+		webpSupport = canvas.toDataURL('image/webp').startsWith('data:image/webp')
+	} catch {
+		webpSupport = false
+	}
+
+	return webpSupport
+}
 
 /**
  * Detect if an image has an alpha (transparency) channel
@@ -102,11 +115,14 @@ async function selectOptimalMimeType(file: File, userMimeType?: string): Promise
 			return 'image/png'
 		}
 		// PNG without transparency can be converted to JPEG for better compression
-		return webpSupport ? 'image/webp' : 'image/jpeg'
+		const supportsWebP = isWebPSupported()
+		return supportsWebP ? 'image/webp' : 'image/jpeg'
 	}
 
+	const supportsWebP = isWebPSupported()
+
 	// WebP support - modern format with best compression
-	if (webpSupport) {
+	if (supportsWebP) {
 		return 'image/webp'
 	}
 
@@ -149,6 +165,10 @@ async function getExifOrientation(file: File): Promise<number> {
 					// Search for Orientation tag (0x0112)
 					for (let i = 0; i < numEntries; i++) {
 						const tagOffset = ifdOffset + 10 + i * 12
+						if (tagOffset + 12 > view.length) {
+							break
+						}
+
 						const tag = littleEndian ? view[tagOffset] | (view[tagOffset + 1] << 8) : (view[tagOffset] << 8) | view[tagOffset + 1]
 
 						if (tag === 0x0112) {
@@ -175,6 +195,78 @@ async function getExifOrientation(file: File): Promise<number> {
 		}
 		return 1
 	}
+}
+
+/**
+ * Return a 2×1 JPEG marked with EXIF orientation 6 (90° clockwise). A browser
+ * that honours `imageOrientation: 'none'` decodes it as 2×1; one that ignores
+ * the option and auto-orients it decodes it as 1×2.
+ */
+async function createExifOrientationTestImage(): Promise<Blob> {
+	const canvas = document.createElement('canvas')
+	canvas.width = 2
+	canvas.height = 1
+
+	const jpeg = await new Promise<Blob>((resolve, reject) => {
+		canvas.toBlob((blob) => {
+			if (blob) {
+				resolve(blob)
+			} else {
+				reject(new Error('Could not create EXIF orientation test image'))
+			}
+		}, 'image/jpeg')
+	})
+	const jpegBytes = new Uint8Array(await jpeg.arrayBuffer())
+	if (jpegBytes[0] !== 0xff || jpegBytes[1] !== 0xd8) {
+		throw new Error('EXIF orientation test image is not a JPEG')
+	}
+
+	// APP1 segment containing Exif\0\0, a little-endian TIFF header, and an
+	// IFD0 Orientation (0x0112) SHORT value of 6.
+	const exifSegment = Uint8Array.from([
+		0xff, 0xe1, 0x00, 0x22, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00, 0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x12, 0x01,
+		0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	])
+	const orientedJpeg = new Uint8Array(jpegBytes.length + exifSegment.length)
+	orientedJpeg.set(jpegBytes.subarray(0, 2))
+	orientedJpeg.set(exifSegment, 2)
+	orientedJpeg.set(jpegBytes.subarray(2), exifSegment.length + 2)
+
+	return new Blob([orientedJpeg], { type: 'image/jpeg' })
+}
+
+/**
+ * Determine whether EXIF orientation must be applied manually. Older Safari
+ * versions accept unknown dictionary members, so a non-throwing
+ * `imageOrientation: 'none'` call is not sufficient evidence that the option
+ * was honoured. Instead, inspect the dimensions of a deliberately oriented
+ * image after decoding it.
+ */
+async function detectManualExifOrientationRequirement(): Promise<boolean> {
+	if (typeof document === 'undefined' || typeof createImageBitmap !== 'function') {
+		return false
+	}
+
+	let bitmap: ImageBitmap | undefined
+	try {
+		bitmap = await createImageBitmap(await createExifOrientationTestImage(), { imageOrientation: 'none' })
+		return bitmap.width === 2 && bitmap.height === 1
+	} catch {
+		return false
+	} finally {
+		bitmap?.close()
+	}
+}
+
+let manualExifOrientationRequirement: Promise<boolean> | undefined
+
+function requiresManualExifOrientation(): Promise<boolean> {
+	if (typeof document === 'undefined' || typeof createImageBitmap !== 'function') {
+		return Promise.resolve(false)
+	}
+
+	manualExifOrientationRequirement ??= detectManualExifOrientationRequirement()
+	return manualExifOrientationRequirement
 }
 
 /**
@@ -246,16 +338,18 @@ export async function compressImage(file: File, options: CompressionOptions = {}
 			console.log(`[ImageCompression] Original file size: ${(file.size / 1024 / 1024).toFixed(2)}MB, EXIF orientation: ${orientation}`)
 		}
 
-		// Load image using createImageBitmap for efficiency
-		// Note: imageOrientation: 'none' prevents double-rotation since browsers already handle EXIF by default
-		const bitmap = await createImageBitmap(file, { imageOrientation: 'none' })
+		// Load image using createImageBitmap for efficiency. Browsers that honour
+		// `imageOrientation: 'none'` need the manual canvas transform below;
+		// browsers that auto-orient need neither that transform nor a dimension swap.
+		const requiresManualOrientation = await requiresManualExifOrientation()
+		const bitmap = await createImageBitmap(file, requiresManualOrientation ? { imageOrientation: 'none' } : undefined)
 
 		// Calculate dimensions maintaining aspect ratio
 		let width = bitmap.width
 		let height = bitmap.height
 
 		// Handle EXIF rotation that swaps dimensions
-		if (orientation === 5 || orientation === 6 || orientation === 7 || orientation === 8) {
+		if (requiresManualOrientation && (orientation === 5 || orientation === 6 || orientation === 7 || orientation === 8)) {
 			;[width, height] = [height, width]
 		}
 
@@ -278,8 +372,10 @@ export async function compressImage(file: File, options: CompressionOptions = {}
 		canvas.width = newWidth
 		canvas.height = newHeight
 
-		// Apply EXIF orientation
-		applyExifOrientation(ctx, orientation, newWidth, newHeight)
+		// Apply EXIF orientation only when the bitmap was decoded without it.
+		if (requiresManualOrientation) {
+			applyExifOrientation(ctx, orientation, newWidth, newHeight)
+		}
 
 		// Draw the image
 		ctx.drawImage(bitmap, 0, 0, newWidth, newHeight)
@@ -341,7 +437,7 @@ export async function compressImage(file: File, options: CompressionOptions = {}
  * Note: GIF is excluded to preserve animation - canvas encoding would convert to still frame
  */
 export function isCompressibleImage(file: File): boolean {
-	const compressibleTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/bmp']
+	const compressibleTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp']
 	return compressibleTypes.includes(file.type.toLowerCase())
 }
 

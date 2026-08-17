@@ -8,7 +8,6 @@ import { compressImage, isCompressibleImage, formatFileSize, getCompressionStats
 
 const COMPRESSED_IMAGE_EXTENSIONS: Record<string, string> = {
   'image/jpeg': '.jpg',
-  'image/jpg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
 }

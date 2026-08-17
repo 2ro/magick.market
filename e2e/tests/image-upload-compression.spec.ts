@@ -56,27 +56,8 @@ async function fillNameStep(page: Page, productName: string) {
 	const descriptionInput = page.getByTestId('product-description-input')
 
 	await expect(titleInput).toBeVisible({ timeout: 10_000 })
-	await titleInput.evaluate((el, value) => {
-		el.value = value
-		el.dispatchEvent(new Event('input', { bubbles: true }))
-		el.dispatchEvent(new Event('change', { bubbles: true }))
-	}, productName)
-	await descriptionInput.evaluate((el, value) => {
-		el.value = value
-		el.dispatchEvent(new Event('input', { bubbles: true }))
-		el.dispatchEvent(new Event('change', { bubbles: true }))
-	}, `${productName} description`)
-	await page.evaluate(
-		([name, description]) => {
-			;(
-				window as Window & { __productFormActions?: { updateValues: (values: Record<string, unknown>) => void } }
-			).__productFormActions?.updateValues?.({
-				name,
-				description,
-			})
-		},
-		[productName, `${productName} description`],
-	)
+	await titleInput.fill(productName)
+	await descriptionInput.fill(`${productName} description`)
 	await expect(titleInput).toHaveValue(productName)
 	await expect(descriptionInput).toHaveValue(`${productName} description`)
 	const nextBtn = page.getByTestId('product-next-button')

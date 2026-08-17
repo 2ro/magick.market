@@ -7,10 +7,41 @@ import { compressImage, isCompressibleImage, formatFileSize, getFileSizeMB, getC
  */
 
 describe('image-compression utilities', () => {
+	describe('browser-less import safety', () => {
+		test('does not access document during module import when document is unavailable', async () => {
+			const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
+			let documentAccesses = 0
+			Object.defineProperty(globalThis, 'document', {
+				configurable: true,
+				get: () => {
+					documentAccesses++
+					return undefined
+				},
+			})
+
+			try {
+				const module = await import(`@/lib/image-compression?import-safety-${Date.now()}`)
+				expect(module).toBeDefined()
+				expect(documentAccesses).toBe(0)
+			} finally {
+				if (originalDocumentDescriptor) {
+					Object.defineProperty(globalThis, 'document', originalDocumentDescriptor)
+				} else {
+					delete (globalThis as typeof globalThis & { document?: Document }).document
+				}
+			}
+		})
+	})
+
 	describe('isCompressibleImage', () => {
 		test('identifies JPEG as compressible', () => {
 			const file = new File([], 'test.jpg', { type: 'image/jpeg' })
 			expect(isCompressibleImage(file)).toBe(true)
+		})
+
+		test('rejects the non-standard image/jpg MIME type', () => {
+			const file = new File([], 'test.jpg', { type: 'image/jpg' })
+			expect(isCompressibleImage(file)).toBe(false)
 		})
 
 		test('identifies PNG as compressible', () => {
@@ -41,6 +72,78 @@ describe('image-compression utilities', () => {
 		test('handles lowercase MIME types', () => {
 			const file = new File([], 'test.jpg', { type: 'IMAGE/JPEG' })
 			expect(isCompressibleImage(file)).toBe(true)
+		})
+	})
+
+	describe('malformed EXIF data', () => {
+		test('ignores truncated APP1 EXIF segments without throwing', async () => {
+			const malformedJpeg = new Uint8Array([
+				0xff, 0xd8, 0xff, 0xe1, 0x00, 0x1a, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00, 0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			])
+			const file = new File([malformedJpeg], 'malformed.jpg', { type: 'image/jpeg' })
+
+			await expect(compressImage(file, { debug: false })).resolves.toBe(file)
+		})
+	})
+
+	describe('EXIF orientation handling', () => {
+		test('uses browser auto-orientation when imageOrientation is silently ignored', async () => {
+			const originalDocument = globalThis.document
+			const originalCreateImageBitmap = globalThis.createImageBitmap
+			const imageBitmapCalls: Array<ImageBitmapOptions | undefined> = []
+			const canvases: Array<{ width: number; height: number }> = []
+			let rotateCalls = 0
+			const context = {
+				drawImage() {},
+				rotate() {
+					rotateCalls++
+				},
+				translate() {},
+				scale() {},
+			} as unknown as CanvasRenderingContext2D
+
+			;(globalThis as typeof globalThis & { document?: Document }).document = {
+				createElement: () => {
+					const canvas = {
+						width: 0,
+						height: 0,
+						toDataURL: () => 'data:image/webp;base64,',
+						toBlob: (callback: BlobCallback) => callback(new Blob([Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' })),
+						getContext: () => context,
+					}
+					canvases.push(canvas)
+					return canvas
+				},
+			} as unknown as Document
+			;(globalThis as typeof globalThis & { createImageBitmap?: typeof createImageBitmap }).createImageBitmap = async (_blob, options) => {
+				imageBitmapCalls.push(options)
+				// The orientation probe receives a 2×1 image with EXIF orientation 6.
+				// Returning 1×2 simulates Safari accepting the option but ignoring it.
+				const dimensions = imageBitmapCalls.length === 1 ? { width: 1, height: 2 } : { width: 100, height: 200 }
+				return { ...dimensions, close() {} } as ImageBitmap
+			}
+
+			const orientationSixJpeg = Uint8Array.from([
+				0xff, 0xd8, 0xff, 0xe1, 0x00, 0x22, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00, 0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00,
+				0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xd9,
+			])
+
+			try {
+				const file = new File([orientationSixJpeg], 'orientation-6.jpg', { type: 'image/jpeg' })
+				await expect(compressImage(file, { mimeType: 'image/jpeg', debug: false })).resolves.toBeDefined()
+
+				expect(imageBitmapCalls).toEqual([{ imageOrientation: 'none' }, undefined])
+				expect(rotateCalls).toBe(0)
+				expect(canvases[1]).toMatchObject({ width: 100, height: 200 })
+			} finally {
+				if (originalDocument) {
+					;(globalThis as typeof globalThis & { document?: Document }).document = originalDocument
+				} else {
+					delete (globalThis as typeof globalThis & { document?: Document }).document
+				}
+				;(globalThis as typeof globalThis & { createImageBitmap?: typeof createImageBitmap }).createImageBitmap = originalCreateImageBitmap
+			}
 		})
 	})
 
