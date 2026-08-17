@@ -45,6 +45,11 @@ export function DetailTab() {
 	const convertSatsToBtc = MempoolService.satoshisToBtc
 	const convertBtcToSats = MempoolService.btcToSatoshis
 
+	// Exchange rates are only usable once loaded and non-empty. When they are
+	// missing, the converters below return 0, so every sats/fiat sync must be
+	// guarded to avoid storing or publishing a 0-derived price.
+	const hasExchangeRates = !!exchangeRates && Object.keys(exchangeRates).length > 0
+
 	const convertSatsToCurrency = (sats: number, targetCurrency: string): number => {
 		if (targetCurrency === 'SATS') return sats
 		if (targetCurrency === 'BTC') return convertSatsToBtc(sats)
@@ -96,8 +101,11 @@ export function DetailTab() {
 		// Convert to SATS for storage (sats should always be integers)
 		const satsValue = bitcoinUnit === 'SATS' ? Math.round(numValue) : convertBtcToSats(numValue)
 
-		// Update fiat field if a fiat currency is selected and visible
-		if (currency !== 'SATS' && currency !== 'BTC') {
+		// Update fiat field if a fiat currency is selected and visible.
+		// Requires exchange rates: without them convertSatsToCurrency returns 0 and
+		// we would write fiatPrice: '0.00' into the store, which fiat-mode publish
+		// then emits as the product price. Skip the sats->fiat sync instead.
+		if (currency !== 'SATS' && currency !== 'BTC' && hasExchangeRates) {
 			const fiatValue = convertSatsToCurrency(satsValue, currency)
 			const fiatValueStr = fiatValue.toFixed(2)
 			setFiatDisplayValue(fiatValueStr)
@@ -208,14 +216,19 @@ export function DetailTab() {
 
 	// Calculate sats from fiat when loading a fiat-priced product (price is empty, fiatPrice has value)
 	useEffect(() => {
-		if (storeCurrencyMode === 'fiat' && fiatPrice && !price && exchangeRates) {
+		// Only derive the sats price once exchange rates are actually available;
+		// otherwise leave price empty instead of writing a 0-sats placeholder
+		// (convertCurrencyToSats returns 0 without rates) that could be published.
+		if (storeCurrencyMode === 'fiat' && fiatPrice && !price && hasExchangeRates) {
 			const fiatValue = parseFloat(fiatPrice) || 0
 			if (fiatValue > 0) {
 				const satsValue = convertCurrencyToSats(fiatValue, currency)
-				productFormActions.updateValues({ price: satsValue.toString() })
+				if (satsValue > 0) {
+					productFormActions.updateValues({ price: satsValue.toString() })
+				}
 			}
 		}
-	}, [storeCurrencyMode, fiatPrice, price, currency, exchangeRates])
+	}, [storeCurrencyMode, fiatPrice, price, currency, hasExchangeRates])
 
 	// Update fiat display when currency or price changes (only for auto-conversion from sats)
 	useEffect(() => {
@@ -224,7 +237,9 @@ export function DetailTab() {
 			return
 		}
 
-		if (showFiatField && price) {
+		// Requires exchange rates: without them the field would display a
+		// placeholder '0.00' which fiat-mode publishing would pick up.
+		if (showFiatField && price && hasExchangeRates) {
 			const satsValue = parseFloat(price) || 0
 			if (satsValue > 0) {
 				const fiatValue = convertSatsToCurrency(satsValue, currency)
@@ -235,7 +250,7 @@ export function DetailTab() {
 				}
 			}
 		}
-	}, [currency, price, showFiatField, storeCurrencyMode, fiatPrice])
+	}, [currency, price, showFiatField, storeCurrencyMode, fiatPrice, hasExchangeRates])
 
 	return (
 		<div className="space-y-6">
