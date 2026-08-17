@@ -12,6 +12,7 @@ import { productFormActions, productFormStore, type ProductShippingForm } from '
 import { uiStore } from '@/lib/stores/ui'
 import { attachShippingOptionByRef } from '@/lib/utils/productShippingQuickCreate'
 import { resolveProductShippingSelections } from '@/lib/utils/productShippingSelections'
+import { applyFiatPriceEdit, deriveSatsPriceFromFiat } from '@/lib/utils/productPriceResolution'
 import { MempoolService } from '@/lib/utils/mempool'
 import { useBtcExchangeRates, type SupportedCurrency } from '@/queries/external'
 import { usePublishShippingOptionMutation, type ShippingFormData } from '@/publish/shipping'
@@ -121,18 +122,13 @@ export function DetailTab() {
 		// Store the raw input value without formatting
 		setFiatDisplayValue(value)
 
-		// Only convert to sats if we have a valid number
-		const numValue = parseFloat(value)
-		if (!isNaN(numValue) && numValue > 0) {
-			const satsValue = convertCurrencyToSats(numValue, currency)
-			// Store both the sats value (for display) and the fiat value (for publishing)
-			productFormActions.updateValues({ price: satsValue.toString(), fiatPrice: value })
-		} else if (value === '0') {
-			// Set the price to zero if the input is zero
-			productFormActions.updateValues({ price: '0', fiatPrice: '0' })
-		} else if (value === '') {
-			// Clear the price if input is empty
-			productFormActions.updateValues({ price: '', fiatPrice: '' })
+		// Derive the sats price only while exchange rates are available;
+		// otherwise keep the fiat edit and leave the sats price unresolved
+		// until rates arrive (convertCurrencyToSats returns 0 without rates,
+		// and a stored 0 would be published as a real price).
+		const outcome = applyFiatPriceEdit(value, convertCurrencyToSats, { currency, hasExchangeRates })
+		if (outcome) {
+			productFormActions.updateValues(outcome)
 		}
 	}
 
@@ -214,19 +210,17 @@ export function DetailTab() {
 		}
 	}, [storeBitcoinUnit, storeCurrencyMode, fiatPrice])
 
-	// Calculate sats from fiat when loading a fiat-priced product (price is empty, fiatPrice has value)
+	// Calculate sats from fiat once exchange rates are available. Covers both
+	// products loaded for edit and fiat edits made while rates were
+	// unavailable (their derived sats price was left unresolved, so this
+	// derives it when rates finally arrive).
 	useEffect(() => {
-		// Only derive the sats price once exchange rates are actually available;
-		// otherwise leave price empty instead of writing a 0-sats placeholder
-		// (convertCurrencyToSats returns 0 without rates) that could be published.
-		if (storeCurrencyMode === 'fiat' && fiatPrice && !price && hasExchangeRates) {
-			const fiatValue = parseFloat(fiatPrice) || 0
-			if (fiatValue > 0) {
-				const satsValue = convertCurrencyToSats(fiatValue, currency)
-				if (satsValue > 0) {
-					productFormActions.updateValues({ price: satsValue.toString() })
-				}
-			}
+		const derivedSats = deriveSatsPriceFromFiat(
+			{ currencyMode: storeCurrencyMode, fiatPrice, price, currency, hasExchangeRates },
+			convertCurrencyToSats,
+		)
+		if (derivedSats !== null) {
+			productFormActions.updateValues({ price: derivedSats })
 		}
 	}, [storeCurrencyMode, fiatPrice, price, currency, hasExchangeRates])
 
