@@ -37,9 +37,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
-# Configuration — auto-detected relative to the repo root.
-# The script lives at e2e/scripts/flake-report.py, so the repo root is two
-# directories up from this file.
+# Configuration
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]  # e2e/scripts/../../ -> repo root
@@ -53,7 +51,7 @@ DEFAULT_RUNS = 5
 # waiting forever on a hung run.
 RUN_TIMEOUT_SEC = 1800
 
-# Playwright is invoked through bunx in this repo (Bun-based, not npm).
+# The repo uses Bun; Playwright runs through bunx.
 RUNNER_CMD = "bunx"
 NODE_OPTIONS = "--dns-result-order=ipv4first"
 
@@ -135,21 +133,18 @@ def discover_specs(spec_filter: Optional[str]) -> List[Path]:
     matched: List[Path] = []
     for spec in all_specs:
         stem = spec.stem.lower()  # e.g. "cart.spec"
-        # Strip the ".spec" suffix for friendlier matching.
+        # Match stems with or without the ".spec" suffix.
         friendly = stem.replace(".spec", "")
         if any(w in stem or w in friendly for w in wanted):
             matched.append(spec)
-    # Preserve discovery order.
     return matched
 
 
 def spec_arg_for_runner(spec: Path) -> str:
-    """Return the spec path as Playwright expects it (relative to repo root).
+    """Return the spec path relative to the repo root.
 
-    Playwright's testDir is './tests' relative to e2e/playwright.config.ts, so
-    we pass the path relative to the config file's directory. In practice,
-    passing the full e2e/tests/foo.spec.ts path from repo root works because
-    Playwright matches the file basename against testDir.
+    Playwright matches the file basename against its testDir, so the
+    e2e/tests/foo.spec.ts path works when invoked from the repo root.
     """
     rel = spec.relative_to(REPO_ROOT)
     return str(rel)
@@ -186,7 +181,6 @@ def run_spec_once(
     exit_code = -1
     stderr_tail = ""
 
-    # Playwright writes the JSON report to a file we name via env vars.
     with tempfile.TemporaryDirectory(prefix="flake-run-") as tmp:
         report_path = Path(tmp) / "report.json"
         env = os.environ.copy()
@@ -197,8 +191,7 @@ def run_spec_once(
         )
         env["PLAYWRIGHT_JSON_OUTPUT_DIR"] = tmp
         env["PLAYWRIGHT_JSON_OUTPUT_NAME"] = "report.json"
-        # Ensure we run from repo root so relative paths resolve.
-        # NOTE: do NOT set CI=1 here — we want webServer to auto-start.
+        # Do not set CI=1: webServer must auto-start.
 
         cmd = [
             RUNNER_CMD,
@@ -257,7 +250,6 @@ def run_spec_once(
 
         elapsed = time.monotonic() - start
 
-        # Parse the JSON report.
         parse_ok = False
         if report_path.exists():
             try:
@@ -277,9 +269,7 @@ def run_spec_once(
                     f"{spec_basename}: {e}\n"
                 )
 
-        # Fallback: if parse failed or produced no results, synthesize a single
-        # coarse pass/fail entry from the exit code so the run is not silently
-        # lost.
+        # Fallback: synthesize a spec-level result from the exit code.
         if not results and not parse_ok:
             results = [
                 TestResult(
@@ -322,17 +312,13 @@ def extract_test_results(
 
     def visit(suite: Dict[str, Any], file_hint: str, title_prefix: str) -> None:
         nonlocal found_any_spec
-        # Inherit/override the file hint if this suite declares one.
         suite_file_raw = suite.get("file") or file_hint or spec_basename
         suite_file = (
             os.path.basename(suite_file_raw) if suite_file_raw else spec_basename
         )
-        # The top-level suite of a Playwright JSON report is titled with the
-        # file path itself (and carries the `file` key). That label is the
-        # file, not a describe block — exclude it from the title prefix so
-        # identities read "Login > should log in", not
-        # "auth.spec.ts > Login > should log in" (spec_file already records
-        # the file).
+        # Playwright titles the top-level suite with the file path itself; that
+        # label is the file, not a describe block — exclude it so identities
+        # read "Login > should log in" (spec_file already records the file).
         suite_title = suite.get("title", "")
         if suite_title and suite.get("file") and (
             suite_title == suite.get("file")
@@ -346,9 +332,6 @@ def extract_test_results(
             found_any_spec = True
             title = spec.get("title", "<untitled>")
             full_title = " > ".join(p for p in (prefix, title) if p)
-            # Each spec may have multiple `tests` (one per project). We use the
-            # first test's first result for the pass/fail verdict; if multiple
-            # projects exist, we still record one TestResult per test entry.
             tests = spec.get("tests", []) or []
             if not tests:
                 # No project entries at all — nothing to record.
@@ -356,8 +339,7 @@ def extract_test_results(
             for t in tests:
                 pw_results = t.get("results", []) or []
                 if pw_results:
-                    # Use the latest (last) result — retries are disabled so
-                    # there is exactly one, but be defensive.
+                    # Retries are off; take the last result.
                     last = pw_results[-1]
                     status = last.get("status", "unknown")
                     duration = int(last.get("duration", 0) or 0)
@@ -403,7 +385,6 @@ def extract_error_snippet(result: Dict[str, Any]) -> str:
         elif isinstance(err, str):
             msg = err
         if msg:
-            # Collapse whitespace and trim to 200 chars.
             compact = re.sub(r"\s+", " ", msg).strip()
             return compact[:200]
     # Some Playwright versions stash error text in stdout entries.
@@ -464,7 +445,7 @@ def aggregate(results: List[TestResult]) -> List[TestSummary]:
             )
         )
 
-    # Sort worst pass-rate first; ties broken by spec then title.
+    # Worst pass-rate first.
     summaries.sort(key=lambda s: (s.pass_rate, s.spec_file, s.test_title))
     return summaries
 
@@ -528,7 +509,6 @@ def print_terminal_report(
         print("  No tests found. Check that specs exist and contain tests.\n")
         return
 
-    # Column widths.
     test_w = 46
     rate_w = 14
     class_w = 13
@@ -552,7 +532,6 @@ def print_terminal_report(
         cls = s.classification
         emoji = CLASS_EMOJI.get(cls, "")
         cls_display = f"{emoji} {cls}" if emoji else cls
-        # Truncate long test names so the table stays readable.
         display_title = f"{short_spec(s.spec_file)} > {s.test_title}"
         if len(display_title) > test_w:
             display_title = display_title[: test_w - 1] + "…"
@@ -684,7 +663,6 @@ def run_all(
     if not json_only:
         print(f"JSON report saved to: {report_path.relative_to(REPO_ROOT)}")
     else:
-        # In JSON-only mode, still emit the path to stdout for scripting.
         print(str(report_path.relative_to(REPO_ROOT)))
 
 
