@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Configuration — auto-detected relative to the repo root.
@@ -48,7 +48,10 @@ PW_CONFIG = "e2e/playwright.config.ts"
 SPEC_GLOB = "e2e/tests/*.spec.ts"
 RESULTS_DIR = "e2e/baseline-results/"
 DEFAULT_RUNS = 5
-RUN_TIMEOUT_SEC = 300  # per-run timeout
+# Per-run timeout. Heavy specs (cart, payments) run under `workers: 1` and can
+# legitimately exceed 5 minutes; 30 minutes leaves ample headroom without
+# waiting forever on a hung run.
+RUN_TIMEOUT_SEC = 1800
 
 # Playwright is invoked through bunx in this repo (Bun-based, not npm).
 RUNNER_CMD = "bunx"
@@ -69,11 +72,12 @@ class TestResult:
     """A single test outcome from a single run."""
 
     spec_file: str  # "cart.spec.ts"
-    test_title: str  # "should add item to cart"
+    test_title: str  # full title incl. describe prefix: "Describe > test"
     run_num: int  # 1..N
     passed: bool
     duration_ms: int
     error_snippet: str = ""  # first 200 chars of error if failed
+    status: str = "unknown"  # raw Playwright status (passed/failed/skipped/…)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -88,6 +92,7 @@ class TestSummary:
     total_runs: int
     pass_count: int
     fail_count: int
+    skip_count: int
     pass_rate: float
     classification: str  # STABLE/FLAKY/VERY-FLAKY/BROKEN
     avg_duration_ms: float
@@ -101,6 +106,7 @@ class TestSummary:
             "total_runs": self.total_runs,
             "pass_count": self.pass_count,
             "fail_count": self.fail_count,
+            "skip_count": self.skip_count,
             "pass_rate": round(self.pass_rate, 4),
             "classification": self.classification,
             "avg_duration_ms": round(self.avg_duration_ms, 1),
@@ -175,12 +181,20 @@ def run_spec_once(
     results: List[TestResult] = []
     spec_rel = spec_arg_for_runner(spec)
     spec_basename = spec.name
+    # Sentinels so the fallback path below can never hit an unbound name if
+    # subprocess.run raises before assigning them (e.g. OSError on launch).
+    exit_code = -1
+    stderr_tail = ""
 
     # Playwright writes the JSON report to a file we name via env vars.
     with tempfile.TemporaryDirectory(prefix="flake-run-") as tmp:
         report_path = Path(tmp) / "report.json"
         env = os.environ.copy()
-        env["NODE_OPTIONS"] = NODE_OPTIONS
+        # Prepend our flags so any caller-supplied NODE_OPTIONS survive.
+        existing_opts = env.get("NODE_OPTIONS", "").strip()
+        env["NODE_OPTIONS"] = (
+            f"{existing_opts} {NODE_OPTIONS}" if existing_opts else NODE_OPTIONS
+        )
         env["PLAYWRIGHT_JSON_OUTPUT_DIR"] = tmp
         env["PLAYWRIGHT_JSON_OUTPUT_NAME"] = "report.json"
         # Ensure we run from repo root so relative paths resolve.
@@ -228,6 +242,7 @@ def run_spec_once(
                         error_snippet=(
                             f"Spec timed out after {RUN_TIMEOUT_SEC}s"
                         ),
+                        status="failed",
                     )
                 ],
                 "raw_exit_code": 124,
@@ -235,6 +250,10 @@ def run_spec_once(
                 "duration_sec": elapsed,
                 "stderr_tail": "timeout",
             }
+        except OSError as e:
+            elapsed = time.monotonic() - start
+            stderr_tail = f"failed to launch {RUNNER_CMD}: {e}"
+            sys.stderr.write(f"\n  [run {run_num}] {stderr_tail}\n")
 
         elapsed = time.monotonic() - start
 
@@ -244,8 +263,14 @@ def run_spec_once(
             try:
                 raw = report_path.read_text(encoding="utf-8", errors="replace")
                 report = json.loads(raw)
-                results = extract_test_results(report, spec_basename, run_num)
-                parse_ok = bool(results) or True  # empty list is still parse_ok
+                results, found_any_spec = extract_test_results(
+                    report, spec_basename, run_num
+                )
+                # A parsed report that contains no tests at all (e.g. a
+                # --grep that matched nothing, or every test filtered out)
+                # is NOT treated as a successful run — fall through to the
+                # exit-code fallback below so it is surfaced, not silent.
+                parse_ok = found_any_spec
             except (json.JSONDecodeError, OSError) as e:
                 sys.stderr.write(
                     f"\n  [run {run_num}] JSON parse failed for "
@@ -266,6 +291,7 @@ def run_spec_once(
                     error_snippet=(
                         "" if exit_code == 0 else f"exit code {exit_code}"
                     ),
+                    status="passed" if exit_code == 0 else "failed",
                 )
             ]
 
@@ -280,59 +306,91 @@ def run_spec_once(
 
 def extract_test_results(
     report: Dict[str, Any], spec_basename: str, run_num: int
-) -> List[TestResult]:
+) -> Tuple[List[TestResult], bool]:
     """Walk the Playwright JSON suite tree and return TestResult per test.
 
     Suites can nest arbitrarily (test.describe blocks). We recurse and collect
-    every `spec` entry we find, regardless of depth.
+    every `spec` entry we find, regardless of depth. Titles are prefixed with
+    their enclosing describe titles ("Describe A > inner > test name") so
+    identical leaf titles in different blocks do not collide.
+
+    Returns (results, found_any_spec); found_any_spec is False when the report
+    tree contained no spec entries at all (e.g. --grep matched nothing).
     """
     out: List[TestResult] = []
+    found_any_spec = False
 
-    def visit(suite: Dict[str, Any], file_hint: str) -> None:
+    def visit(suite: Dict[str, Any], file_hint: str, title_prefix: str) -> None:
+        nonlocal found_any_spec
         # Inherit/override the file hint if this suite declares one.
-        suite_file = suite.get("file") or file_hint or spec_basename
-        suite_file = os.path.basename(suite_file) if suite_file else spec_basename
+        suite_file_raw = suite.get("file") or file_hint or spec_basename
+        suite_file = (
+            os.path.basename(suite_file_raw) if suite_file_raw else spec_basename
+        )
+        # The top-level suite of a Playwright JSON report is titled with the
+        # file path itself (and carries the `file` key). That label is the
+        # file, not a describe block — exclude it from the title prefix so
+        # identities read "Login > should log in", not
+        # "auth.spec.ts > Login > should log in" (spec_file already records
+        # the file).
+        suite_title = suite.get("title", "")
+        if suite_title and suite.get("file") and (
+            suite_title == suite.get("file")
+            or suite_title.endswith("/" + str(suite.get("file")))
+            or suite_title == suite_file
+        ):
+            suite_title = ""
+        prefix = " > ".join(p for p in (title_prefix, suite_title) if p)
 
         for spec in suite.get("specs", []) or []:
+            found_any_spec = True
             title = spec.get("title", "<untitled>")
+            full_title = " > ".join(p for p in (prefix, title) if p)
             # Each spec may have multiple `tests` (one per project). We use the
             # first test's first result for the pass/fail verdict; if multiple
             # projects exist, we still record one TestResult per test entry.
             tests = spec.get("tests", []) or []
             if not tests:
-                # Skipped/empty spec — record nothing but don't crash.
+                # No project entries at all — nothing to record.
                 continue
             for t in tests:
                 pw_results = t.get("results", []) or []
-                if not pw_results:
+                if pw_results:
+                    # Use the latest (last) result — retries are disabled so
+                    # there is exactly one, but be defensive.
+                    last = pw_results[-1]
+                    status = last.get("status", "unknown")
+                    duration = int(last.get("duration", 0) or 0)
+                    passed = status == "passed"
+                    snippet = "" if passed else extract_error_snippet(last)
+                elif t.get("status") == "skipped":
+                    # Skipped tests carry no results entry; account for them
+                    # so they appear in the report instead of vanishing.
+                    status = "skipped"
+                    duration = 0
+                    passed = False
+                    snippet = ""
+                else:
                     continue
-                # Use the latest (last) result — retries are disabled so there
-                # is exactly one, but be defensive.
-                last = pw_results[-1]
-                status = last.get("status", "unknown")
-                duration = int(last.get("duration", 0) or 0)
-                passed = status == "passed"
-                snippet = ""
-                if not passed:
-                    snippet = extract_error_snippet(last)
                 out.append(
                     TestResult(
                         spec_file=suite_file,
-                        test_title=title,
+                        test_title=full_title,
                         run_num=run_num,
                         passed=passed,
                         duration_ms=duration,
                         error_snippet=snippet,
+                        status=status,
                     )
                 )
 
         for child in suite.get("suites", []) or []:
-            visit(child, suite_file)
+            visit(child, suite_file, prefix)
 
     for top_suite in report.get("suites", []) or []:
-        visit(top_suite, spec_basename)
+        visit(top_suite, spec_basename, "")
 
-    return out
+    return out, found_any_spec
 
 
 def extract_error_snippet(result: Dict[str, Any]) -> str:
@@ -359,25 +417,32 @@ def extract_error_snippet(result: Dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # Aggregation
 # ---------------------------------------------------------------------------
-def key_for(spec_file: str, test_title: str) -> str:
-    return f"{spec_file}::{test_title}"
+def key_for(spec_file: str, test_title: str) -> Tuple[str, str]:
+    """Identity for aggregation. A tuple, not a delimited string, so titles
+    containing any separator characters (e.g. "::") can never mis-split."""
+    return (spec_file, test_title)
 
 
 def aggregate(results: List[TestResult]) -> List[TestSummary]:
     """Aggregate per-test results into TestSummary objects."""
-    buckets: Dict[str, List[TestResult]] = {}
+    buckets: Dict[Tuple[str, str], List[TestResult]] = {}
     for r in results:
         k = key_for(r.spec_file, r.test_title)
         buckets.setdefault(k, []).append(r)
 
     summaries: List[TestSummary] = []
     for k, items in buckets.items():
-        spec_file, test_title = k.split("::", 1)
-        total = len(items)
-        passes = sum(1 for i in items if i.passed)
+        spec_file, test_title = k
+        skipped = sum(1 for i in items if i.status == "skipped")
+        executed = [i for i in items if i.status != "skipped"]
+        total = len(executed)
+        passes = sum(1 for i in executed if i.passed)
         fails = total - passes
         rate = passes / total if total else 0.0
-        durations = [i.duration_ms for i in items if i.duration_ms]
+        # A test skipped in every run (test.skip / --grep-invert) is reported
+        # as SKIPPED, not counted as a 0%-pass BROKEN test.
+        classification = "SKIPPED" if not executed else classify(rate)
+        durations = [i.duration_ms for i in executed if i.duration_ms]
         avg = sum(durations) / len(durations) if durations else 0.0
         snippets: List[str] = []
         for i in items:
@@ -387,11 +452,12 @@ def aggregate(results: List[TestResult]) -> List[TestSummary]:
             TestSummary(
                 spec_file=spec_file,
                 test_title=test_title,
-                total_runs=total,
+                total_runs=len(items),
                 pass_count=passes,
                 fail_count=fails,
+                skip_count=skipped,
                 pass_rate=rate,
-                classification=classify(rate),
+                classification=classification,
                 avg_duration_ms=avg,
                 error_snippets=snippets[:5],  # cap stored snippets
                 individual_results=[i.to_dict() for i in items],
@@ -421,6 +487,7 @@ CLASS_EMOJI = {
     "FLAKY": "🟡",
     "VERY-FLAKY": "🔴",
     "BROKEN": "💥",
+    "SKIPPED": "⏭",
 }
 
 
@@ -435,7 +502,13 @@ def print_terminal_report(
         return
 
     total = len(summaries)
-    counts = {"STABLE": 0, "FLAKY": 0, "VERY-FLAKY": 0, "BROKEN": 0}
+    counts = {
+        "STABLE": 0,
+        "FLAKY": 0,
+        "VERY-FLAKY": 0,
+        "BROKEN": 0,
+        "SKIPPED": 0,
+    }
     for s in summaries:
         counts[s.classification] += 1
 
@@ -472,7 +545,10 @@ def print_terminal_report(
 
     for s in summaries:
         pct = int(round(s.pass_rate * 100))
-        label = f"{s.pass_count}/{s.total_runs} ({pct}%)"
+        if s.classification == "SKIPPED":
+            label = f"{s.skip_count}/{s.total_runs} skipped"
+        else:
+            label = f"{s.pass_count}/{s.total_runs} ({pct}%)"
         cls = s.classification
         emoji = CLASS_EMOJI.get(cls, "")
         cls_display = f"{emoji} {cls}" if emoji else cls
@@ -488,8 +564,8 @@ def print_terminal_report(
     print()
     print(
         f"SUMMARY: {counts['STABLE']} stable | {counts['FLAKY']} flaky | "
-        f"{counts['VERY-FLAKY']} very flaky | {counts['BROKEN']} broken "
-        f"({total} tests total)"
+        f"{counts['VERY-FLAKY']} very flaky | {counts['BROKEN']} broken | "
+        f"{counts['SKIPPED']} skipped ({total} tests total)"
     )
     print()
 
@@ -514,7 +590,13 @@ def save_json_report(
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = out_dir / f"flake-report-{ts}.json"
 
-    counts = {"stable": 0, "flaky": 0, "very_flaky": 0, "broken": 0}
+    counts = {
+        "stable": 0,
+        "flaky": 0,
+        "very_flaky": 0,
+        "broken": 0,
+        "skipped": 0,
+    }
     for s in summaries:
         key = s.classification.lower().replace("-", "_")
         counts[key] += 1
