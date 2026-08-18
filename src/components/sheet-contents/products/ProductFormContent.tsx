@@ -2,6 +2,13 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ndkActions } from '@/lib/stores/ndk'
 import { productFormActions, productFormStore, type ProductFormState, type ProductFormTab } from '@/lib/stores/product'
+
+// Expose store/actions to e2e tests for deterministic state control
+// Only in test environments to avoid leaking internals in production
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'test') {
+	;(window as any).__productFormActions = productFormActions
+	;(window as any).__productFormStore = productFormStore
+}
 import { uiActions } from '@/lib/stores/ui'
 import { hasProductFormDraft } from '@/lib/utils/productFormStorage'
 import type { ProductWorkflowResolution } from '@/lib/workflow/productWorkflowResolver'
