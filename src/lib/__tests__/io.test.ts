@@ -58,7 +58,10 @@ const mockNdkStore = {
 const mockNdkActions = {
 	fetchEventsWithTimeout: mock(async () => new Set([stubNdkEvent])),
 	publishEvent: mock(async () => new Set(['wss://relay.example'])),
+	getNDK: () => mockNdkStore.state.ndk,
 	getSigner: () => undefined,
+	setSigner: mock(() => {}),
+	removeSigner: mock(() => {}),
 	getUser: mock(async () => null as { pubkey: string } | null),
 }
 const mockGetWriteRelays = mock(() => mockNdkStore.state.writeRelayUrls)
