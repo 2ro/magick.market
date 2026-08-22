@@ -1,4 +1,4 @@
-# AGENTS.md — Plebeian Market
+# AGENTS.md — Magick Market
 
 AGENTS.md records intended contributor and agent operating guidance. Current
 code, tests, accepted ADRs, and maintainer direction remain the source of
@@ -6,8 +6,8 @@ verified behavior. Conflicts require explicit reconciliation.
 
 ## Context
 
-Plebeian Market is a decentralized marketplace built around Nostr events and
-Bitcoin/Lightning payment workflows. The repository includes the marketplace
+Magick Market is a decentralized marketplace built around Nostr events and
+GRIN payment workflows. The repository includes the marketplace
 client, ContextVM services, Playwright e2e tests, documentation, scripts,
 deployment assets, and GitHub workflow configuration.
 
@@ -83,8 +83,8 @@ already exists.
 Tests must not make network calls to external services. The only allowed
 network dependencies are local services started in CI workflows (local
 relay via `nak serve`, local dev server on port 3333, ContextVM). All
-other external services (CDNs, Cashu mints, Lightning nodes, third-party
-APIs) must be mocked or intercepted.
+other external services (CDNs, GoblinPay, Grin nodes, third-party APIs)
+must be mocked or intercepted.
 
 See ADR-0005 for the full decision and established mock patterns.
 
@@ -92,9 +92,7 @@ See ADR-0005 for the full decision and established mock patterns.
 
 - `page.route()` / `context.route()` — intercept HTTP requests to
   external domains and serve local fixtures or mock responses.
-- `e2e/utils/lightning-mock.ts` — mocks LNURL, WebLN, and zap receipts.
 - `e2e/utils/nip46-mock.ts` — mocks NIP-46 remote signer.
-- `e2e/helpers/lnurl-mock.ts` — intercepts LNURL discovery.
 
 ### What Is Allowed
 
