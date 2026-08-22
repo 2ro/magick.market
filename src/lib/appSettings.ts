@@ -4,8 +4,8 @@ import { isValidHexKey } from './utils'
 
 /** Kind for NIP-89 handler information / app-config events. */
 export const APP_SETTINGS_KIND = 31990
-/** Exact d tag that identifies the Plebeian Market app-settings event. */
-export const APP_SETTINGS_D_TAG = 'plebeian-market-handler'
+/** Exact d tag that identifies the Magick Market app-settings event. */
+export const APP_SETTINGS_D_TAG = 'magick-market-handler'
 
 /**
  * Structural shape needed to verify app-settings publisher authority. Kept
@@ -23,7 +23,7 @@ export interface AppSettingsEventLike {
 /**
  * Select the latest app-settings event that matches the expected publisher
  * authority: the event must be kind 31990, authored by `appPubkey`, and carry
- * the exact d tag 'plebeian-market-handler'. Events from any other publisher
+ * the exact d tag 'magick-market-handler'. Events from any other publisher
  * (or with a different kind / d tag) are rejected — the content schema
  * validates shape, not authority, so a spoofed event that passes the schema
  * must still be refused here.
@@ -85,7 +85,7 @@ export async function fetchAppSettings(relayUrl: string, appPubkey: string): Pro
 		const filter: NDKFilter = {
 			kinds: [31990],
 			authors: [appPubkey],
-			'#d': ['magick-market-handler'],
+			'#d': [APP_SETTINGS_D_TAG],
 			limit: 1,
 		}
 
@@ -117,7 +117,7 @@ export async function fetchAppSettings(relayUrl: string, appPubkey: string): Pro
 
 		// Verify publisher authority before accepting content: select only the
 		// event authored by the expected app pubkey, with kind 31990 and the exact
-		// d tag 'plebeian-market-handler'. A relay could return an event from a
+		// d tag 'magick-market-handler'. A relay could return an event from a
 		// different publisher whose content passes the shape schema; reject it
 		// here (see selectAuthoritativeAppSettingsEvent).
 		const authoritativeEvent = selectAuthoritativeAppSettingsEvent(eventArray, appPubkey)
