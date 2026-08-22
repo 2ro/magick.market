@@ -25,8 +25,10 @@ test.describe('Order Details - Seller View - Products', () => {
 
 		// Confirmation dialog appears
 		await expect(page.getByRole('dialog')).toBeVisible()
-		await expect(page.getByText('Please verify that you have received payment before confirming')).toBeVisible()
-		await expect(page.getByText('By clicking confirm, you acknowledge the funds have been received')).toBeVisible()
+		// Magick keeps its own confirm-payment wording: the seller is told to check
+		// their Goblin wallet, not to trust the buyer's claim. Upstream's copy differs.
+		await expect(page.getByText(/Check your own Goblin wallet and confirm the funds actually arrived/)).toBeVisible()
+		await expect(page.getByText(/you acknowledge that the payment is in your wallet/)).toBeVisible()
 
 		// Confirm in the dialog
 		await page.getByRole('button', { name: /^confirm payment$/i }).click()
