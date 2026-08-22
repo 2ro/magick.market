@@ -11,7 +11,7 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV === 'test') {
 }
 import { uiActions } from '@/lib/stores/ui'
 import { hasProductFormDraft } from '@/lib/utils/productFormStorage'
-import { resolvePublishPrice } from '@/lib/utils/productPriceResolution'
+import { listingPriceError } from '@/lib/grin'
 import type { ProductWorkflowResolution } from '@/lib/workflow/productWorkflowResolver'
 import { useForm } from '@tanstack/react-form'
 import { useQueryClient } from '@tanstack/react-query'
@@ -62,11 +62,11 @@ function getTabValidationIssues(state: ProductFormWorkflowState, tab: ProductFor
 		}
 		case 'detail': {
 			const issues: string[] = []
-			// Currency-mode aware price validation: fiat-fixed publishing uses
-			// the explicit fiat value (the sats price may still be unresolved
-			// while exchange rates are unavailable), while sats-fixed
-			// publishing fails closed until the sats price is resolved.
-			if (resolvePublishPrice(state).status !== 'ok') issues.push('Valid product price is required')
+			// The listing price is decimal GRIN and must clear the marketplace
+			// minimum (owner decision, 2026-08-22); the same guard fails the
+			// publish path closed in continuePublishing.
+			const priceIssue = listingPriceError(state.price)
+			if (priceIssue) issues.push(priceIssue)
 			if (!isValidNumberString(state.quantity)) issues.push('Valid product quantity is required')
 			return issues
 		}

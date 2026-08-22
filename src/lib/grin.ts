@@ -11,6 +11,25 @@
 export const GRIN_CURRENCY = 'GRIN'
 export const NANOGRIN_PER_GRIN = 1_000_000_000
 
+/**
+ * The minimum price a magick.market listing may carry, in decimal GRIN
+ * (owner decision, 2026-08-22). Listings priced below this, or with no price
+ * at all, are never published.
+ */
+export const MIN_LISTING_PRICE_GRIN = 1
+
+/**
+ * Validate a listing price typed as decimal GRIN. Returns the user-facing
+ * error, or null when the price may be published.
+ */
+export function listingPriceError(priceGrin: string): string | null {
+	const trimmed = priceGrin.trim()
+	const amount = Number(trimmed)
+	if (trimmed === '' || !Number.isFinite(amount)) return 'Valid product price is required'
+	if (amount < MIN_LISTING_PRICE_GRIN) return `Price must be at least ${MIN_LISTING_PRICE_GRIN} GRIN`
+	return null
+}
+
 /** Convert a decimal GRIN amount to integer nanogrin. */
 export function grinToNanogrin(amountGrin: number): number {
 	if (!Number.isFinite(amountGrin)) return 0
