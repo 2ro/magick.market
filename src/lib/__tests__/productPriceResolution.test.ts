@@ -1,21 +1,15 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 
-// Mock the publish layer before importing the product form store so
-// continuePublishing can be asserted without relay/network side effects.
-mock.module('@/publish/products', () => ({
-	publishProduct: mock(async () => 'test-published-event-id'),
-	updateProduct: mock(async () => 'test-updated-event-id'),
-}))
-
-import { publishProduct } from '@/publish/products'
-import { productFormActions } from '@/lib/stores/product'
 import { applyFiatPriceEdit, deriveSatsPriceFromFiat, resolvePublishPrice } from '@/lib/utils/productPriceResolution'
+
+// NOTE: upstream also covered `productFormActions.continuePublishing` here. That
+// block is dropped in this fork: magick.market is GRIN-only, so continuePublishing
+// always publishes ['price', <amount>, 'GRIN'] and never consults the fiat/sats
+// resolution this module implements. The pure-module tests below still apply.
 
 // Deterministic converter for tests: 1 unit of currency = 100_000 sats.
 // Like the real converter, it returns 0 for currencies it has no rate for.
 const convertUsdLike = (amount: number, currency: string) => (currency === 'USD' ? amount * 100_000 : 0)
-
-const publishMock = publishProduct as ReturnType<typeof mock>
 
 describe('applyFiatPriceEdit', () => {
 	test('derives the sats price while exchange rates are available', () => {
@@ -207,68 +201,5 @@ describe('resolvePublishPrice (publication boundary)', () => {
 		expect(resolvePublishPrice({ price: '', fiatPrice: 'abc', currency: 'USD', currencyMode: 'fiat', bitcoinUnit: 'SATS' }).status).toBe(
 			'error',
 		)
-	})
-})
-
-describe('productFormActions.continuePublishing price boundary', () => {
-	const signer = {} as Parameters<typeof productFormActions.continuePublishing>[0]
-	const ndk = {} as Parameters<typeof productFormActions.continuePublishing>[1]
-
-	beforeEach(() => {
-		productFormActions.reset()
-		publishMock.mockClear()
-
-		productFormActions.updateValues({
-			name: 'Test product',
-			description: 'A test product',
-			quantity: '10',
-		})
-	})
-
-	test('fails closed without publishing when the sats price is unresolved', async () => {
-		productFormActions.updateValues({
-			currency: 'USD',
-			currencyMode: 'sats',
-			price: '', // derived sats unresolved: fiat edited while rates were unavailable
-			fiatPrice: '25',
-		})
-
-		const result = await productFormActions.continuePublishing(signer, ndk)
-
-		expect(result).toBe(false)
-		expect(publishMock.mock.calls.length).toBe(0)
-	})
-
-	test('publishes the explicit fiat value in fiat mode while sats is unresolved', async () => {
-		productFormActions.updateValues({
-			currency: 'USD',
-			currencyMode: 'fiat',
-			price: '', // rates never arrived, derived sats unresolved
-			fiatPrice: '25',
-		})
-
-		const result = await productFormActions.continuePublishing(signer, ndk)
-
-		expect(result).toBe('test-published-event-id')
-		expect(publishMock.mock.calls.length).toBe(1)
-		const formData = publishMock.mock.calls[0][0] as { price: string; currency: string }
-		expect(formData.price).toBe('25')
-		expect(formData.currency).toBe('USD')
-	})
-
-	test('publishes the resolved sats price in sats mode', async () => {
-		productFormActions.updateValues({
-			currency: 'USD',
-			currencyMode: 'sats',
-			price: '2500000',
-			fiatPrice: '25',
-		})
-
-		const result = await productFormActions.continuePublishing(signer, ndk)
-
-		expect(result).toBe('test-published-event-id')
-		const formData = publishMock.mock.calls[0][0] as { price: string; currency: string }
-		expect(formData.price).toBe('2500000')
-		expect(formData.currency).toBe('SATS')
 	})
 })
