@@ -82,7 +82,7 @@ describe('order message rumors', () => {
 			buyerPubkey: BUYER_PUBKEY,
 			orderId: 'order-123',
 			amountSats: 2100,
-			paymentMethods: [{ type: 'lightning', details: 'lnbc-secret-invoice' }],
+			paymentMethods: [{ type: 'grin', details: 'grin-secret-invoice' }],
 			expirationTime: CREATED_AT + 3600,
 			content: 'Payment request for your order',
 			createdAt: CREATED_AT,
@@ -95,7 +95,7 @@ describe('order message rumors', () => {
 		expect(tagValue(paymentRequest.tags, 'type')).toBe(ORDER_MESSAGE_TYPE.PAYMENT_REQUEST)
 		expect(tagValue(paymentRequest.tags, 'order')).toBe('order-123')
 		expect(tagValue(paymentRequest.tags, 'amount')).toBe('2100')
-		expect(tagValues(paymentRequest.tags, 'payment')).toEqual([['payment', 'lightning', 'lnbc-secret-invoice']])
+		expect(tagValues(paymentRequest.tags, 'payment')).toEqual([['payment', 'grin', 'grin-secret-invoice']])
 		expect(tagValue(paymentRequest.tags, 'expiration')).toBe(String(CREATED_AT + 3600))
 		expect(tagValue(paymentRequest.tags, 'recipient')).toBeUndefined()
 		expectUnsignedCanonicalRumor(paymentRequest)
@@ -150,9 +150,9 @@ describe('order message rumors', () => {
 			merchantPubkey: SELLER_PUBKEY,
 			orderId: 'order-123',
 			payment: {
-				medium: 'lightning',
-				reference: 'lnbc-secret-invoice',
-				proof: 'preimage-secret',
+				medium: 'grin',
+				reference: 'grin-secret-invoice',
+				proof: 'proof-secret',
 			},
 			amountSats: 2100,
 			content: 'Payment confirmation',
@@ -164,7 +164,7 @@ describe('order message rumors', () => {
 		expect(tagValue(receipt.tags, 'p')).toBe(SELLER_PUBKEY)
 		expect(tagValue(receipt.tags, 'subject')).toBe('order-receipt')
 		expect(tagValue(receipt.tags, 'order')).toBe('order-123')
-		expect(tagValues(receipt.tags, 'payment')).toEqual([['payment', 'lightning', 'lnbc-secret-invoice', 'preimage-secret']])
+		expect(tagValues(receipt.tags, 'payment')).toEqual([['payment', 'grin', 'grin-secret-invoice', 'proof-secret']])
 		expect(tagValue(receipt.tags, 'amount')).toBe('2100')
 		expectUnsignedCanonicalRumor(receipt)
 		expect(() => assertOrderMessageRumor(receipt)).not.toThrow()

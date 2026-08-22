@@ -126,7 +126,7 @@ describe('NIP-17 order read integration helper', () => {
 			buyerPubkey: BUYER_PUBKEY,
 			merchantPubkey: SELLER_PUBKEY,
 			orderId: 'order-123',
-			payment: { medium: 'lightning', reference: 'lnbc-test', proof: 'preimage-test' },
+			payment: { medium: 'grin', reference: 'grin-test', proof: 'proof-test' },
 			amountSats: 2100,
 			createdAt: CREATED_AT + 2,
 		})
@@ -213,7 +213,7 @@ describe('NIP-17 order read integration helper', () => {
 			buyerPubkey: BUYER_PUBKEY,
 			orderId: 'order-legacy-recipient',
 			amountSats: 2100,
-			paymentMethods: [{ type: 'lightning', details: 'lnbc-test' }],
+			paymentMethods: [{ type: 'grin', details: 'grin-test' }],
 			createdAt: CREATED_AT,
 		})
 		const tagsWithRecipient = [...paymentRequest.tags, ['recipient', SELLER_PUBKEY]]
@@ -247,7 +247,7 @@ describe('NIP-17 order read integration helper', () => {
 			buyerPubkey: BUYER_PUBKEY,
 			orderId: 'order-missing-amount',
 			amountSats: 2100,
-			paymentMethods: [{ type: 'lightning', details: 'lnbc-test' }],
+			paymentMethods: [{ type: 'grin', details: 'grin-test' }],
 			createdAt: CREATED_AT,
 		})
 		const missingAmount = legacyEventFromRumor(paymentRequest, {
@@ -336,7 +336,7 @@ describe('NIP-17 order read integration helper', () => {
 			buyerPubkey: BUYER_PUBKEY,
 			merchantPubkey: SELLER_PUBKEY,
 			orderId: 'order-empty-proof',
-			payment: { medium: 'lightning', reference: 'lnbc-test', proof: '' },
+			payment: { medium: 'grin', reference: 'grin-test', proof: '' },
 			amountSats: 2100,
 			createdAt: CREATED_AT,
 		})
@@ -344,7 +344,7 @@ describe('NIP-17 order read integration helper', () => {
 		const result = mergeOrderMessageReads({ legacyEvents: [legacyEventFromRumor(receipt)] })
 
 		expect(result.records).toHaveLength(1)
-		expect(result.records[0]?.tags).toContainEqual(['payment', 'lightning', 'lnbc-test', ''])
+		expect(result.records[0]?.tags).toContainEqual(['payment', 'grin', 'grin-test', ''])
 		expect('paid' in result.records[0]!).toBe(false)
 		expect('settled' in result.records[0]!).toBe(false)
 	})
@@ -441,7 +441,7 @@ describe('NIP-17 order read integration helper', () => {
 			buyerPubkey: BUYER_PUBKEY,
 			orderId: 'order-nip17-recipient-tag',
 			amountSats: 2100,
-			paymentMethods: [{ type: 'lightning', details: 'lnbc-test' }],
+			paymentMethods: [{ type: 'grin', details: 'grin-test' }],
 			createdAt: CREATED_AT + 5,
 		})
 		const decimalOrderCreationRumor = createOrderCreationRumor({
@@ -553,7 +553,7 @@ describe('NIP-17 order read integration helper', () => {
 			buyerPubkey: BUYER_PUBKEY,
 			merchantPubkey: SELLER_PUBKEY,
 			orderId: 'order-mixed',
-			payment: { medium: 'lightning', reference: 'lnbc-test', proof: 'preimage-test' },
+			payment: { medium: 'grin', reference: 'grin-test', proof: 'proof-test' },
 			amountSats: 2100,
 			createdAt: CREATED_AT + 1,
 		})

@@ -398,7 +398,7 @@ describe('NIP-17 order transport read seam', () => {
 			merchantPubkey: sellerPubkey,
 			orderId: 'order-read-transport-b',
 			amountSats: 1000,
-			payment: { medium: 'lightning', reference: 'lnbc-test', proof: 'preimage-test' },
+			payment: { medium: 'grin', reference: 'grin-test', proof: 'proof-test' },
 			createdAt: 100,
 		})
 		const newerRumor = createOrderCreationRumor({

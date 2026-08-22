@@ -144,9 +144,9 @@ describe('NIP-17 order read boundary', () => {
 			orderId: 'order-new',
 			amountSats: 2000,
 			payment: {
-				medium: 'lightning',
-				reference: 'lnbc-test',
-				proof: 'preimage-test',
+				medium: 'grin',
+				reference: 'grin-test',
+				proof: 'proof-test',
 			},
 			createdAt: 200,
 		})

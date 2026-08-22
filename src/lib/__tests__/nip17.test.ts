@@ -11,8 +11,8 @@ const PUBLIC_DATA_SENTINELS = [
 	'Satoshi Nakamoto',
 	'+15551234567',
 	'order-123',
-	'lnbc-secret-invoice',
-	'preimage-secret',
+	'grin-secret-invoice',
+	'proof-secret',
 ]
 
 type KeyPair = {
@@ -79,7 +79,7 @@ function rumorFor(buyerPubkey: string, sellerPubkey: string): UnsignedRumor {
 			['type', '1'],
 			['order', 'order-123'],
 			['amount', '2100'],
-			['payment', 'lightning', 'lnbc-secret-invoice', 'preimage-secret'],
+			['payment', 'grin', 'grin-secret-invoice', 'proof-secret'],
 		],
 		content: 'Satoshi Nakamoto buyer@example.com +15551234567 123 Main Street',
 	}

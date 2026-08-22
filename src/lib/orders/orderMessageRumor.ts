@@ -14,7 +14,10 @@ import {
 	StatusUpdateSchema,
 } from '../schemas/order'
 
-type PaymentMedium = 'lightning' | 'bitcoin' | 'fiat' | 'other'
+// magick.market is GRIN-only: the fork narrowed PaymentMethodTagSchema /
+// PaymentProofTagSchema in src/lib/schemas/order.ts to z.enum(['grin']), so the
+// rumor builders can only ever produce a medium the write boundary accepts.
+type PaymentMedium = 'grin'
 
 export type OrderMessageRumor = {
 	id: string
