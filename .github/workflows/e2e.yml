@@ -20,7 +20,11 @@ on:
     - cron: '0 6 * * 1'
 
 jobs:
-  e2e-grep:
+  # Job id kept as `e2e-pricing` because master branch protection requires a
+  # status check with that exact name. Upstream renamed this job to `e2e-grep`;
+  # adopting that name silently drops the required check and blocks every PR.
+  # Rename only together with the branch protection setting.
+  e2e-pricing:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -149,7 +153,7 @@ jobs:
           retention-days: 7
 
   e2e-full:
-    # The e2e-grep job runs reliable test families on every PR/push.
+    # The e2e-pricing job runs reliable test families on every PR/push.
     # Families with pre-existing failures (Authentication, App Settings,
     # NWC, Cart, PII, Products, Multi-Merchant Cart, Zaps, Buyer Purchase,
     # Auction Mint State, Auction Shipping, Product Page Interactions)
