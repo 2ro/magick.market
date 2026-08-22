@@ -21,6 +21,7 @@ import {
 } from '@/queries/products'
 import { productKeys } from '@/queries/queryKeyFactory'
 import { clearProductFormDraft, getProductFormDraft, saveProductFormDraft } from '@/lib/utils/productFormStorage'
+import { resolvePublishPrice } from '@/lib/utils/productPriceResolution'
 import { normalizeProductShippingSelections, type ProductShippingSelection } from '@/lib/utils/productShippingSelections'
 import { uiActions, uiStore } from '@/lib/stores/ui'
 import { authActions, authStore } from '@/lib/stores/auth'

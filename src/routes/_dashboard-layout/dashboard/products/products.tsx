@@ -245,13 +245,14 @@ function ProductsOverviewComponent() {
 	// sections 5, 9 reuse of GET /api/v1/by-pubkey/{pubkey}).
 	const { data: heldName } = useHeldName(user?.pubkey)
 
+	const dashboardProductOptions = productsByPubkeyQueryOptions(user?.pubkey ?? '', true) // Include hidden products for own dashboard
 	const {
 		data: products,
 		isLoading,
 		error,
 	} = useQuery({
-		...productsByPubkeyQueryOptions(user?.pubkey ?? '', true), // Include hidden products for own dashboard
-		enabled: !!user?.pubkey && isAuthenticated,
+		...dashboardProductOptions,
+		enabled: dashboardProductOptions.enabled && isAuthenticated,
 	})
 
 	// Sort products based on orderBy

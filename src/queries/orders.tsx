@@ -1,13 +1,32 @@
 import { formatGrinAmount } from '@/lib/grin'
-import { ORDER_GENERAL_KIND, ORDER_MESSAGE_TYPE, ORDER_PROCESS_KIND, ORDER_STATUS, PAYMENT_RECEIPT_KIND } from '@/lib/schemas/order'
+import {
+	ORDER_GENERAL_KIND,
+	ORDER_MESSAGE_TYPE,
+	ORDER_PROCESS_KIND,
+	ORDER_STATUS,
+	PAYMENT_RECEIPT_KIND,
+	SHIPPING_STATUS,
+	type OrderStatus,
+	type ShippingStatus,
+} from '@/lib/schemas/order'
 import { NIP59_GIFT_WRAP_KIND, signerSupportsNip44 } from '@/lib/nostr/nip59'
 import { decryptPrivateOrderMessageWithSigner, type PrivateOrderDeliveryDetails } from '@/lib/orders/privateOrderMessage'
+import { applesauceIo, type NostrFilter } from '@/lib/nostr/io'
+import {
+	fetchNdkEventSet,
+	mergeNdkEventSetsById,
+	rehydrateVerifiedNdkEvent,
+	type NDKEvent,
+	type NDKFilter,
+	type NDKSigner,
+} from '@/lib/nostr/ndk-events'
 import { ndkActions } from '@/lib/stores/ndk'
-import type { NDKEvent, NDKFilter, NDKSigner } from '@nostr-dev-kit/ndk'
+import { isValidHexKey } from '@/lib/utils'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Event } from 'nostr-tools'
 import { useEffect, useMemo } from 'react'
 import { orderKeys } from './queryKeyFactory'
+import { getCoordsFromATag, isValidATag } from '@/lib/utils/coords'
 
 export type OrderWithRelatedEvents = {
 	order: NDKEvent // The original order creation event (kind 16, type 1)
@@ -61,7 +80,7 @@ const HEX_PUBKEY_RE = /^[0-9a-f]{64}$/i
 
 // Relay reads are bounded so a single slow/never-EOSE relay can't hang the UI. Without an
 // explicit budget these queries only settle on the library's long internal timeout, which is
-// what made the Sales view take ~30s to load. fetchEventsWithTimeout resolves on EOSE OR the
+// what made the Sales view take ~30s to load. The Nostr I/O port resolves on EOSE OR the
 // deadline, whichever comes first, returning whatever events arrived so far.
 const ORDER_FETCH_TIMEOUT_MS = 6000
 const RELATED_EVENTS_FETCH_TIMEOUT_MS = 6000
@@ -76,9 +95,15 @@ const GIFT_WRAP_DECRYPT_CONCURRENCY = 8
 // a wrap this seller can't decrypt (wrong recipient / malformed) so refetches skip it too.
 const giftWrapDecryptCache = new Map<string, SellerPrivateOrderDetailsCandidate | null>()
 
+type OrdersNdk = NonNullable<ReturnType<typeof ndkActions.getNDK>>
+
 export const fetchSellerPrivateOrderGiftWraps = async (sellerPubkey: string): Promise<NDKEvent[]> => {
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
+
+	// A malformed (not just empty) seller pubkey would build { '#p': [...] }
+	// that trips NDK's strict filter validation (#p must be 64-hex too).
+	if (!isValidHexKey(sellerPubkey)) return []
 
 	const giftWrapFilter: NDKFilter = {
 		kinds: [NIP59_GIFT_WRAP_KIND],
@@ -86,8 +111,7 @@ export const fetchSellerPrivateOrderGiftWraps = async (sellerPubkey: string): Pr
 		limit: 500,
 	}
 
-	const events = await ndkActions.fetchEventsWithTimeout(giftWrapFilter, { timeoutMs: GIFT_WRAP_FETCH_TIMEOUT_MS })
-	return Array.from(events)
+	return Array.from(await fetchNdkEventSet(applesauceIo, ndk, giftWrapFilter, { timeoutMs: GIFT_WRAP_FETCH_TIMEOUT_MS }))
 }
 
 /**
@@ -254,8 +278,8 @@ export const fetchOrders = async (): Promise<OrderWithRelatedEvents[]> => {
 	}
 
 	const [ordersSent, ordersReceived] = await Promise.all([
-		ndkActions.fetchEventsWithTimeout(orderCreationFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS }),
-		ndkActions.fetchEventsWithTimeout(orderReceivedFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, orderCreationFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, orderReceivedFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS }),
 	])
 
 	// Filter for ORDER_CREATION type programmatically (since relays reject multi-character tags)
@@ -309,12 +333,12 @@ export const fetchOrders = async (): Promise<OrderWithRelatedEvents[]> => {
 
 	// Fetch events from both filters in parallel
 	const [eventsByAuthors, eventsByMentions] = await Promise.all([
-		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
-		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
 	])
 
 	// Combine and deduplicate
-	const allEvents = new Set<NDKEvent>([...Array.from(eventsByAuthors), ...Array.from(eventsByMentions)])
+	const allEvents = mergeNdkEventSetsById(eventsByAuthors, eventsByMentions)
 
 	// Filter events by order ID programmatically
 	const relatedEvents = new Set<NDKEvent>(
@@ -458,6 +482,10 @@ export const fetchOrdersByBuyer = async (buyerPubkey: string): Promise<OrderWith
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// A malformed (not just empty) buyer pubkey would build { authors: [...] }
+	// (and later contaminate allAuthors) that trips NDK's strict validation.
+	if (!isValidHexKey(buyerPubkey)) return []
+
 	// Orders where the specified user is the author (buyer sending order to merchant)
 	const orderCreationFilter: NDKFilter = {
 		kinds: [ORDER_PROCESS_KIND],
@@ -465,7 +493,7 @@ export const fetchOrdersByBuyer = async (buyerPubkey: string): Promise<OrderWith
 		limit: 100,
 	}
 
-	const allOrders = await ndkActions.fetchEventsWithTimeout(orderCreationFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS })
+	const allOrders = await fetchNdkEventSet(applesauceIo, ndk, orderCreationFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS })
 
 	// Filter for ORDER_CREATION type programmatically
 	const orders = new Set<NDKEvent>(
@@ -511,11 +539,11 @@ export const fetchOrdersByBuyer = async (buyerPubkey: string): Promise<OrderWith
 	]
 
 	const [eventsByAuthors, eventsByMentions] = await Promise.all([
-		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
-		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
 	])
 
-	const allEvents = new Set<NDKEvent>([...Array.from(eventsByAuthors), ...Array.from(eventsByMentions)])
+	const allEvents = mergeNdkEventSetsById(eventsByAuthors, eventsByMentions)
 
 	const relatedEvents = new Set<NDKEvent>(
 		Array.from(allEvents).filter((event) => {
@@ -631,7 +659,7 @@ export const useOrdersByBuyer = (buyerPubkey: string) => {
 	return useQuery({
 		queryKey: orderKeys.byBuyer(buyerPubkey),
 		queryFn: () => fetchOrdersByBuyer(buyerPubkey),
-		enabled: !!buyerPubkey,
+		enabled: isValidHexKey(buyerPubkey),
 	})
 }
 
@@ -642,6 +670,10 @@ export const fetchOrdersBySeller = async (sellerPubkey: string): Promise<OrderWi
 	const ndk = ndkActions.getNDK()
 	if (!ndk) throw new Error('NDK not initialized')
 
+	// A malformed (not just empty) seller pubkey would build { '#p': [...] }
+	// that trips NDK's strict filter validation (#p must be 64-hex too).
+	if (!isValidHexKey(sellerPubkey)) return []
+
 	// Orders where the specified user is the recipient (merchant receiving orders)
 	const orderReceivedFilter: NDKFilter = {
 		kinds: [ORDER_PROCESS_KIND],
@@ -649,7 +681,7 @@ export const fetchOrdersBySeller = async (sellerPubkey: string): Promise<OrderWi
 		limit: 100,
 	}
 
-	const allOrders = await ndkActions.fetchEventsWithTimeout(orderReceivedFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS })
+	const allOrders = await fetchNdkEventSet(applesauceIo, ndk, orderReceivedFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS })
 
 	// Filter for ORDER_CREATION type programmatically
 	const orders = new Set<NDKEvent>(
@@ -694,11 +726,11 @@ export const fetchOrdersBySeller = async (sellerPubkey: string): Promise<OrderWi
 	]
 
 	const [eventsByAuthors, eventsByMentions] = await Promise.all([
-		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
-		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
 	])
 
-	const allEvents = new Set<NDKEvent>([...Array.from(eventsByAuthors), ...Array.from(eventsByMentions)])
+	const allEvents = mergeNdkEventSetsById(eventsByAuthors, eventsByMentions)
 
 	const relatedEvents = new Set<NDKEvent>(
 		Array.from(allEvents).filter((event) => {
@@ -826,7 +858,7 @@ export const useOrdersBySeller = (sellerPubkey: string, options: UseOrdersBySell
 	const publicQuery = useQuery({
 		queryKey: orderKeys.bySeller(sellerPubkey),
 		queryFn: () => fetchOrdersBySeller(sellerPubkey),
-		enabled: !!sellerPubkey,
+		enabled: isValidHexKey(sellerPubkey),
 	})
 
 	const privateQuery = useQuery({
@@ -869,7 +901,7 @@ export const fetchOrderById = async (orderId: string, options: FetchOrderByIdOpt
 		orderFilter.ids = [orderId]
 	}
 
-	const allOrderEvents = await ndkActions.fetchEventsWithTimeout(orderFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS })
+	const allOrderEvents = await fetchNdkEventSet(applesauceIo, ndk, orderFilter, { timeoutMs: ORDER_FETCH_TIMEOUT_MS })
 
 	// Filter programmatically for ORDER_CREATION type and matching order ID
 	const matchingOrders = Array.from(allOrderEvents).filter((event) => {
@@ -915,11 +947,11 @@ export const fetchOrderById = async (orderId: string, options: FetchOrderByIdOpt
 	]
 
 	const [eventsByAuthors, eventsByMentions] = await Promise.all([
-		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
-		ndkActions.fetchEventsWithTimeout(relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, relatedEventsFilters[0], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
+		fetchNdkEventSet(applesauceIo, ndk, relatedEventsFilters[1], { timeoutMs: RELATED_EVENTS_FETCH_TIMEOUT_MS }),
 	])
 
-	const allEvents = new Set<NDKEvent>([...Array.from(eventsByAuthors), ...Array.from(eventsByMentions)])
+	const allEvents = mergeNdkEventSetsById(eventsByAuthors, eventsByMentions)
 
 	// Filter events by order ID programmatically
 	const relatedEvents = new Set<NDKEvent>(
@@ -1006,6 +1038,32 @@ export const fetchOrderById = async (orderId: string, options: FetchOrderByIdOpt
 	}
 }
 
+export function subscribeToOrderUpdates(params: {
+	ndk: OrdersNdk
+	orderId: string
+	logicalOrderId?: string
+	fetchedOrderEventId?: string
+	onMatchedEvent: () => void
+}): () => void {
+	const { ndk, orderId, logicalOrderId, fetchedOrderEventId, onMatchedEvent } = params
+	const relatedEventsFilter: NostrFilter = {
+		kinds: [ORDER_PROCESS_KIND, ORDER_GENERAL_KIND, PAYMENT_RECEIPT_KIND],
+	}
+
+	return applesauceIo.subscribe(
+		relatedEventsFilter,
+		(rawEvent) => {
+			const newEvent = rehydrateVerifiedNdkEvent(ndk, rawEvent)
+			if (!newEvent) return
+			const taggedOrderId = newEvent.tags.find((tag) => tag[0] === 'order')?.[1]
+			const matchesRouteId = newEvent.id === orderId || taggedOrderId === orderId
+			const matchesFetchedOrder = !!taggedOrderId && (taggedOrderId === logicalOrderId || taggedOrderId === fetchedOrderEventId)
+			if (matchesRouteId || matchesFetchedOrder) onMatchedEvent()
+		},
+		{ closeOnEose: false },
+	)
+}
+
 /**
  * Hook to fetch a specific order by its ID
  */
@@ -1043,36 +1101,20 @@ export const useOrderById = (orderId: string, options: UseOrderByIdOptions = {})
 	useEffect(() => {
 		if (!orderId || !ndk) return
 
-		// Subscription for all related events - no multi-character tag filters
-		const relatedEventsFilter = {
-			kinds: [ORDER_PROCESS_KIND, ORDER_GENERAL_KIND, PAYMENT_RECEIPT_KIND],
-		}
-
-		const subscription = ndk.subscribe(relatedEventsFilter, {
-			closeOnEose: false, // Keep subscription open
-		})
-
 		const refreshOrderDetails = () => {
 			void queryClient.invalidateQueries({ queryKey })
 			void queryClient.refetchQueries({ queryKey })
 		}
 
-		// Event handler for all events related to this order
-		subscription.on('event', (newEvent) => {
-			const taggedOrderId = newEvent.tags.find((tag) => tag[0] === 'order')?.[1]
-			const matchesRouteId = newEvent.id === orderId || taggedOrderId === orderId
-			const matchesFetchedOrder = !!taggedOrderId && (taggedOrderId === logicalOrderId || taggedOrderId === fetchedOrderEventId)
-
-			// Any related event should refresh order details (status, shipping, payment requests/receipts, messages)
-			if (!matchesRouteId && !matchesFetchedOrder) return
-
-			refreshOrderDetails()
+		const stop = subscribeToOrderUpdates({
+			ndk,
+			orderId,
+			logicalOrderId,
+			fetchedOrderEventId,
+			onMatchedEvent: refreshOrderDetails,
 		})
 
-		// Clean up subscription when unmounting
-		return () => {
-			subscription.stop()
-		}
+		return stop
 	}, [fetchedOrderEventId, logicalOrderId, ndk, orderId, queryClient, queryKey])
 
 	return orderQuery
@@ -1081,30 +1123,33 @@ export const useOrderById = (orderId: string, options: UseOrderByIdOptions = {})
 /**
  * Get the current status of an order based on its related events
  */
-export const getOrderStatus = (order: OrderWithRelatedEvents): string => {
-	// Deep clone the status updates to avoid modifying the original
-	const statusUpdates = [...order.statusUpdates]
-	const shippingUpdates = [...order.shippingUpdates]
+export const getOrderStatus = (order: OrderWithRelatedEvents): OrderStatus => {
+	// NOTE: We assume that OrderWithRelatedEvents has a `statusUpdates` event list property (of length N) that is sorted
+	// from latest event (at index 0) to oldest event (at index N - 1). Similarly, we assume `latestStatus` references the latest
+	// status event (at index 0) from this list.
 
-	// Shipping updates no longer directly set order status.
-	// Order status is determined solely by explicit status update events (Type 3).
+	const status = order.latestStatus?.tags.find((tag) => tag[0] === 'status')?.at(1)
 
-	// Next, check status updates if no shipping rules applied
-	if (statusUpdates.length > 0) {
-		// Re-sort to ensure newest first
-		statusUpdates.sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-		const latestStatusUpdate = statusUpdates[0]
-		const statusTag = latestStatusUpdate.tags.find((tag) => tag[0] === 'status')
-
-		if (statusTag?.[1]) {
-			return statusTag[1]
-		}
+	if (status && Object.values(ORDER_STATUS).includes(status as any)) {
+		return status as OrderStatus
 	}
-
-	// Do not infer confirmation from payment receipts. Merchant must explicitly confirm via status update.
 
 	// Default to pending if no other status is found
 	return ORDER_STATUS.PENDING
+}
+
+export const getShippingStatus = (order: OrderWithRelatedEvents): ShippingStatus | null => {
+	// NOTE: We assume that OrderWithRelatedEvents has a `shippingUpdates` event list property (of length N) that is sorted
+	// from latest event (at index 0) to oldest event (at index N - 1). Similarly, we assume `latestShipping` references the latest
+	// shipping event (at index 0) from this list.
+
+	const shipping = order.latestShipping?.tags.find((tag) => tag[0] === 'status')?.at(1)
+
+	if (shipping && Object.values(SHIPPING_STATUS).includes(shipping as any)) {
+		return shipping as ShippingStatus
+	}
+
+	return null
 }
 
 /**

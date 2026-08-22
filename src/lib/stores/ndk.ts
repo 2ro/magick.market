@@ -216,12 +216,12 @@ export const ndkActions = {
 	 */
 	fetchEventsWithTimeout: async (
 		filters: NDKFilter | NDKFilter[],
-		opts?: NDKSubscriptionOptions & { timeoutMs?: number },
+		opts?: NDKSubscriptionOptions & { timeoutMs?: number; relaySet?: NDKRelaySet },
 	): Promise<Set<NDKEvent>> => {
 		const ndk = ndkStore.state.ndk
 		if (!ndk) throw new Error('NDK not initialized')
 
-		const { timeoutMs = 8000, ...subOpts } = opts ?? {}
+		const { timeoutMs = 8000, relaySet, ...subOpts } = opts ?? {}
 
 		return await new Promise<Set<NDKEvent>>((resolve) => {
 			const events = new Map<string, NDKEvent>()
@@ -236,7 +236,7 @@ export const ndkActions = {
 				resolve(new Set(events.values()))
 			}
 
-			const subscription = ndk.subscribe(filters, {
+			const subscriptionOpts = {
 				...subOpts,
 				closeOnEose: true,
 				onEvent: (event) => {
@@ -254,7 +254,9 @@ export const ndkActions = {
 				},
 				onEose: () => finalize(subscription),
 				onClose: () => finalize(subscription),
-			})
+			}
+
+			const subscription = relaySet ? ndk.subscribe(filters, subscriptionOpts, relaySet) : ndk.subscribe(filters, subscriptionOpts)
 
 			timer = setTimeout(() => finalize(subscription), timeoutMs)
 		})
@@ -284,12 +286,23 @@ export const ndkActions = {
 		// The app is deliberately single-relay: it talks only to its own app relay.
 		// Disable the outbox model unconditionally so NDK never discovers or connects
 		// to additional relays from users' NIP-65 relay lists (no federation/discovery).
+		//
+		// AI Guardrails are an NDK dev-time educational tool (shipped off by
+		// default). Enabling them in production turns a single malformed pubkey
+		// in any filter into a fatal throw ("AI_GUARDRAILS ERROR") that crashes
+		// the page. Keep them on only in dev/staging where they're useful.
+		//
+		// NDK's default filter validation ('validate', strict) is intentionally
+		// retained in all stages: invalid/empty pubkeys are rejected at the query
+		// layer before any filter is built (fail closed) — never by loosening NDK
+		// validation. 'fix' mode would strip a bad author and broaden an
+		// identity-scoped request instead of rejecting it, which is unsafe for
+		// marketplace identity/order/payment boundaries.
+		const enableGuardrails = stage === 'development' || stage === 'staging'
 		const ndk = new NDK({
 			explicitRelayUrls: explicitRelays,
 			enableOutboxModel: false,
-			aiGuardrails: {
-				skip: new Set(['ndk-no-cache', 'fetch-events-usage']),
-			},
+			aiGuardrails: enableGuardrails ? { skip: new Set(['ndk-no-cache', 'fetch-events-usage']) } : false,
 		})
 
 		// Determine write relays - staging only writes to main relay, others write to all
@@ -430,8 +443,8 @@ export const ndkActions = {
 	 * @param event The NDKEvent to publish (must already be signed)
 	 * @returns Promise resolving to the set of relays the event was published to
 	 */
-	publishEvent: async (event: NDKEvent): Promise<Set<any>> => {
-		const relaySet = getWriteRelaySet()
+	publishEvent: async (event: NDKEvent, relaySet?: NDKRelaySet): Promise<Set<any>> => {
+		relaySet ??= getWriteRelaySet()
 		return event.publish(relaySet)
 	},
 }

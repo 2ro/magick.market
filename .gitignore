@@ -56,3 +56,4 @@ contextvm/
 
 # Encrypted test wallet material
 scripts/encrypted_test_wallet.json
+e2e/baseline-results/

@@ -192,6 +192,7 @@ export const usePaymentDetail = (id: string) => {
  * Fetches all payment details for a user
  */
 export const fetchUserPaymentDetails = async (userPubkey: string): Promise<PaymentDetail[]> => {
+	if (!isValidHexKey(userPubkey)) return []
 	try {
 		const ndk = ndkActions.getNDK()
 		if (!ndk) throw new Error('NDK not initialized')
@@ -297,7 +298,7 @@ export const useUserPaymentDetails = (userPubkey: string) => {
 	return useQuery({
 		queryKey: paymentDetailsKeys.byPubkey(userPubkey),
 		queryFn: () => fetchUserPaymentDetails(userPubkey),
-		enabled: !!userPubkey,
+		enabled: isValidHexKey(userPubkey),
 	})
 }
 
@@ -305,6 +306,7 @@ export const useUserPaymentDetails = (userPubkey: string) => {
  * Fetches payment details for a specific product or collection
  */
 export const fetchProductPaymentDetails = async (coordinates: string, userPubkey?: string): Promise<PaymentDetail[]> => {
+	if (userPubkey !== undefined && !isValidHexKey(userPubkey)) return []
 	try {
 		const ndk = ndkActions.getNDK()
 		if (!ndk) throw new Error('NDK not initialized')
@@ -606,7 +608,7 @@ export const useRichUserPaymentDetails = (userPubkey: string | undefined) => {
 	return useQuery({
 		queryKey: paymentDetailsKeys.byPubkey(userPubkey),
 		queryFn: () => fetchRichUserPaymentDetails(userPubkey!),
-		enabled: !!userPubkey,
+		enabled: isValidHexKey(userPubkey ?? ''),
 	})
 }
 
@@ -1000,7 +1002,7 @@ export const useAvailablePaymentOptions = (productIds: string[], sellerPubkey: s
 	return useQuery({
 		queryKey: paymentDetailsKeys.availableOptions(sellerPubkey, productIds),
 		queryFn: () => getAvailablePaymentOptions(productIds, sellerPubkey),
-		enabled: enabled && productIds.length > 0 && !!sellerPubkey,
+		enabled: enabled && productIds.length > 0 && isValidHexKey(sellerPubkey),
 		staleTime: 1000 * 60 * 5, // 5 minutes
 	})
 }
@@ -1020,6 +1022,10 @@ export const resolvePaymentDetailsForProduct = async (productId: string, sellerP
 	try {
 		const ndk = ndkActions.getNDK()
 		if (!ndk) throw new Error('NDK not initialized')
+
+		// A malformed (not just empty) seller pubkey would build { authors: [...] }
+		// (and a malformed coordinate) that trips NDK's strict filter validation.
+		if (!isValidHexKey(sellerPubkey)) return []
 
 		// 1. Check for product-specific payment details
 		const productCoordinates = `30402:${sellerPubkey}:${productId}`
