@@ -2,8 +2,16 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ndkActions } from '@/lib/stores/ndk'
 import { productFormActions, productFormStore, type ProductFormState, type ProductFormTab } from '@/lib/stores/product'
+
+// Expose store/actions to e2e tests for deterministic state control
+// Only in test environments to avoid leaking internals in production
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'test') {
+	;(window as any).__productFormActions = productFormActions
+	;(window as any).__productFormStore = productFormStore
+}
 import { uiActions } from '@/lib/stores/ui'
 import { hasProductFormDraft } from '@/lib/utils/productFormStorage'
+import { listingPriceError } from '@/lib/grin'
 import type { ProductWorkflowResolution } from '@/lib/workflow/productWorkflowResolver'
 import { useForm } from '@tanstack/react-form'
 import { useQueryClient } from '@tanstack/react-query'
@@ -27,7 +35,17 @@ const PRODUCT_FORM_TAB_LABELS: Record<ProductFormTab, string> = {
 
 type ProductFormWorkflowState = Pick<
 	ProductFormState,
-	'name' | 'description' | 'price' | 'quantity' | 'mainCategory' | 'images' | 'shippings'
+	| 'name'
+	| 'description'
+	| 'price'
+	| 'fiatPrice'
+	| 'quantity'
+	| 'currency'
+	| 'currencyMode'
+	| 'bitcoinUnit'
+	| 'mainCategory'
+	| 'images'
+	| 'shippings'
 >
 
 function isValidNumberString(value: string): boolean {
@@ -44,7 +62,11 @@ function getTabValidationIssues(state: ProductFormWorkflowState, tab: ProductFor
 		}
 		case 'detail': {
 			const issues: string[] = []
-			if (!isValidNumberString(state.price)) issues.push('Valid product price is required')
+			// The listing price is decimal GRIN and must clear the marketplace
+			// minimum (owner decision, 2026-08-22); the same guard fails the
+			// publish path closed in continuePublishing.
+			const priceIssue = listingPriceError(state.price)
+			if (priceIssue) issues.push(priceIssue)
 			if (!isValidNumberString(state.quantity)) issues.push('Valid product quantity is required')
 			return issues
 		}

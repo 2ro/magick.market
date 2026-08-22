@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PRODUCT_CATEGORIES } from '@/lib/constants'
-import { MAX_INVOICE_BATCH_COUNT } from '@/lib/grin'
+import { MAX_INVOICE_BATCH_COUNT, MIN_LISTING_PRICE_GRIN } from '@/lib/grin'
 import type { RichShippingInfo } from '@/lib/stores/cart'
 import { useNDK } from '@/lib/stores/ndk'
 import { productFormActions, productFormStore, type ProductShippingForm } from '@/lib/stores/product'
@@ -55,7 +55,7 @@ export function DetailTab() {
 					id="grin-price"
 					type="number"
 					step="any"
-					min="0"
+					min={MIN_LISTING_PRICE_GRIN}
 					placeholder="e.g., 25"
 					value={price || ''}
 					onChange={(e) => handlePriceChange(e.target.value)}

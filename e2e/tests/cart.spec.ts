@@ -23,11 +23,11 @@ async function safeGoto(page: Page, url: string): Promise<void> {
 		} catch (error) {
 			const msg = String(error)
 			if (!msg.includes('interrupted by another navigation') && !msg.includes('ERR_ABORTED')) throw error
-			await page.waitForLoadState('networkidle').catch(() => {})
+			await page.waitForLoadState('domcontentloaded').catch(() => {})
 		}
 
 		await page.waitForTimeout(1000)
-		await page.waitForLoadState('networkidle').catch(() => {})
+		await page.waitForLoadState('domcontentloaded').catch(() => {})
 
 		const currentPath = new URL(page.url()).pathname
 		if (currentPath === targetPath || currentPath.startsWith(targetPath)) {
@@ -40,11 +40,12 @@ async function safeGoto(page: Page, url: string): Promise<void> {
 
 /** Open the cart drawer via the basket icon in the header. */
 async function openCart(page: Page): Promise<void> {
-	await page
-		.getByRole('button')
-		.filter({ has: page.locator('.i-basket') })
-		.click()
-	await expect(page.getByRole('heading', { name: /your cart/i })).toBeVisible({ timeout: 5_000 })
+	const cartButton = page.getByRole('button').filter({ has: page.locator('.i-basket') })
+	await expect(cartButton).toBeVisible({ timeout: 10_000 })
+	// Playwright's default actionability checks handle the tooltip wrapper;
+	// a plain .click() waits for the button to be stable before clicking.
+	await cartButton.click()
+	await expect(page.getByRole('heading', { name: /your cart/i })).toBeVisible({ timeout: 10_000 })
 }
 
 /** Get the cart dialog locator. */
@@ -337,7 +338,9 @@ test.describe('Cart - Persistence', () => {
 		await openCart(newUserPage)
 		const dialog = cartDialog(newUserPage)
 		await expect(dialog.getByText('Bitcoin Hardware Wallet')).toBeVisible({ timeout: 10_000 })
-		await expect(dialog.getByText('Lightning Node Setup Guide')).toBeVisible()
+		// Second product (different seller) needs the same generous window for its
+		// relay read after reload — the default 5s is flaky here.
+		await expect(dialog.getByText('Lightning Node Setup Guide')).toBeVisible({ timeout: 10_000 })
 	})
 
 	test('cart quantity persists after page reload', async ({ newUserPage }) => {

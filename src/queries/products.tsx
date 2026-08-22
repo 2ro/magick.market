@@ -26,6 +26,7 @@ import { applyMerchantScope, filterGrinOnly, getMerchantAllowlist, filterToAllow
 import { naddrFromAddress } from '@/lib/nostr/naddr'
 import { importedSourcesActions } from '@/lib/stores/imported-sources'
 import { authStore } from '@/lib/stores/auth'
+import { isValidHexKey } from '@/lib/utils'
 
 // Re-export productKeys for use in other query files
 export { productKeys }
@@ -319,6 +320,8 @@ export const fetchProduct = async (id: string) => {
  * @returns Array of product events sorted by creation date (blacklist filtered, optionally hidden products excluded)
  */
 export const fetchProductsByPubkey = async (pubkey: string, includeHidden: boolean = false, limit: number = 50) => {
+	if (!isValidHexKey(pubkey)) throw new Error('fetchProductsByPubkey: invalid seller pubkey')
+
 	const ndk = ndkActions.getNDK()
 	if (!ndk) {
 		console.warn('NDK not ready, returning empty products by pubkey list')
@@ -454,6 +457,7 @@ export const productsByPubkeyQueryOptions = (pubkey: string, includeHidden: bool
 	queryOptions({
 		queryKey: includeHidden ? [...productKeys.byPubkey(pubkey), 'includeHidden'] : productKeys.byPubkey(pubkey),
 		queryFn: () => fetchProductsByPubkey(pubkey, includeHidden),
+		enabled: isValidHexKey(pubkey),
 	})
 
 /**

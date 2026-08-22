@@ -26,6 +26,8 @@
         "@tanstack/react-table": "^8.21.3",
         "@tanstack/store": "^0.11.0",
         "@yudiel/react-qr-scanner": "^2.6.0",
+        "applesauce-core": "^5.2.0",
+        "applesauce-relay": "^5.2.0",
         "bech32": "^2.0.0",
         "bun-plugin-tailwind": "^0.1.2",
         "class-variance-authority": "^0.7.1",

@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import {
 	MAX_INVOICE_BATCH_COUNT,
+	MIN_LISTING_PRICE_GRIN,
 	NANOGRIN_PER_GRIN,
 	buildGoblinPayUri,
 	clampInvoiceBatchCount,
@@ -9,6 +10,7 @@ import {
 	formatGrinAmount,
 	grinToNanogrin,
 	isValidGoblinPayAddress,
+	listingPriceError,
 	mintInvoiceNumber,
 	mintInvoiceNumbers,
 	nanogrinToGrin,
@@ -269,5 +271,33 @@ describe('buildGoblinPayUri proof-on-request params (contract 4.1)', () => {
 		const parsed = parseGoblinPayUri(uri)
 		expect(parsed.amount).toBe('1')
 		expect(parsed.memo).toBe('MM-2')
+	})
+})
+
+describe('listingPriceError (minimum listing price)', () => {
+	test('the minimum listing price is 1 GRIN', () => {
+		expect(MIN_LISTING_PRICE_GRIN).toBe(1)
+	})
+
+	test('an empty price is not publishable', () => {
+		expect(listingPriceError('')).toBe('Valid product price is required')
+		expect(listingPriceError('   ')).toBe('Valid product price is required')
+	})
+
+	test('a non-numeric price is not publishable', () => {
+		expect(listingPriceError('abc')).toBe('Valid product price is required')
+	})
+
+	test('a price below 1 GRIN is not publishable', () => {
+		expect(listingPriceError('0')).toBe('Price must be at least 1 GRIN')
+		expect(listingPriceError('0.5')).toBe('Price must be at least 1 GRIN')
+		expect(listingPriceError('0.999999999')).toBe('Price must be at least 1 GRIN')
+		expect(listingPriceError('-2')).toBe('Price must be at least 1 GRIN')
+	})
+
+	test('a price of 1 GRIN or more is publishable', () => {
+		expect(listingPriceError('1')).toBeNull()
+		expect(listingPriceError('1.5')).toBeNull()
+		expect(listingPriceError(' 25 ')).toBeNull()
 	})
 })

@@ -12,12 +12,16 @@ test.describe('User Profile', () => {
 
 		const saveButton = newUserPage.getByTestId('profile-save-button-desktop')
 
-		// Fill mandatory fields (overwrite whatever may be there)
-		await nameInput.fill('E2E New User')
-		await newUserPage.locator('#displayName').fill('E2E Test Display Name')
+		// Fill mandatory fields (overwrite whatever may be there). devUser3 and the
+		// relay persist across repeats, so the values must be unique: filling back
+		// the values a previous repeat saved leaves the form clean and the save
+		// button disabled.
+		const run = Date.now()
+		await nameInput.fill(`E2E New User ${run}`)
+		await newUserPage.locator('#displayName').fill(`E2E Test Display Name ${run}`)
 
 		// Fill optional fields
-		await newUserPage.locator('#about').fill('Profile created by the e2e test suite')
+		await newUserPage.locator('#about').fill(`Profile created by the e2e test suite ${run}`)
 		await newUserPage.locator('#website').fill('https://example.com')
 
 		// Button should be enabled
@@ -89,15 +93,20 @@ test.describe('User Profile', () => {
 		await monitor.start()
 
 		await page.goto('/dashboard/account/profile')
-		await page.waitForLoadState('networkidle')
+		// Wait for DOM ready + hydration — NDK WebSocket keeps connections open
+		await page.waitForLoadState('domcontentloaded')
 
 		const nameInput = page.locator('#name')
 		await expect(nameInput).toBeVisible({ timeout: 10_000 })
 
-		// Fill profile
-		await nameInput.fill('E2E Relay Check User')
-		await page.locator('#displayName').fill('Relay Check')
-		await page.locator('#lud16').fill('test@example.com')
+		// Fill profile. Magick is GRIN only and has no lud16/lud06 fields, so the
+		// upstream Lightning address step is omitted. Values are unique per run
+		// because devUser3 and the relay persist across repeats: reusing them would
+		// leave the form clean and the save button disabled.
+		const name = `E2E Relay Check User ${Date.now()}`
+		const displayName = `Relay Check ${Date.now()}`
+		await nameInput.fill(name)
+		await page.locator('#displayName').fill(displayName)
 
 		// Save
 		await page.getByTestId('profile-save-button-desktop').click()
@@ -110,10 +119,12 @@ test.describe('User Profile', () => {
 		const publishedEvent = kind0Events[kind0Events.length - 1]
 		expect(publishedEvent.nostrEvent).toBeTruthy()
 
+		// Magick serializes kind 0 with NDK's serializeProfile, so the content uses
+		// the standard NIP-24 key display_name rather than NDK's camelCase
+		// displayName. See src/publish/profiles.tsx.
 		const content = JSON.parse(publishedEvent.nostrEvent!.content)
-		expect(content.name).toBe('E2E Relay Check User')
-		expect(content.displayName).toBe('Relay Check')
-		expect(content.lud16).toBe('test@example.com')
+		expect(content.name).toBe(name)
+		expect(content.display_name).toBe(displayName)
 
 		// Verify it was sent to the local relay only
 		expect(publishedEvent.relayUrl).toContain('localhost')

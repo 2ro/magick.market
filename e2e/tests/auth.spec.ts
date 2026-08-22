@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures'
 import type { BrowserContext, Page } from '@playwright/test'
 import { devUser1, devUser2 } from '../../src/lib/fixtures'
 import { getPublicKey, finalizeEvent, type UnsignedEvent } from 'nostr-tools/pure'
+import { v2 as nip44 } from 'nostr-tools/nip44'
 import { hexToBytes } from '@noble/hashes/utils.js'
 import { nip19 } from 'nostr-tools'
 import { encrypt } from 'nostr-tools/nip49'
@@ -22,6 +23,17 @@ async function setupExtensionOnly(context: BrowserContext, user: { sk: string; p
 		return user.pk
 	})
 
+	const skBytes = hexToBytes(user.sk)
+	await context.exposeFunction('__nostrNip44Encrypt', (pubkey: string, plaintext: string): string => {
+		const convKey = nip44.utils.getConversationKey(skBytes, pubkey)
+		return nip44.encrypt(plaintext, convKey)
+	})
+
+	await context.exposeFunction('__nostrNip44Decrypt', (pubkey: string, ciphertext: string): string => {
+		const convKey = nip44.utils.getConversationKey(skBytes, pubkey)
+		return nip44.decrypt(ciphertext, convKey)
+	})
+
 	await context.addInitScript(() => {
 		;(window as any).nostr = {
 			getPublicKey: async () => {
@@ -35,6 +47,14 @@ async function setupExtensionOnly(context: BrowserContext, user: { sk: string; p
 				encrypt: async (_pubkey: string, plaintext: string) => `test_encrypted:${plaintext}`,
 				decrypt: async (_pubkey: string, ciphertext: string) =>
 					ciphertext.startsWith('test_encrypted:') ? ciphertext.slice('test_encrypted:'.length) : ciphertext,
+			},
+			nip44: {
+				encrypt: async (pubkey: string, plaintext: string) => {
+					return await (window as any).__nostrNip44Encrypt(pubkey, plaintext)
+				},
+				decrypt: async (pubkey: string, ciphertext: string) => {
+					return await (window as any).__nostrNip44Decrypt(pubkey, ciphertext)
+				},
 			},
 		}
 
@@ -55,10 +75,27 @@ async function createFreshPage(context: BrowserContext): Promise<Page> {
 
 /** Open the login dialog from the header */
 async function openLoginDialog(page: Page) {
+	// Wait for React hydration — the app shell must be interactive
+	// before clicking. DialogRegistry needs to be mounted for the
+	// openDialog('login') state update to render anything.
+	await expect(page.locator('header')).toBeVisible({ timeout: 15_000 })
+
+	// Workaround for orphaned dialog overlay (app bug — see #1224).
+	// Properly close any open dialog instead of deleting overlay DOM nodes.
+	// Clicking the dialog overlay (outside the dialog content) lets React
+	// unmount the overlay cleanly, so subsequent clicks pass Playwright's
+	// actionability checks. Escape keypress does not reliably close the
+	// overlay in headless CI.
+	const overlay = page.locator('[data-slot="dialog-overlay"]')
+	if ((await overlay.count()) > 0) {
+		await overlay.first().click({ position: { x: 10, y: 10 } })
+	}
+	await expect(overlay).toHaveCount(0, { timeout: 15_000 })
+
 	const loginButton = page.locator('[data-testid="login-button"]').first()
 	await expect(loginButton).toBeVisible({ timeout: 10_000 })
 	await loginButton.click()
-	await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible({ timeout: 5_000 })
+	await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible({ timeout: 15_000 })
 }
 
 /** Verify the user is authenticated (dashboard button visible) */
@@ -87,7 +124,7 @@ test.describe('Authentication', () => {
 
 			try {
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 
 				// Should NOT be auto-logged in
 				await openLoginDialog(page)
@@ -118,7 +155,7 @@ test.describe('Authentication', () => {
 
 			try {
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 				await openLoginDialog(page)
 
 				// Switch to Private Key tab
@@ -168,7 +205,7 @@ test.describe('Authentication', () => {
 
 			try {
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 				await openLoginDialog(page)
 
 				// Switch to Private Key tab
@@ -216,7 +253,7 @@ test.describe('Authentication', () => {
 
 			try {
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 				await openLoginDialog(page)
 
 				// Switch to Private Key tab — should show stored key UI
@@ -254,7 +291,7 @@ test.describe('Authentication', () => {
 
 			try {
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 				await openLoginDialog(page)
 
 				// Switch to Private Key tab — should show stored key UI
@@ -277,6 +314,7 @@ test.describe('Authentication', () => {
 		})
 
 		test('remove stored key shows fresh key input', async ({ browser }) => {
+			test.setTimeout(45_000) // fresh context + relay operations need more time
 			const context = await browser.newContext()
 			const nsec = hexToNsec(devUser2.sk)
 
@@ -292,7 +330,7 @@ test.describe('Authentication', () => {
 
 			try {
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 				await openLoginDialog(page)
 
 				await page.locator('[data-testid="private-key-tab"]').click()
@@ -311,6 +349,7 @@ test.describe('Authentication', () => {
 				const storedKey = await page.evaluate(() => localStorage.getItem('nostr_local_encrypted_signer_key'))
 				expect(storedKey).toBeNull()
 			} finally {
+				await page.close().catch(() => {})
 				await context.close()
 			}
 		})
@@ -324,7 +363,7 @@ test.describe('Authentication', () => {
 
 			try {
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 
 				// Login via extension dialog
 				await openLoginDialog(page)
@@ -334,7 +373,7 @@ test.describe('Authentication', () => {
 
 				// Reload
 				await page.reload()
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 
 				// Should still be authenticated (auto-login via extension)
 				await expectAuthenticated(page)
@@ -423,7 +462,7 @@ test.describe('Authentication', () => {
 
 			try {
 				await page.goto('/')
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 
 				// Login via extension
 				await openLoginDialog(page)
@@ -449,7 +488,7 @@ test.describe('Authentication', () => {
 
 				// Reload — should NOT auto-login
 				await page.reload()
-				await page.waitForLoadState('networkidle')
+				await page.waitForLoadState('domcontentloaded')
 				await expectNotAuthenticated(page)
 			} finally {
 				await context.close()

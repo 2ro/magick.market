@@ -20,6 +20,7 @@ import {
 	isNSFWProduct,
 } from '@/queries/products'
 import { productKeys } from '@/queries/queryKeyFactory'
+import { GRIN_CURRENCY, listingPriceError } from '@/lib/grin'
 import { clearProductFormDraft, getProductFormDraft, saveProductFormDraft } from '@/lib/utils/productFormStorage'
 import { normalizeProductShippingSelections, type ProductShippingSelection } from '@/lib/utils/productShippingSelections'
 import { uiActions, uiStore } from '@/lib/stores/ui'
@@ -417,9 +418,13 @@ export const productFormActions = {
 	continuePublishing: async (signer: NDKSigner, ndk: NDK, queryClient?: QueryClient): Promise<boolean | string> => {
 		const state = productFormStore.state
 
-		// Listings are always priced in decimal GRIN (NIP-99 price tag: [price, <amount>, GRIN])
-		const finalPrice = state.price || '0'
-		const finalCurrency = 'GRIN'
+		// Listings are always priced in decimal GRIN (NIP-99 price tag: [price, <amount>, GRIN]).
+		// Owner decision (2026-08-22): the minimum listing price is 1 GRIN, so an empty or
+		// sub-minimum price fails closed here instead of publishing a free listing. The form
+		// surfaces the same error before the publish button unlocks.
+		if (listingPriceError(state.price)) return false
+		const finalPrice = state.price.trim()
+		const finalCurrency = GRIN_CURRENCY
 
 		// Convert state to ProductFormData format
 		const formData: ProductFormData = {
